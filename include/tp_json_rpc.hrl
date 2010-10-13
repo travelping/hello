@@ -1,0 +1,2 @@
+-record(rpc_method, {name, params_as = list, description = ""}).
+-record(rpc_param,  {name, type = any, optional = false, default, description = ""}).
