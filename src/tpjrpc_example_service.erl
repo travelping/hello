@@ -9,11 +9,11 @@ register_yourself() -> tp_json_rpc_service:register(example, ?MODULE).
 
 method_info() ->
     [#rpc_method{name        = echo,
-                 params_as   = list,
                  description = "return the given string"},
      #rpc_method{name        = append,
-                 params_as   = list,
-                 description = "append the given strings"}].
+                 description = "append the given strings"},
+     #rpc_method{name        = enum_test,
+                 description = "test tp_json_rpc's support for enums"}].
 
 param_info(echo) ->
     [#rpc_param{name = text,
@@ -27,9 +27,15 @@ param_info(append) ->
      #rpc_param{name = str2,
                 type = string,
                 optional = true,
-                default  = <<"">>}].
+                default  = <<"">>}];
+param_info(enum_test) ->
+    [#rpc_param{name = atom,
+                type = {enum, [a, b, c]},
+                description = "the atom to be echoed, \"a\", \"b\", or \"c\""}].
 
 handle_request(_Req, echo, [Str]) ->
     {ok, Str};
 handle_request(_Req, append, [Str1, Str2]) ->
-    {ok, <<Str1/binary, Str2/binary>>}.
+    {ok, <<Str1/binary, Str2/binary>>};
+handle_request(_Req, enum_test, [Atom]) ->
+    {ok, Atom}.

@@ -58,7 +58,7 @@ handle_request(ServiceName, Req = #request{method = MethodName, params = Params}
         Method    ->
             case validate_params(Mod, Method, Params) of
                 {ok, Validated} -> run_request(Req, Mod, Method, Validated);
-                {error, Msg}    -> tpjrpc_proto:std_error(Req, {param_error, Msg})
+                {error, Msg}    -> tpjrpc_proto:std_error(Req, {invalid_params, Msg})
             end
     end.
 
@@ -88,27 +88,78 @@ find_method(Mod, MethodName) when is_atom(MethodName) ->
     end.
 
 validate_params(Mod, #rpc_method{name = Method, params_as = WantParamEncoding}, ParamsIn) ->
-    PInfo  = Mod:param_info(Method),
-    Params = params_to_proplist(PInfo, ParamsIn),
-    case validate_types(PInfo, Params) of
-        {ok, ValidProplist} ->
-            case WantParamEncoding of
-                proplist -> {ok, ValidProplist};
-                list     -> {ok, lists:map(fun ({_K, V}) -> V end, ValidProplist)}
-            end;
-        {error, Msg} ->
-            {error, Msg}
+    PInfo = Mod:param_info(Method),
+    try
+        Params = params_to_proplist(PInfo, ParamsIn),
+        Validated = lists:map(fun (OneParamInfo) -> validate_field(OneParamInfo, Params) end, PInfo),
+        case WantParamEncoding of
+            proplist -> {ok, Validated};
+            list     -> {ok, lists:map(fun ({_K, V}) -> V end, Validated)}
+        end
+    catch
+        throw:{invalid, Msg} -> {error, Msg}
     end.
 
-validate_types(PInfo, Params) -> {ok, Params}.
+validate_field(Info = #rpc_param{name = PNameAtom}, Param) ->
+    PName = atom_to_list(PNameAtom),
+    Value = case proplists:get_value(PName, Param) of
+                Undef when (Undef =:= undefined) or (Undef =:= null) ->
+                    if Info#rpc_param.optional -> Info#rpc_param.default;
+                       true -> throw({invalid, "required parameter '" ++ PName ++ "' is missing"})
+                    end;
+                GivenValue ->
+                    validate_type(PName, Info, GivenValue)
+            end,
+    {PNameAtom, Value}.
+
+validate_type(PName, #rpc_param{type = PType}, GivenValue) ->
+    case PType of
+        {enum, Elems} ->
+            atom_from_enum(PName, Elems, GivenValue);
+        _T ->
+            case has_type(PType, GivenValue) of
+                true -> GivenValue;
+                false -> throw({invalid, "invalid parameter type for param '" ++ PName
+                                          ++ "': expected " ++ atom_to_list(PType)})
+            end
+    end.
+
+atom_from_enum(Param, Enum, Input) ->
+    try
+        A = erlang:binary_to_existing_atom(Input, utf8),
+        case lists:member(A, Enum) of
+            true -> A;
+            false -> erlang:error(badarg)
+        end
+    catch
+        error:badarg ->
+            Choices = string:join(lists:map(fun (P) -> "\"" ++ atom_to_list(P) ++ "\"" end, Enum), ", "),
+            throw({invalid, "parameter '" ++ Param ++ "' must be one of: " ++ Choices})
+    end.
+
+has_type(boolean, Val) when (Val == true) or (Val == false) -> true;
+has_type(object, {obj, _}) -> true;
+has_type(integer, Val) when is_integer(Val) -> true;
+has_type(float, Val) when is_float(Val) -> true;
+has_type(number, Val) when is_number(Val) -> true;
+has_type(string, Val) when is_binary(Val) -> true;
+has_type(list, Val) when is_list(Val) -> true;
+has_type(array, Val) when is_list(Val) -> true;
+has_type(null, null) -> true;
+has_type(_T, _Val) -> false.
 
 params_to_proplist(_PInfo, {obj, Props}) -> Props;
 params_to_proplist(PInfo,  Params) when is_list(Params) ->
     Names = lists:map(fun (P) -> atom_to_list(P#rpc_param.name) end, PInfo),
-    zip(Names, Params, []).
+    {Proplist, TooMany} = zip(Names, Params, {[], false}),
+    TooMany andalso throw({invalid, "superfluous parameters"}),
+    lists:reverse(Proplist).
 
-zip([], [], Result) -> lists:reverse(Result);
-zip([], _2, Result) -> zip([], [], Result);
-zip(_1, [], Result) -> zip([], [], Result);
-zip([H1|R1], [H2|R2], Result) ->
-    zip(R1, R2, [{H1, H2}|Result]).
+zip([], [], Result) -> 
+    Result;
+zip([], _2, {Result, _TM}) -> 
+    zip([], [], {Result, true});
+zip(_1, [], Result) -> 
+    zip([], [], Result);
+zip([H1|R1], [H2|R2], {Result, TooMany}) ->
+    zip(R1, R2, {[{H1, H2}|Result], TooMany}).
