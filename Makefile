@@ -9,10 +9,13 @@
 
 ERL  = erl
 ERLC = erlc
+RUN_TEST_FLAGS =
 
 SRC_DIR     = $(CURDIR)/src
 EBIN_DIR    = $(CURDIR)/ebin
 INCLUDE_DIR = $(CURDIR)/include
+TEST_DIR     = $(CURDIR)/test
+TEST_LOG_DIR = $(CURDIR)/test-log
 
 .PHONY: all clean doc shell
 
@@ -22,6 +25,11 @@ all:
 
 clean:
 	rm -f $(EBIN_DIR)/*.beam
+	rm -fr ${TEST_LOG_DIR}/*
 
 shell: all
 	$(ERL) -pa $(EBIN_DIR)
+
+check: clean all
+	mkdir -p ${TEST_LOG_DIR}
+	run_test -pa $(EBIN_DIR) -basic_html -logdir $(TEST_LOG_DIR) -dir $(TEST_DIR) ${RUN_TEST_FLAGS}
