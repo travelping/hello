@@ -9,7 +9,6 @@
 
 ERL  = erl
 ERLC = erlc
-RUN_TEST_FLAGS =
 
 SRC_DIR     = $(CURDIR)/src
 EBIN_DIR    = $(CURDIR)/ebin
@@ -25,11 +24,12 @@ all:
 
 clean:
 	rm -f $(EBIN_DIR)/*.beam
+	rm -fr ${TEST_DIR}/*.beam
 	rm -fr ${TEST_LOG_DIR}/*
 
 shell: all
 	$(ERL) -pa $(EBIN_DIR)
 
-check: clean all
+check: all
 	mkdir -p ${TEST_LOG_DIR}
-	run_test -pa $(EBIN_DIR) -basic_html -logdir $(TEST_LOG_DIR) -dir $(TEST_DIR) ${RUN_TEST_FLAGS}
+	$(ERL) -pa $(EBIN_DIR) -noinput -eval 'ct:run_test([{logdir, "$(TEST_LOG_DIR)"},{dir, "$(TEST_DIR)"}]), halt(0).'
