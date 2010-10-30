@@ -10,6 +10,7 @@
 ERL  = erl
 ERLC = erlc
 
+APPLICATION = tp_json_rpc
 SRC_DIR     = $(CURDIR)/src
 EBIN_DIR    = $(CURDIR)/ebin
 INCLUDE_DIR = $(CURDIR)/include
@@ -25,10 +26,15 @@ all:
 clean:
 	rm -f $(EBIN_DIR)/*.beam
 	rm -fr ${TEST_DIR}/*.beam
+	rm -f doc/edoc-info doc/*.html doc/*.css doc/*.png
 	rm -fr ${TEST_LOG_DIR}/*
 
 shell: all
 	$(ERL) -pa $(EBIN_DIR)
+
+doc:
+	mkdir -p $(CURDIR)/doc
+	$(ERL) -noinput -eval 'edoc:application($(APPLICATION), "$(CURDIR)", []), halt(0).'
 
 check: all
 	mkdir -p ${TEST_LOG_DIR}

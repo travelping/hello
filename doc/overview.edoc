@@ -1,0 +1,12 @@
+@copyright Travelping GmbH <info@travelping.com>
+
+@doc
+This application provides a generic JSON-RPC server.
+RPC functions may be called using HTTP and configuration
+of varius various HTTP features like Basic Authentication and HTTPS is
+possible through application parameters or a config file.
+
+Erlang modules that follow the {@link tp_json_rpc_service} behaviour
+can register themselves as RPC services with a certain interface.
+RPC calls are mapped to Erlang function calls aided by a validation
+mechanism.

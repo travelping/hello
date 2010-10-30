@@ -14,13 +14,13 @@
 
 %% ----------------------------------------------------------------------
 %% -- Responses
-response(Req, Result) ->
-    #response{version = Req#request.version,
-              id      = Req#request.id,
-              result  = Result}.
 
+%% @equiv error_response(Req, Code, Msg, undefined)
 error_response(Req, Code, Msg) ->
     error_response(Req, Code, Msg, undefined).
+
+%% @spec (Request::request(), Code::integer(), Msg::string(), Data::any()) -> response()
+%% @doc  Creates a response object that represents a JSON-RPC error response.
 error_response(Req, Code, Msg, Data) ->
     DataT = case Data of
                 undefined -> [];
@@ -34,25 +34,18 @@ error_response(Req, Code, Msg, Data) ->
               id      = Req#request.id,
               error   = {obj, [{code, Code}, {message, MsgBin} | DataT]}}.
 
-response_json(R = #response{version = RespVersion, error = RespError}) ->
-    Version    = case RespVersion of
-                     1 -> [];
-                     _ -> [{jsonrpc, <<"2.0">>}]
-                 end,
-    Result     = case RespError of
-                     undefined ->
-                         [{error, null}, {result, maybe_null(R#response.result)}];
-                     Error ->
-                         [{result, null}, {error, maybe_null(Error)}]
-                 end,
-    ResOrError = case RespVersion of
-                     1 -> Result;     % keep both result and error for v1.0 responses
-                     _ -> tl(Result)  % omit result or error for v2.0
-                 end,
-    RespObj = {obj, Version ++ [{id, maybe_null(R#response.id)} | ResOrError]},
-    list_to_binary(tpjrpc_json:encode(RespObj)).
+%% @type standard_error() = parse_error | invalid_request | method_not_found
+%%                        | invalid_params | {invalid_params, string()}
+%%                        | internal_error | server_error | {server_error, string()}
+%%                        | string()
 
+%% @spec (Error::standard_error()) -> response()
+%% @doc Create a response object representing a JSON-RPC standard error.
+%%      Called if nothing is known about the request.
 std_error(Error) -> std_error(#request{}, Error).
+
+%% @spec (Request::request(), Error::standard_error()) -> response()
+%% @doc Create a response object representing a JSON-RPC standard error.
 std_error(Req, Error) ->
     {Code, Msg} = case Error of
                       parse_error         -> {-32700, "Parse error"};
@@ -71,14 +64,48 @@ std_error(Req, Error) ->
            end,
     error_response(Req, Code, Msg, Data).
 
+%% @spec (Request::request(), Result::tpjrpc_json:json()) -> response()
+%% @doc  Creates a response object matching the given request.
+response(Req, Result) ->
+    #response{version = Req#request.version,
+              id      = Req#request.id,
+              result  = Result}.
+
+%% @spec (Response::response()) -> binary()
+%% @doc Convert a response object to JSON.
+response_json(R = #response{version = RespVersion, error = RespError}) ->
+    Version    = case RespVersion of
+                     1 -> [];
+                     _ -> [{jsonrpc, <<"2.0">>}]
+                 end,
+    Result     = case RespError of
+                     undefined ->
+                         [{error, null}, {result, maybe_null(R#response.result)}];
+                     Error ->
+                         [{result, null}, {error, maybe_null(Error)}]
+                 end,
+    ResOrError = case RespVersion of
+                     1 -> Result;     % keep both result and error for v1.0 responses
+                     _ -> tl(Result)  % omit result or error for v2.0
+                 end,
+    RespObj = {obj, Version ++ [{id, maybe_null(R#response.id)} | ResOrError]},
+    list_to_binary(tpjrpc_json:encode(RespObj)).
+
 %% ----------------------------------------------------------------------
 %% -- Requests
+
+%% @spec (JSON::string()) -> {ok, request()} | {error, response()}
+%% @doc Create a request object from unparsed JSON.
+%%      In case of a parse error or if the request does not obey the JSON-RPC standard,
+%%      the appropriate JSON-RPC error response object is returned.
 request_json(JSON) ->
     case tpjrpc_json:decode(JSON) of
         {error, _Error}      -> {error, std_error(parse_error)};
         {ok, Request, _Rest} -> request(Request)
     end.
 
+%% @spec (JSON::tpjrpc_json:json_value()) -> {ok, request()} | {error, response()}
+%% @doc Create a request object from parsed request structure
 request(Obj) ->
     try if is_list(Obj) -> {ok, lists:map(fun single_request/1, Obj)};
            true         -> {ok, single_request(Obj)}
