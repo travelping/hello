@@ -23,7 +23,7 @@ behaviour_info(callbacks) -> [{handle_request,3}, {method_info,0}, {param_info,1
 behaviour_info(_Other)    -> undefined.
 
 init() ->
-    ets:new(?SERVICE_TABLE, [set, public, named_table, {keypos, #service.name}, {read_concurrency, true}]).
+    ets:new(?SERVICE_TABLE, [set, public, named_table, {keypos, #service.name}]).
 
 lookup(Service) ->
     case ets:lookup(?SERVICE_TABLE, Service) of
