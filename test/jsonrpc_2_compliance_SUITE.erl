@@ -7,7 +7,7 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
--module(tpjrpc_spec_v2_SUITE).
+-module(jsonrpc_2_compliance_SUITE).
 -behaviour(tp_json_rpc_service).
 -export([method_info/0, param_info/1, handle_request/3]).
 -compile(export_all).
@@ -30,6 +30,7 @@ error_codes(_Config) ->
 
 	% invalid request
     ErrorCode(-32600, "\"foo\""),
+    ErrorCode(-32600, "[]"),
     ErrorCode(-32600, "{\"method\": null, \"params\": [], \"id\": 1}"),
     ErrorCode(-32600, "{\"method\": \"foobar\", \"params\": 0, \"id\": 1}"),
 
@@ -47,7 +48,11 @@ param_structures(_Config) ->
 
     % by-name
     Req2 = request("spec_suite", {"subtract", {obj, [{"subtrahend", 2}, {"minuend", 1}]}}),
-    1    = field(Req2, "result").
+    1    = field(Req2, "result"),
+
+    % by-name reversed order
+    Req3 = request("spec_suite", {"subtract", {obj, [{"minuend", 1}, {"subtrahend", 2}]}}),
+    1    = field(Req3, "result").
 
 response_fields(_Config) ->
     % success case
@@ -90,14 +95,12 @@ all() -> [error_codes, param_structures, response_fields].
 
 init_per_suite(Config) ->
 	application:start(inets),
-	file:make_dir("server_root"),
-	file:make_dir("server_root/htdocs"),
-	file:make_dir("server_root/logs"),
 	application:start(tp_json_rpc),
 	tp_json_rpc_service:register(spec_suite, ?MODULE),
 	Config.
 
 end_per_suite(_Config) ->
+	tp_json_rpc_service:unregister(spec_suite),
 	application:stop(tp_json_rpc),
 	application:stop(inets).
 
@@ -107,8 +110,11 @@ request(Service, {Method, Params}) ->
     Req = {obj, [{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
     request(Service, tpjrpc_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
+    Url =  "http://localhost:5671/rpc/" ++ Service,
+    io:format("REQ: ~s~n~s~n", [Url, Request]),
 	{ok, {_Status, _Headers, Body}} =
-       httpc:request(post, {"http://localhost:5671/rpc/" ++ Service, [], "application/json", Request}, [], []),
+       httpc:request(post, {Url, [], "application/json", Request}, [{timeout, 2000}], []),
+    io:format("RESP:~n~s~n--------------------------------~n", [Body]),
 	{ok, Obj, _Rest} = tpjrpc_json:decode(Body),
 	Obj.
 
