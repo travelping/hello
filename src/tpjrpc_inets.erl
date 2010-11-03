@@ -26,7 +26,7 @@
              connection}).
 
 do(ModData = #mod{request_uri = Path, entity_body = Body, config_db = Config}) ->
-    Prefix = httpd_util:lookup(Config, json_rpc_prefix, ["rpc"]),
+    Prefix = unslash(httpd_util:lookup(Config, json_rpc_prefix)),
     Resp = case path_service(Prefix, Path) of
                no_handle   -> ModData#mod.data;
                empty       -> json_error(404, service_missing);

@@ -10,6 +10,8 @@
 -module(tpjrpc_httpd).
 -export([start_link/0]).
 
+-define(OurModule, tpjrpc_inets).
+
 start_link() ->
     Defaults = default_config(),
     User = case application:get_env(httpd_config) of
@@ -17,7 +19,7 @@ start_link() ->
                    case file:consult(File) of
                        {ok, Terms} -> Terms;
                        {error, Reason} ->
-                           error_logger:error_msg("httpd config file (~p) parse error:~n~p", [File, Reason]),
+                           error_logger:error_msg("httpd config file (~p) parse error: ~p~n", [File, Reason]),
                            exit({error, config_file_syntax})
                    end;
                undefined ->
@@ -28,28 +30,64 @@ start_link() ->
     inets:start(httpd, InetsConfig, stand_alone).
 
 default_config() ->
-    Port          = getenv(httpd_port, 5671),
-    ServerRoot    = filename:absname(getenv(httpd_server_root, "server_root")),
-    DocumentRoot  = filename:join(ServerRoot, "htdocs"),
-    LogDir        = filename:absname(getenv(httpd_log_dir, filename:join(ServerRoot, "logs"))),
-    TransferLog   = filename:join(LogDir, "access.log"),
-    ErrorLog      = filename:join(LogDir, "error.log"),
-    SecurityLog   = filename:join(LogDir, "security.log"),
+    DefaultRoot  = filename:join(code:priv_dir(tp_json_rpc), "server_root"),
+    Port         = getenv(httpd_port, 5671),
+    Prefix       = getenv(httpd_rpc_prefix, "/rpc"),
+    BindAddr     = getenv(httpd_bind_address, any),
+    Name         = getenv(httpd_server_name, "localhost"),
 
-    [{modules, [mod_auth, tpjrpc_inets, mod_log]},
+    ErrorLog    = filename:absname("inets_error.log"),
+    TransferLog = filename:absname("inets_transfer.log"),
+    SecurityLog = filename:absname("inets_security.log"),
+
+    [{modules, [?OurModule]},
      {port, Port},
-     {server_name, "localhost"},
-     {server_root, ServerRoot},
-     {document_root, DocumentRoot},
-     {error_log,    ErrorLog},
-     {security_log, SecurityLog},
+     {server_name, Name},
+     {bind_address, BindAddr},
+     {json_rpc_prefix, Prefix},
+     {error_log, ErrorLog},
      {transfer_log, TransferLog},
-     {mime_types,[{"html","text/html"},
-                  {"css", "text/css"},
-                  {"js",  "application/x-javascript"}]}].
+     {security_log, SecurityLog},
+     {server_root,   DefaultRoot},
+     {document_root, DefaultRoot}].
 
-merge_config(C1, C2) ->
-    C1.
+merge_config(Defaults, UserIn) ->
+    User = case proplists:get_value(server_root, UserIn) of
+               undefined -> lists:map(fun absnamed/1, UserIn);
+               _Else     -> UserIn
+           end,
+    Snd = fun (_, _, Y) -> Y end,
+    Dic = dict:merge(Snd, dict:from_list(Defaults), dict:from_list(User)),
+    Modules = dict:fetch(modules, Dic),
+    Merged  = case lists:member(?OurModule, Modules) of
+                  true  -> Dic;
+                  false -> dict:store(modules, [?OurModule | Modules], Dic)
+              end,
+    dict:to_list(Merged).
+
+absnamed({Key, Value}) ->
+    PathParam = [document_root, error_log, security_log, transfer_log,
+                 transfer_disk_log, error_disk_log, security_disk_log,
+                 ssl_ca_certificate_file, ssl_certificate_file, auth_user_file,
+                 auth_group_file, security_group_file],
+    case lists:member(Key, PathParam) of
+        true  -> {Key, filename:absname(Value)};
+        false ->
+           case Key of
+              mime_types ->
+                  if is_tuple(Value) -> {Key, Value};
+                     true            -> {Key, filename:absname(Value)}
+                  end;
+              directory ->
+                  {Path, Props} = Value,
+                  {Key, {Path, lists:map(fun absnamed/1, Props)}};
+              security_directory ->
+                  {Path, Props} = Value,
+                  {Key, {Path, lists:map(fun absnamed/1, Props)}};
+              _ ->
+                  {Key, Value}
+          end
+    end.
 
 getenv(Key, Default) ->
   case application:get_env(Key) of
