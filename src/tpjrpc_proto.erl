@@ -107,8 +107,13 @@ request_json(JSON) ->
 %% @spec (JSON::tpjrpc_json:json_value()) -> {ok, request()} | {error, response()}
 %% @doc Create a request object from parsed request structure
 request(Obj) ->
-    try if is_list(Obj) -> {ok, lists:map(fun single_request/1, Obj)};
-           true         -> {ok, single_request(Obj)}
+    try if is_list(Obj) -> 
+                case Obj of 
+                    [] -> throw(invalid);
+                    _  -> {ok, lists:map(fun single_request/1, Obj)}
+                end;
+           true ->
+               {ok, single_request(Obj)}
         end
     catch
         throw:invalid            -> {error, std_error(invalid_request)};
