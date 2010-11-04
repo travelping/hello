@@ -51,8 +51,17 @@ unregister(List) when is_list(List) and is_list(hd(List)) ->
 unregister(Name) when is_list(Name) ->
     ets:delete(?SERVICE_TABLE, Name).
 
-handle_request(ServiceName, Req = #request{method = MethodName, params = Params}) ->
+handle_request(ServiceName, Req) ->
     {ok, Mod} = lookup(ServiceName),
+    case Req#request.id of
+        undefined ->
+            spawn(fun () -> do_handle_request(Mod, Req) end),
+            empty_response;
+        _ID ->
+            do_handle_request(Mod, Req)
+    end.
+
+do_handle_request(Mod, Req = #request{method = MethodName, params = Params}) ->
     case find_method(Mod, MethodName) of
         undefined -> tpjrpc_proto:std_error(Req, method_not_found);
         Method    ->
@@ -155,11 +164,11 @@ params_to_proplist(PInfo,  Params) when is_list(Params) ->
     TooMany andalso throw({invalid, "superfluous parameters"}),
     lists:reverse(Proplist).
 
-zip([], [], Result) -> 
+zip([], [], Result) ->
     Result;
-zip([], _2, {Result, _TM}) -> 
+zip([], _2, {Result, _TM}) ->
     zip([], [], {Result, true});
-zip(_1, [], Result) -> 
+zip(_1, [], Result) ->
     zip([], [], Result);
 zip([H1|R1], [H2|R2], {Result, TooMany}) ->
     zip(R1, R2, {[{H1, H2}|Result], TooMany}).
