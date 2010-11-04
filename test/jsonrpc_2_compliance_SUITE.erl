@@ -75,6 +75,14 @@ response_fields(_Config) ->
     null      = proplists:get_value("id", Props3),
     -32700    = field(Req3, "error.code").
 
+notification(_Config) ->
+    % leaving id off is treated as notification
+    "" = request("spec_suite", "{\"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
+
+    % although it's use is discouraged, null is a valid id (in jsonrpc 2.0)
+    {obj, Res} = request("spec_suite", "{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
+    null = proplists:get_value("id", Res).
+
 % ---------------------------------------------------------------------
 % -- service callbacks
 method_info() ->
@@ -91,7 +99,7 @@ handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
-all() -> [error_codes, param_structures, response_fields].
+all() -> [error_codes, param_structures, response_fields, notification].
 
 init_per_suite(Config) ->
 	application:start(inets),
@@ -115,8 +123,10 @@ request(Service, Request) when is_list(Request) ->
 	{ok, {_Status, _Headers, Body}} =
        httpc:request(post, {Url, [], "application/json", Request}, [{timeout, 2000}], []),
     io:format("RESP:~n~s~n--------------------------------~n", [Body]),
-	{ok, Obj, _Rest} = tpjrpc_json:decode(Body),
-	Obj.
+    case Body of
+        "" -> "";
+        _  -> {ok, Obj, _Rest} = tpjrpc_json:decode(Body), Obj
+    end.
 
 field(Object, Field) ->
 	Flist = re:split(Field, "\\.", [{return, list}]),

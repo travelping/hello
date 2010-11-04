@@ -66,6 +66,8 @@ std_error(Req, Error) ->
 
 %% @spec (Request::request(), Result::tpjrpc_json:json()) -> response()
 %% @doc  Creates a response object matching the given request.
+response(#request{id = undefined}, _Resp) ->
+    empty_response;
 response(Req, Result) ->
     #response{version = Req#request.version,
               id      = Req#request.id,
@@ -73,6 +75,8 @@ response(Req, Result) ->
 
 %% @spec (Response::response()) -> binary()
 %% @doc Convert a response object to JSON.
+response_json(empty_response) ->
+    <<>>;
 response_json(R = #response{version = RespVersion, error = RespError}) ->
     Version    = case RespVersion of
                      1 -> [];
@@ -107,8 +111,8 @@ request_json(JSON) ->
 %% @spec (JSON::tpjrpc_json:json_value()) -> {ok, request()} | {error, response()}
 %% @doc Create a request object from parsed request structure
 request(Obj) ->
-    try if is_list(Obj) -> 
-                case Obj of 
+    try if is_list(Obj) ->
+                case Obj of
                     [] -> throw(invalid);
                     _  -> {ok, lists:map(fun single_request/1, Obj)}
                 end;
@@ -121,8 +125,15 @@ request(Obj) ->
     end.
 
 single_request({obj, Props}) ->
-    ID = property(Props, "id"),
     Version = req_version(Props),
+    ID      = case Version of
+                 2 -> proplists:get_value("id", Props);
+                 1 -> case proplists:get_value("id", Props) of
+                         undefined -> throw({invalid, null, Version});
+                         null      -> undefined;
+                         Value     -> Value
+                      end
+              end,
     Method = case property(Props, "method") of
                  Name when is_list(Name) or is_binary(Name) -> Name;
                  undefined -> throw({invalid, ID, Version});
