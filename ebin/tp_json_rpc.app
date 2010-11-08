@@ -6,6 +6,7 @@
              tpjrpc_sup,
              tpjrpc_json,
              tpjrpc_proto,
+             tp_json_rpc,
              tp_json_rpc_service,
              tpjrpc_httpd,
              tpjrpc_inets,

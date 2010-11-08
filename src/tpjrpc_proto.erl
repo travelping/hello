@@ -15,6 +15,8 @@
 %% ----------------------------------------------------------------------
 %% -- Responses
 
+%% @type response()
+
 %% @equiv error_response(Req, Code, Msg, undefined)
 error_response(Req, Code, Msg) ->
     error_response(Req, Code, Msg, undefined).
@@ -73,10 +75,23 @@ response(Req, Result) ->
               id      = Req#request.id,
               result  = Result}.
 
-%% @spec (Response::response()) -> binary()
+%% @spec (Response) -> binary()
+%%    Response = request() | [request()]
 %% @doc Convert a response object to JSON.
 response_json(empty_response) ->
     <<>>;
+response_json(Resps) when is_list(Resps) ->
+    Conc =
+        lists:foldl(fun (Resp, Bin) ->
+                        case Resp of
+                            empty_response -> Bin;
+                            _              -> <<Bin/binary, ",", (response_json(Resp))/binary>>
+                        end
+                    end, <<>>, Resps),
+    case Conc of
+        <<>>               -> <<>>;
+        <<",",Res/binary>> -> <<"[", Res/binary, "]">>
+    end;
 response_json(R = #response{version = RespVersion, error = RespError}) ->
     Version    = case RespVersion of
                      1 -> [];
@@ -98,55 +113,75 @@ response_json(R = #response{version = RespVersion, error = RespError}) ->
 %% ----------------------------------------------------------------------
 %% -- Requests
 
-%% @spec (JSON::string()) -> {ok, request()} | {error, response()}
+%% @type request()
+
+%% @spec (JSON::string()) -> {ok, request()} | {error, response()} | {batch, Valid, Invalid}
+%%     Valid   = [request()]
+%%     Invalid = [response()]
 %% @doc Create a request object from unparsed JSON.
 %%      In case of a parse error or if the request does not obey the JSON-RPC standard,
 %%      the appropriate JSON-RPC error response object is returned.
+%% @see request/1
 request_json(JSON) ->
     case tpjrpc_json:decode(JSON) of
         {error, _Error}      -> {error, std_error(parse_error)};
         {ok, Request, _Rest} -> request(Request)
     end.
 
-%% @spec (JSON::tpjrpc_json:json_value()) -> {ok, request()} | {error, response()}
+%% @spec (JSON::tpjrpc_json:json_value()) -> {ok, request()} | {error, response()} | {batch, Valid, Invalid}
+%%     Valid   = [request()]
+%%     Invalid = [response()]
 %% @doc Create a request object from parsed request structure
+%%
+%%      `{ok, Request}' is returned if the given request is valid.<br/>
+%%      `{error, Response}' is returned if the given request is not valid.<br/>
+%%      `{batch, Valid, Invalid}' is returned for batch requests. `Valid' contains
+%%      all valid requests in the batch, `Invalid' is a list of error responses for the ones that were invalid.
 request(Obj) ->
-    try if is_list(Obj) ->
-                case Obj of
-                    [] -> throw(invalid);
-                    _  -> {ok, lists:map(fun single_request/1, Obj)}
-                end;
-           true ->
-               {ok, single_request(Obj)}
-        end
-    catch
-        throw:invalid            -> {error, std_error(invalid_request)};
-        throw:{invalid, ID, Vsn} -> {error, std_error(#request{id = ID, version = Vsn}, invalid_request)}
+    case Obj of
+        [] ->
+            {error, std_error(invalid_request)};
+        Lis when is_list(Lis) ->
+            {Valid, Invalid} = lists:foldl(
+                    fun (ReqObj, {Va, Iva}) ->
+                            case single_request(ReqObj) of
+                                {ok, Req}     -> {[Req | Va], Iva};
+                                {error, Resp} -> {Va, [Resp | Iva]}
+                            end
+                    end, {[], []}, Lis),
+            {batch, Valid, Invalid};
+        _ ->
+            single_request(Obj)
     end.
 
 single_request({obj, Props}) ->
-    Version = req_version(Props),
-    ID      = case Version of
-                 2 -> proplists:get_value("id", Props);
-                 1 -> case proplists:get_value("id", Props) of
-                         undefined -> throw({invalid, null, Version});
-                         null      -> undefined;
-                         Value     -> Value
-                      end
-              end,
-    Method = case property(Props, "method") of
-                 Name when is_list(Name) or is_binary(Name) -> Name;
-                 undefined -> throw({invalid, ID, Version});
-                 _         -> throw({invalid, ID, Version})
-             end,
-    Params = case property(Props, "params", []) of
-                 List when is_list(List)         -> List;
-                 Obj = {obj, _} when Version > 1 -> Obj;
-                 _                               -> throw({invalid, ID, Version})
-             end,
-    #request{version = Version, method = Method, params = Params, id = ID};
+    try
+        Version = req_version(Props),
+        ID      = case Version of
+                      2 -> proplists:get_value("id", Props);
+                      1 -> case proplists:get_value("id", Props) of
+                              undefined -> throw({invalid, null, Version});
+                              null      -> undefined;
+                              Value     -> Value
+                          end
+                  end,
+        Method = case property(Props, "method") of
+                     Name when is_list(Name) or is_binary(Name) -> Name;
+                     undefined -> throw({invalid, ID, Version});
+                     _         -> throw({invalid, ID, Version})
+                 end,
+        Params = case property(Props, "params", []) of
+                     List when is_list(List)         -> List;
+                     Obj = {obj, _} when Version > 1 -> Obj;
+                     _                               -> throw({invalid, ID, Version})
+                 end,
+        {ok, #request{version = Version, method = Method, params = Params, id = ID}}
+    catch
+        throw:invalid            -> {error, std_error(invalid_request)};
+        throw:{invalid, RID, Vsn} -> {error, std_error(#request{id = RID, version = Vsn}, invalid_request)}
+    end;
 single_request(_Other) ->
-    throw(invalid).
+    {error, std_error(invalid_request)}.
 
 req_version(Props) ->
     case property(Props, "jsonrpc") of

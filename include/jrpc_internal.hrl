@@ -1,2 +1,2 @@
--record(request,  {id, method, params, version = 2}).
+-record(request,  {id, method, params, version = 2, service}).
 -record(response, {id, result, error,  version = 2}).

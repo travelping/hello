@@ -51,8 +51,14 @@ unregister(List) when is_list(List) and is_list(hd(List)) ->
 unregister(Name) when is_list(Name) ->
     ets:delete(?SERVICE_TABLE, Name).
 
+handle_request(ServiceName, BatchReq) when is_list(BatchReq) ->
+    {ok, Mod} = lookup(ServiceName),
+    pmap(fun (Req) -> handle_request_m(Mod, Req#request{service = ServiceName}) end, BatchReq);
 handle_request(ServiceName, Req) ->
     {ok, Mod} = lookup(ServiceName),
+    handle_request_m(Mod, Req#request{service = ServiceName}).
+
+handle_request_m(Mod, Req) ->
     case Req#request.id of
         undefined ->
             spawn(fun () -> do_handle_request(Mod, Req) end),
@@ -72,7 +78,7 @@ do_handle_request(Mod, Req = #request{method = MethodName, params = Params}) ->
     end.
 
 run_request(Req, Mod, Method, ValidatedParams) ->
-    case Mod:handle_request(Req, Method#rpc_method.name, ValidatedParams) of
+    try Mod:handle_request(Req, Method#rpc_method.name, ValidatedParams) of
         {ok, Result} ->
             tpjrpc_proto:response(Req, Result);
         {error, Message} ->
@@ -80,6 +86,12 @@ run_request(Req, Mod, Method, ValidatedParams) ->
         {error, Code, Message} ->
             tpjrpc_proto:error_response(Req, Code, Message);
         _ ->
+            tpjrpc_proto:std_error(Req, server_error)
+    catch
+         Type:Error ->
+            error_logger:error_msg("Error (~p) thrown by a JSON-RPC handler function while executing ~s/~s~n"
+                                   "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
+                                   [Type, Req#request.service, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
             tpjrpc_proto:std_error(Req, server_error)
     end.
 
@@ -172,3 +184,13 @@ zip(_1, [], Result) ->
     zip([], [], Result);
 zip([H1|R1], [H2|R2], {Result, TooMany}) ->
     zip(R1, R2, {[{H1, H2}|Result], TooMany}).
+
+pmap(F, List) ->
+    [wait_result(Worker) || Worker <- [spawn_worker(self(),F,E) || E <- List]].
+spawn_worker(Parent, F, E) ->
+    erlang:spawn_monitor(fun() -> Parent ! {self(), F(E)} end).
+wait_result({Pid,Ref}) ->
+    receive
+        {'DOWN', Ref, _, _, normal} -> receive {Pid,Result} -> Result end;
+        {'DOWN', Ref, _, _, Reason} -> exit(Reason)
+    end.

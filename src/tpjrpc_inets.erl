@@ -33,33 +33,17 @@ do(ModData = #mod{request_uri = Path, entity_body = Body, config_db = Config}) -
                ServiceName ->
                    case tp_json_rpc_service:lookup(ServiceName) of
                        {ok, _Module} ->
-                           case ModData#mod.method of
-                               "POST" ->
-                                   case tpjrpc_proto:request_json(Body) of
-                                       {ok, Request}  -> do_request(ServiceName, Request);
-                                       {error, Error} -> json_error(400, Error)
-                                   end;
-                                _M    -> json_error(400, bad_http_method)
+                           case lists:member(ModData#mod.method, ["PUT", "POST"]) of
+                               true ->
+                                   JSON_Resp = tp_json_rpc:request(ServiceName, Body),
+                                   json_response(200, JSON_Resp);
+                               false ->
+                                   json_error(400, bad_http_method)
                            end;
                         {error, _} -> json_error(404, service_not_found)
                    end
            end,
     {proceed, Resp}.
-
-do_request(ServiceName, Request = #request{method = Method, params = Params}) ->
-    try
-        Result = tp_json_rpc_service:handle_request(ServiceName, Request),
-        JSON   = tpjrpc_proto:response_json(Result),
-        json_response(200, JSON)
-    catch
-        What:How ->
-            error_logger:error_msg("JSON-RPC call of method ~s/~s has crashed.~n"
-                                   "Params: ~p~n"
-                                   "Error: ~p:~p~n"
-                                   "Trace:~n~p~n",
-                                   [ServiceName, Method, Params, What, How, erlang:get_stacktrace()]),
-            json_error(500, {What, How})
-    end.
 
 json_response(Code, Body) ->
     Len = integer_to_list(byte_size(Body)),

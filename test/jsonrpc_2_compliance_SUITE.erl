@@ -83,6 +83,31 @@ notification(_Config) ->
     {obj, Res} = request("spec_suite", "{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
     null = proplists:get_value("id", Res).
 
+batch_calls(_Config) ->
+    % success cases
+    [Resp1] = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"id\": 344, \"method\":\"subtract\", \"params\": [2,1]}]"),
+    1       = field(Resp1, "result"),
+    344     = field(Resp1, "id"),
+
+    Resp2   = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"id\": 300, \"method\":\"subtract\", \"params\": [2,1]}"
+                                    ",{\"jsonrpc\":\"2.0\", \"id\": 400, \"method\":\"subtract\", \"params\": [80,3]}]"),
+    2       = length(Resp2),
+
+    % with notifications
+    [Resp3] = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
+                                    ",{\"jsonrpc\":\"2.0\", \"id\": 400, \"method\":\"subtract\", \"params\": [80,3]}]"),
+    400     = field(Resp3, "id"),
+    77      = field(Resp3, "result"),
+
+    % only notifications
+    ""      = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
+                                    ",{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [80,3]}]"),
+
+    % rpc call with invalid batch (but not empty)
+    [Resp4] = request("spec_suite", "[1]"),
+    null    = field(Resp4, "id"),
+    -32600  = field(Resp4, "error.code").
+
 % ---------------------------------------------------------------------
 % -- service callbacks
 method_info() ->
@@ -99,7 +124,7 @@ handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
-all() -> [error_codes, param_structures, response_fields, notification].
+all() -> [error_codes, param_structures, response_fields, notification, batch_calls].
 
 init_per_suite(Config) ->
 	application:start(inets),
