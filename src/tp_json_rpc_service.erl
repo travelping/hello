@@ -166,7 +166,7 @@ has_type(number, Val) when is_number(Val) -> true;
 has_type(string, Val) when is_binary(Val) -> true;
 has_type(list, Val) when is_list(Val) -> true;
 has_type(array, Val) when is_list(Val) -> true;
-has_type(null, null) -> true;
+has_type(any, Val) -> true;
 has_type(_T, _Val) -> false.
 
 params_to_proplist(_PInfo, {obj, Props}) -> Props;
