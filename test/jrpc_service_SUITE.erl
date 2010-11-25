@@ -17,33 +17,35 @@
 % -- test cases
 -record(example_rec, {a = "default value of a from record definition", b, c}).
 
+-define(checkExit(Exn, Form), (try Form, not_ok catch exit:Exn -> ok end)).
+
 record_to_json_object(_Config) ->
     Rec1 = #example_rec{a = <<"a">>, b = 2, c = [<<"c">>, 3]},
-    {ok, {obj, Props1}} = ?record_to_json_obj(example_rec, Rec1),
+    {obj, Props1} = ?record_to_json_obj(example_rec, Rec1),
 
     <<"a">>      = proplists:get_value("a", Props1),
     2            = proplists:get_value("b", Props1),
     [<<"c">>, 3] = proplists:get_value("c", Props1),
 
     % undefined -> null
-    {ok, {obj, Props2}} = ?record_to_json_obj(example_rec, #example_rec{a = undefined}),
+    {obj, Props2} = ?record_to_json_obj(example_rec, #example_rec{a = undefined}),
     null = proplists:get_value("a", Props2),
 
     % atom -> binary
-    {ok, {obj, Props3}} = ?record_to_json_obj(example_rec, #example_rec{a = an_atom}),
+    {obj, Props3} = ?record_to_json_obj(example_rec, #example_rec{a = an_atom}),
     <<"an_atom">> = proplists:get_value("a", Props3),
 
     % complex values
     Rec4 = #example_rec{b = {1, 2, 3}}, % tuples cannot be represented in plain json
-    {error, json_incompatible} = ?record_to_json_obj(example_rec, Rec4),
+    ok = ?checkExit(json_incompatible, ?record_to_json_obj(example_rec, Rec4)),
 
     Rec5 = #example_rec{b = {obj, [{"foo", [<<"first">>, {1, 2}]}]}}, % incompatible value in nested object
-    {error, json_incompatible} = ?record_to_json_obj(example_rec, Rec5),
+    ok = ?checkExit(json_incompatible, ?record_to_json_obj(example_rec, Rec5)),
 
     % bad record
-    {error, bad_record} = ?record_to_json_obj(example_rec, {foobar, 1, 2, 3}),
-    {error, bad_record} = ?record_to_json_obj(example_rec, {test_rec, 1}),
-    {error, bad_record} = ?record_to_json_obj(example_rec, <<"not a record at all">>),
+    ok = ?checkExit(badarg, ?record_to_json_obj(example_rec, {foobar, 1, 2, 3})),
+    ok = ?checkExit(badarg, ?record_to_json_obj(example_rec, {test_rec, 1})),
+    ok = ?checkExit(badarg, ?record_to_json_obj(example_rec, <<"not a record at all">>)),
 
     ok.
 

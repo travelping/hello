@@ -19,17 +19,18 @@
 %%    macros in the `tp_json_rpc.hrl' include file. They are documented below.
 %%
 %%    <br/>
-%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> {ok, tpjrpc_json:jsonobj()} | {error, bad_record} | {error, json_incompatible}'</b>
+%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> tpjrpc_json:jsonobj() | none()'</b>
 %%
 %%    This macro converts a record to a JSON object. Some things to be aware of:
 %%    <ul>
-%%      <li>The values contained in the record should adhere to the {@link tpjrpc_json:json()} type specification.
-%%          Among other things, this means that the only tuple value allowed is `{obj, proplist()}'.<br/>
-%%          `{error, json_incompatible}' is returned for any value not matching this specification.
-%%      </li>
 %%      <li>`undefined' is converted to `null'</li>
+%%      <li>The values contained in the record should adhere to the {@link tpjrpc_json:json()} type specification.
+%%          Among other things, this means that all strings must be encoded as binaries and the only kind
+%%          of tuple allowed is `{obj, proplist()}'.<br/>
+%%          If any value cannot be encoded, the conversion will exit with reason `json_incompatible'.
+%%      </li>
 %%      <li>The value passed in as `Record' must match the record definition of `RecordName'.
-%%          If it doesn't, `{error, bad_record}' is returned.
+%%          If it doesn't, the conversion will exit with reason `badarg'.
 %%      </li>
 %%    </ul>
 %%
@@ -266,19 +267,15 @@ object_to_record(_RecName, _RecAttrs, _RecSize, _Defaults, _NonObject) ->
 
 %% @hidden
 record_to_object(RecName, RecAttrs, RecSize, Tuple) when is_tuple(Tuple) ->
-    try
-        (element(1, Tuple) /= RecName) andalso throw(bad_record),
-        (tuple_size(Tuple) /= RecSize) andalso throw(bad_record),
-        {_EndP, ObjProps} =
-            lists:foldl(fun (Attr, {Posn, Proplis}) ->
-                           {Posn + 1, [{atom_to_list(Attr), ensure_json_compat(element(Posn, Tuple))} | Proplis]}
-                        end, {2, []}, RecAttrs),
-        {ok, {obj, ObjProps}}
-    catch
-        throw:Err -> {error, Err}
-    end;
+    (element(1, Tuple) /= RecName) andalso exit(badarg),
+    (tuple_size(Tuple) /= RecSize) andalso exit(badarg),
+    {_EndP, ObjProps} =
+    lists:foldl(fun (Attr, {Posn, Proplis}) ->
+                    {Posn + 1, [{atom_to_list(Attr), ensure_json_compat(element(Posn, Tuple))} | Proplis]}
+                end, {2, []}, RecAttrs),
+    {obj, ObjProps};
 record_to_object(_RecNam, _RecAttr, _RecSiz, _Tuple) ->
-    {error, bad_record}.
+    exit(badarg).
 
 ensure_json_compat(undefined)           -> null;
 ensure_json_compat(null)                -> null;
@@ -292,4 +289,4 @@ ensure_json_compat(L) when is_list(L) ->
 ensure_json_compat({obj, Props}) when is_list(Props) ->
     lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props);
 ensure_json_compat(_Val) ->
-    throw(json_incompatible).
+    exit(json_incompatible).
