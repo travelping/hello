@@ -287,6 +287,6 @@ ensure_json_compat(N) when is_number(N) -> N;
 ensure_json_compat(L) when is_list(L) ->
     lists:map(fun ensure_json_compat/1, L);
 ensure_json_compat({obj, Props}) when is_list(Props) ->
-    lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props);
+    {obj, lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props)};
 ensure_json_compat(_Val) ->
     exit(json_incompatible).

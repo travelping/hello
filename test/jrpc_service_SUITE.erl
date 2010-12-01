@@ -27,20 +27,26 @@ record_to_json_object(_Config) ->
     2            = proplists:get_value("b", Props1),
     [<<"c">>, 3] = proplists:get_value("c", Props1),
 
+    % obj as value
+    Rec2 = #example_rec{a = {obj, [{"key", 3}]}},
+    {obj, Props2}  = ?record_to_json_obj(example_rec, Rec2),
+    {obj, Props2a} = proplists:get_value("a", Props2),
+    3              = proplists:get_value("key", Props2a),
+
     % undefined -> null
-    {obj, Props2} = ?record_to_json_obj(example_rec, #example_rec{a = undefined}),
-    null = proplists:get_value("a", Props2),
+    {obj, Props3} = ?record_to_json_obj(example_rec, #example_rec{a = undefined}),
+    null = proplists:get_value("a", Props3),
 
     % atom -> binary
-    {obj, Props3} = ?record_to_json_obj(example_rec, #example_rec{a = an_atom}),
-    <<"an_atom">> = proplists:get_value("a", Props3),
+    {obj, Props4} = ?record_to_json_obj(example_rec, #example_rec{a = an_atom}),
+    <<"an_atom">> = proplists:get_value("a", Props4),
 
     % complex values
-    Rec4 = #example_rec{b = {1, 2, 3}}, % tuples cannot be represented in plain json
-    ok = ?checkExit(json_incompatible, ?record_to_json_obj(example_rec, Rec4)),
-
-    Rec5 = #example_rec{b = {obj, [{"foo", [<<"first">>, {1, 2}]}]}}, % incompatible value in nested object
+    Rec5 = #example_rec{b = {1, 2, 3}}, % tuples cannot be represented in plain json
     ok = ?checkExit(json_incompatible, ?record_to_json_obj(example_rec, Rec5)),
+
+    Rec6 = #example_rec{b = {obj, [{"foo", [<<"first">>, {1, 2}]}]}}, % incompatible value in nested object
+    ok = ?checkExit(json_incompatible, ?record_to_json_obj(example_rec, Rec6)),
 
     % bad record
     ok = ?checkExit(badarg, ?record_to_json_obj(example_rec, {foobar, 1, 2, 3})),
