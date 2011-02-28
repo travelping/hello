@@ -9,7 +9,9 @@
 
 -module(tp_json_rpc).
 
--export([request/2, call/3]).
+-export([request/2, call/3, notification/3]).
+
+-include("jrpc_internal.hrl").
 
 request(Service, JSON) when is_list(JSON) ->
     Resp = case tpjrpc_proto:request_json(JSON) of
@@ -23,12 +25,21 @@ request(Service, JSON) when is_list(JSON) ->
            end,
     tpjrpc_proto:response_json(Resp).
 
+rpc_request(Host, #request{id = Id, method = Method, params = ArgList}) ->
+    Methodto    = into_bin(Method),
+    IDField     = case Id of
+                      undefined -> [];
+                      _         -> [{"id", Id}]
+                  end,
+    RequestJSON = tpjrpc_json:encode({obj, IDField ++ [{"jsonrpc", <<"2.0">>}, {"method", Methodto}, {"params", ArgList}]}),
+    HTTPRequest = {Host, [], "application/json", RequestJSON},
+    httpc:request(post, HTTPRequest, [], []).
+
 call(Host, Method, ArgList) when is_list(ArgList) ->
-    Objectencode = tpjrpc_json:encode({obj, [{"method", Method}, {"params", ArgList}, {"id", 1}]}),
-    Objectrequest = {Host, [], "application/json", Objectencode},
-    {ok, {_Line, _Header, Body}} = httpc:request(post, Objectrequest, [], []),
+    Request = #request{id = 1, method = Method, params = ArgList},
+    {ok, {_Line, _Header, Body}} = rpc_request(Host, Request),
     {ok, {obj, Props}, _Rest} = tpjrpc_json:decode(Body),
-    case proplists:get_value("error", Props) of
+    case proplists:get_value("error", Props, null) of
         null ->
             Result = proplists:get_value("result", Props),
             {ok, Result};
@@ -41,7 +52,12 @@ call(Host, Method, ArgList) when is_list(ArgList) ->
                 Code when (Code >= -32099) and (Code =< -32000) ->
                     {error, server_error};
                 Code -> {error, Code}
-                 
             end
     end.
 
+notification(Host, Method, ArgList) ->
+    rpc_request(Host, #request{method=Method, params=ArgList}),
+    ok.
+
+into_bin(Bin) when is_list(Bin) -> list_to_binary(Bin);
+into_bin(Bin)                   -> Bin.
