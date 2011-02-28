@@ -19,21 +19,26 @@
 call(_Config) ->
     {ok,<<"abcdef">>} = tp_json_rpc:call(?HOST, "append", [<<"abc">>,<<"def">>]).
 
-call_invalid_method(_Config) ->
-    {error, method_not_found} = tp_json_rpc:call(?HOST, "nonamemethod", [<<"test">>]).
+call_errors(_Config) ->
+    {error, method_not_found} = tp_json_rpc:call(?HOST, "nonamemethod", [<<"test">>]),
+    {error, invalid_params} = tp_json_rpc:call(?HOST, "append", [1]),
+    {error, 30000} = tp_json_rpc:call(?HOST, "return_error", [30000]),
+    {error, syntax_error} = tp_json_rpc:call("http://localhost:5671/", "foo", []).
 
-call_invalid_params(_Config) ->
-    {error, invalid_params} = tp_json_rpc:call(?HOST, "append", [1]).
-
-call_error_code(_Config) ->
-    {error, 30000} = tp_json_rpc:call(?HOST, "return_error", [30000]).
+call_http_error(_Config) ->
+    {error, {http, _Reason}} = tp_json_rpc:call("http://localhost:44557", "foo", []).
 
 notification(_Config) ->
     ok = tp_json_rpc:notification(?HOST, "echo", [<<"test">>]).
 
+notification_http_error(_Config) ->
+    {error, {http, _Reason}} = tp_json_rpc:notification("http://localhost:44557", "foo", []).
+
 % ---------------------------------------------------------------------
 % -- common_test callbacks
-all() -> [notification, call, call_invalid_method, call_invalid_params, call_error_code].
+all() ->
+    [call, call_errors, call_http_error,
+     notification, notification_http_error].
 
 init_per_suite(Config) ->
 	application:start(inets),

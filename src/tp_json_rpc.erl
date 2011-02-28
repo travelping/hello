@@ -33,31 +33,41 @@ rpc_request(Host, #request{id = Id, method = Method, params = ArgList}) ->
                   end,
     RequestJSON = tpjrpc_json:encode({obj, IDField ++ [{"jsonrpc", <<"2.0">>}, {"method", Methodto}, {"params", ArgList}]}),
     HTTPRequest = {Host, [], "application/json", RequestJSON},
-    httpc:request(post, HTTPRequest, [], []).
+    case httpc:request(post, HTTPRequest, [], []) of
+       {ok, {_Line, _Header, Body}} -> {ok, Body};
+       {error, Reason}              -> {error, {http, Reason}}
+    end.
 
 call(Host, Method, ArgList) when is_list(ArgList) ->
     Request = #request{id = 1, method = Method, params = ArgList},
-    {ok, {_Line, _Header, Body}} = rpc_request(Host, Request),
-    {ok, {obj, Props}, _Rest} = tpjrpc_json:decode(Body),
-    case proplists:get_value("error", Props, null) of
-        null ->
-            Result = proplists:get_value("result", Props),
-            {ok, Result};
-        {obj, ErrorObject} ->
-            case proplists:get_value("code", ErrorObject) of
-                -32600 -> {error, invalid_request};
-                -32601 -> {error, method_not_found};
-                -32602 -> {error, invalid_params};
-                -32603 -> {error, internal_error};
-                Code when (Code >= -32099) and (Code =< -32000) ->
-                    {error, server_error};
-                Code -> {error, Code}
+    case rpc_request(Host, Request) of
+        {error, Error} -> {error, Error};
+        {ok, Body} ->
+            case tpjrpc_json:decode(Body) of
+               {error, syntax_error} -> {error, syntax_error};
+               {ok, {obj, Props}, _Rest} ->
+                   case proplists:get_value("error", Props, null) of
+                       null ->
+                           Result = proplists:get_value("result", Props),
+                           {ok, Result};
+                       {obj, ErrorObject} ->
+                           case proplists:get_value("code", ErrorObject) of
+                               -32600 -> {error, invalid_request};
+                               -32601 -> {error, method_not_found};
+                               -32602 -> {error, invalid_params};
+                               -32603 -> {error, internal_error};
+                               Code when (Code >= -32099) and (Code =< -32000) -> {error, server_error};
+                               Code -> {error, Code}
+                           end
+                   end
             end
     end.
 
 notification(Host, Method, ArgList) ->
-    rpc_request(Host, #request{method=Method, params=ArgList}),
-    ok.
+    case rpc_request(Host, #request{method=Method, params=ArgList}) of
+        {error, Reason} -> {error, Reason};
+        {ok, _Body}     -> ok
+    end.
 
 into_bin(Bin) when is_list(Bin) -> list_to_binary(Bin);
 into_bin(Bin)                   -> Bin.
