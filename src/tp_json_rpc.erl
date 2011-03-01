@@ -25,17 +25,23 @@ request(Service, JSON) when is_list(JSON) ->
            end,
     tpjrpc_proto:response_json(Resp).
 
-rpc_request(Host, #request{id = Id, method = Method, params = ArgList}) ->
+rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
     Methodto    = into_bin(Method),
     IDField     = case Id of
                       undefined -> [];
                       _         -> [{"id", Id}]
                   end,
-    RequestJSON = tpjrpc_json:encode({obj, IDField ++ [{"jsonrpc", <<"2.0">>}, {"method", Methodto}, {"params", ArgList}]}),
-    HTTPRequest = {Host, [], "application/json", RequestJSON},
-    case httpc:request(post, HTTPRequest, [], []) of
-       {ok, {_Line, _Header, Body}} -> {ok, Body};
-       {error, Reason}              -> {error, {http, Reason}}
+    RequestJSON = tpjrpc_json:encode({obj, IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
+    {ok, Hostname, _Path} = split_url(HostURL),
+    Headers     = [{"Host", Hostname}, {"Connection", "keep-alive"},
+                   {"Content-Length", integer_to_list(iolist_size(RequestJSON))},
+                   {"Content-Type", "application/json"},
+                   {"Accept", "application/json"},
+                   {"User-Agent", "tp_json_rpc"}],
+    HTTPRequest = {HostURL, Headers, "application/json", RequestJSON},
+    case httpc:request(post, HTTPRequest, [], [{headers_as_is, true}, {full_result, false}]) of
+       {ok, {_Code, Body}} -> {ok, Body};
+       {error, Reason}     -> {error, {http, Reason}}
     end.
 
 call(Host, Method, ArgList) when is_list(ArgList) ->
@@ -71,3 +77,9 @@ notification(Host, Method, ArgList) ->
 
 into_bin(Bin) when is_list(Bin) -> list_to_binary(Bin);
 into_bin(Bin)                   -> Bin.
+
+split_url(URL) ->
+    case re:run(URL, "^http://([^/]+)(.*)", [{capture, all_but_first, list}]) of
+        {match, [Host, Path]} -> {ok, Host, Path};
+        nomatch               -> {error, not_url}
+    end.
