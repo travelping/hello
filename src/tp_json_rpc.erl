@@ -9,7 +9,7 @@
 
 -module(tp_json_rpc).
 
--export([request/2, call/3, notification/3]).
+-export([request/2, call/3, notification/3, call_np/3]).
 
 -include("jrpc_internal.hrl").
 
@@ -44,7 +44,7 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
        {error, Reason}     -> {error, {http, Reason}}
     end.
 
-call(Host, Method, ArgList) when is_list(ArgList) ->
+call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
     Request = #request{id = 1, method = Method, params = ArgList},
     case rpc_request(Host, Request) of
         {error, Error} -> {error, Error};
@@ -74,6 +74,10 @@ notification(Host, Method, ArgList) ->
         {error, Reason} -> {error, Reason};
         {ok, _Body}     -> ok
     end.
+
+call_np(Host, Method, List) when is_list(List) ->
+    ArgList={obj,List},
+    call(Host, Method, ArgList).
 
 into_bin(Bin) when is_list(Bin) -> list_to_binary(Bin);
 into_bin(Bin)                   -> Bin.

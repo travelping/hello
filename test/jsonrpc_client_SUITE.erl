@@ -34,11 +34,21 @@ notification(_Config) ->
 notification_http_error(_Config) ->
     {error, {http, _Reason}} = tp_json_rpc:notification("http://localhost:44557", "foo", []).
 
+call_np(_Config) ->
+    {ok, <<"cdab">>} = tp_json_rpc:call_np(?HOST, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+
+call_np_method_not_found(_Config) ->
+    {error, method_not_found} = tp_json_rpc:call_np(?HOST, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+
+call_np_http_error(_Config) ->
+    {error, {http, _Reason}} = tp_json_rpc:call_np("http://localhost:44557", "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
     [call, call_errors, call_http_error,
-     notification, notification_http_error].
+     notification, notification_http_error,
+     call_np, call_np_method_not_found, call_np_http_error].
 
 init_per_suite(Config) ->
 	application:start(inets),
