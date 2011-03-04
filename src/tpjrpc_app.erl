@@ -14,7 +14,20 @@
 
 start(_Type, _StartArgs) ->
     tp_json_rpc_service:init(),
-    {ok, Super} = tpjrpc_sup:start_link(),
-    {ok, Super, no_state}.
 
-stop(_ST) -> ok.
+    RequestLog = case application:get_env(request_log_enabled) of
+                     {ok, true} ->
+                        {ok, RequestLogFile} = application:get_env(request_log_file),
+                        {ok, Log} = tpjrpc_logger:open(RequestLogFile),
+                        Log;
+                     {ok, false} ->
+                        undefined
+                 end,
+    {ok, Super} = tpjrpc_sup:start_link(),
+    {ok, Super, RequestLog}.
+
+stop(undefined) ->
+    ok;
+stop(Log) ->
+    tpjrpc_logger:close(Log),
+    ok.

@@ -7,13 +7,20 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
+
 -module(tp_json_rpc).
 
--export([request/2, call/3, notification/3, call_np/3]).
+-export([start/0, handle_request/2, call/3, notification/3, call_np/3]).
 
 -include("jrpc_internal.hrl").
 
-request(Service, JSON) when is_list(JSON) ->
+-define(TIME_OUT, {timeout, 15000}).
+
+start() ->
+    application:start(inets),
+    application:start(tp_json_rpc).
+
+handle_request(Service, JSON) when is_list(JSON) ->
     Resp = case tpjrpc_proto:request_json(JSON) of
                {ok, Request}  ->
                    tp_json_rpc_service:handle_request(Service, Request);
@@ -23,7 +30,9 @@ request(Service, JSON) when is_list(JSON) ->
                {error, Error} ->
                    Error
            end,
-    tpjrpc_proto:response_json(Resp).
+    ResponseJSON = tpjrpc_proto:response_json(Resp),
+    tpjrpc_logger:log(JSON,ResponseJSON),
+    ResponseJSON.
 
 rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
     Methodto    = into_bin(Method),
@@ -39,7 +48,7 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
                    {"Accept", "application/json"},
                    {"User-Agent", "tp_json_rpc"}],
     HTTPRequest = {HostURL, Headers, "application/json", RequestJSON},
-    case httpc:request(post, HTTPRequest, [], [{headers_as_is, true}, {full_result, false}]) of
+    case httpc:request(post, HTTPRequest, [?TIME_OUT], [{headers_as_is, true}, {full_result, false}]) of
        {ok, {_Code, Body}} -> {ok, Body};
        {error, Reason}     -> {error, {http, Reason}}
     end.

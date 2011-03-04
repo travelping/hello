@@ -10,8 +10,11 @@
              tp_json_rpc_service,
              tpjrpc_httpd,
              tpjrpc_inets,
+             tpjrpc_logger,
              tpjrpc_example_service]},
   {applications, [kernel, stdlib, inets]},
-  {registered, [tp_json_rpc_sup]},
-  {mod, {tpjrpc_app, []}}
+  {registered, [tp_json_rpc_sup, tpjrpc_request_log]},
+  {mod, {tpjrpc_app, []}},
+  {env, [{request_log_enabled, true},
+         {request_log_file, "json_requests.log"}]}
 ]}.
