@@ -7,6 +7,8 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
+% @private
+
 -module(tpjrpc_sup).
 -behaviour(supervisor).
 

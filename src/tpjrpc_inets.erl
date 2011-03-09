@@ -7,6 +7,7 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
+% @private
 -module(tpjrpc_inets).
 -export([do/1, load/2, store/2, remove/1]).
 

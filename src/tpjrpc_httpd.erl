@@ -7,6 +7,7 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
+% @private
 -module(tpjrpc_httpd).
 -export([start_link/0]).
 

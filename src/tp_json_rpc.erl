@@ -7,6 +7,9 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
+%% @doc
+%%    This module contains a JSON-RPC client.
+%% @end
 
 -module(tp_json_rpc).
 
@@ -16,6 +19,12 @@
 
 -define(TIME_OUT, {timeout, 15000}).
 
+%% @type binary_or_string() = binary() | string()
+%% @type rpc_error() = {error, {http, term()}} | {error, syntax_error}
+%%                   | {error, invalid_request} | {error, method_not_found} | {error, invalid_params}
+%%                   | {error, internal_error} | {error, internal_error} | {error, integer()}
+
+%% @doc Starts the application. This is useful for debugging purposes.
 start() ->
     application:start(inets),
     application:start(tp_json_rpc).
@@ -53,6 +62,8 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
        {error, Reason}     -> {error, {http, Reason}}
     end.
 
+%% @spec (Host::string(), Method::binary_or_string(), Arguments::list()) -> {ok, tpjrpc_json:json()} | {error, rpc_error()}
+%% @doc Function performs a JSON-RPC method call using HTTP.
 call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
     Request = #request{id = 1, method = Method, params = ArgList},
     case rpc_request(Host, Request) of
@@ -78,12 +89,16 @@ call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
             end
     end.
 
+%% @spec (Host::string(), Method::binary_or_string(), Arguments::list()) -> ok | {error, rpc_error()}
+%% @doc Special form of a JSON-RPC method call that returns no result.
 notification(Host, Method, ArgList) ->
     case rpc_request(Host, #request{method=Method, params=ArgList}) of
         {error, Reason} -> {error, Reason};
         {ok, _Body}     -> ok
     end.
 
+%% @spec (Host::string(), Method::binary_or_string(), Arguments::[{string(), tpjrpc_json:json()}]) -> {ok, tpjrpc_json:json()} | {error, rpc_error()}
+%% @doc Performs a JSON-RPC method call with named parameters (property list).
 call_np(Host, Method, List) when is_list(List) ->
     ArgList={obj,List},
     call(Host, Method, ArgList).

@@ -2,3 +2,4 @@
 test-log/
 doc/*
 !doc/overview.edoc
+*~

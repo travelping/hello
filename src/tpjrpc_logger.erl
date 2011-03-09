@@ -7,6 +7,8 @@
 %
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
+% @private
+
 -module(tpjrpc_logger).
 -export([open/1, close/1, log/2]).
 
