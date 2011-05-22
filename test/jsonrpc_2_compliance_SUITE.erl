@@ -77,7 +77,7 @@ response_fields(_Config) ->
 
 notification(_Config) ->
     % leaving id off is treated as notification
-    "" = request("spec_suite", "{\"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
+    {no_json, <<"">>} = request("spec_suite", "{\"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
 
     % although it's use is discouraged, null is a valid id (in jsonrpc 2.0)
     {obj, Res} = request("spec_suite", "{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
@@ -100,8 +100,8 @@ batch_calls(_Config) ->
     77      = field(Resp3, "result"),
 
     % only notifications
-    ""      = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
-                                    ",{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [80,3]}]"),
+    {no_json, <<"">>} = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
+                                              ",{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [80,3]}]"),
 
     % rpc call with invalid batch (but not empty)
     [Resp4] = request("spec_suite", "[1]"),
@@ -143,14 +143,12 @@ request(Service, {Method, Params}) ->
     Req = {obj, [{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
     request(Service, tpjrpc_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
-    Url =  "http://localhost:5671/rpc/" ++ Service,
-    io:format("REQ: ~s~n~s~n", [Url, Request]),
-	{ok, {_Status, _Headers, Body}} =
-       httpc:request(post, {Url, [], "application/json", Request}, [{timeout, 2000}], []),
-    io:format("RESP:~n~s~n--------------------------------~n", [Body]),
-    case Body of
-        "" -> "";
-        _  -> {ok, Obj, _Rest} = tpjrpc_json:decode(Body), Obj
+    request(Service, list_to_binary(Request));
+request(Service, Request) ->
+    RespJSON = tp_json_rpc:handle_request(Service, Request),
+    case tpjrpc_json:decode(RespJSON) of
+        {ok, RespObj, _Rest}  -> RespObj;
+        {error, syntax_error} -> {no_json, RespJSON}
     end.
 
 field(Object, Field) ->

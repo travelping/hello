@@ -30,16 +30,16 @@ open(File) ->
 close(Log) ->
     disk_log:close(Log).
 
-log(Request, Response) when is_list(Request) ->
+log(Request, Response) ->
     Date = list_to_binary(httpd_util:rfc1123_date()),
-    RequestNew = split_bnr(list_to_binary(Request), <<"> ">>),
+    RequestNew  = split_bnr(Request, <<"> ">>),
     ResponseNew = split_bnr(Response, <<"< ">>),
     Msg  = <<Date/binary, "\n", RequestNew/binary,
              "\n", ResponseNew/binary, "\n-----------------------------\n">>,
     disk_log:blog(?LOG_NAME, Msg).
 
-split_bnr(Body, Line) when is_binary(Body)  ->  splitacc(Body, Line, Line).
+split_bnr(Body, Line) when is_binary(Body) -> splitacc(Body, Line, Line).
 
-splitacc(<<>>    , _Line           , Acc)  ->  Acc;
-splitacc(<<"\n"  , T/binary>>, Line, Acc)  ->  splitacc(T, Line, <<Acc/binary, "\n", Line/binary>> );
-splitacc(<<H/utf8, T/binary>>, Line, Acc)  ->  splitacc(T, Line, <<Acc/binary, H/utf8>> ).
+splitacc(<<>>    , _Line           , Acc)  -> Acc;
+splitacc(<<"\n"  , T/binary>>, Line, Acc)  -> splitacc(T, Line, <<Acc/binary, "\n", Line/binary>> );
+splitacc(<<H/utf8, T/binary>>, Line, Acc)  -> splitacc(T, Line, <<Acc/binary, H/utf8>> ).

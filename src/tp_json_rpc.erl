@@ -36,7 +36,7 @@ start() ->
     application:start(inets),
     application:start(tp_json_rpc).
 
-handle_request(Service, JSON) when is_list(JSON) ->
+handle_request(Service, JSON) ->
     Resp = case tpjrpc_proto:request_json(JSON) of
                {ok, Request}  ->
                    tp_json_rpc_service:handle_request(Service, Request);

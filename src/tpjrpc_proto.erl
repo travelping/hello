@@ -119,7 +119,7 @@ response_json(R = #response{version = RespVersion, error = RespError}) ->
                      _ -> tl(Result)  % omit result or error for v2.0
                  end,
     RespObj = {obj, Version ++ [{id, maybe_null(R#response.id)} | ResOrError]},
-    list_to_binary(tpjrpc_json:encode(RespObj)).
+    tpjrpc_json:encode(RespObj).
 
 %% ----------------------------------------------------------------------
 %% -- Requests

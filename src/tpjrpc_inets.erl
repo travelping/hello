@@ -47,7 +47,7 @@ do(ModData = #mod{request_uri = Path, entity_body = Body, config_db = Config}) -
                        {ok, _Module} ->
                            case lists:member(ModData#mod.method, ["PUT", "POST"]) of
                                true ->
-                                   JSON_Resp = tp_json_rpc:handle_request(ServiceName, Body),
+                                   JSON_Resp = tp_json_rpc:handle_request(ServiceName, list_to_binary(Body)),
                                    json_response(200, JSON_Resp);
                                false ->
                                    json_error(400, bad_http_method)

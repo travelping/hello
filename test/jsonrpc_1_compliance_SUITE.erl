@@ -39,13 +39,13 @@ response_fields(_Config) ->
     {obj, _}  = field(Req2, "error").
 
 notification(_Config) ->
-    % leaving id off is treated as an invalid request 
+    % leaving id off is treated as an invalid request
     % since we handle errors jsonrpc-2.0 style, this can be checked
     Res    = request("spec_suite_1", "{\"method\": \"subtract\", \"params\": [2, 1]}"),
     -32600 = field(Res, "error.code"),
 
     % null giving null for the id indicates a notification
-    "" = request("spec_suite_1", "{\"id\": null, \"method\": \"subtract\", \"params\": [2, 1]}").
+    {no_json, <<"">>} = request("spec_suite_1", "{\"id\": null, \"method\": \"subtract\", \"params\": [2, 1]}").
 
 % ---------------------------------------------------------------------
 % -- service callbacks
@@ -82,14 +82,12 @@ request(Service, {Method, Params}) ->
     Req = {obj, [{id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
     request(Service, tpjrpc_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
-    Url =  "http://localhost:5671/rpc/" ++ Service,
-    io:format("REQ: ~s~n~s~n", [Url, Request]),
-	{ok, {_Status, _Headers, Body}} =
-       httpc:request(post, {Url, [], "application/json", Request}, [{timeout, 2000}], []),
-    io:format("RESP:~n~s~n--------------------------------~n", [Body]),
-    case Body of
-        "" -> "";
-        _  -> {ok, Obj, _Rest} = tpjrpc_json:decode(Body), Obj
+    request(Service, list_to_binary(Request));
+request(Service, Request) ->
+    RespJSON = tp_json_rpc:handle_request(Service, Request),
+    case tpjrpc_json:decode(RespJSON) of
+        {ok, RespObj, _Rest}  -> RespObj;
+        {error, syntax_error} -> {no_json, RespJSON}
     end.
 
 field(Object, Field) ->
