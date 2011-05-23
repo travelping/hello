@@ -45,7 +45,7 @@ error_response(Req, Code, Msg, Data) ->
              end,
     #response{version = Req#request.version,
               id      = Req#request.id,
-              error   = {obj, [{code, Code}, {message, MsgBin} | DataT]}}.
+              error   = {[{code, Code}, {message, MsgBin} | DataT]}}.
 
 %% @type standard_error() = parse_error | invalid_request | method_not_found
 %%                        | invalid_params | {invalid_params, string()}
@@ -118,7 +118,7 @@ response_json(R = #response{version = RespVersion, error = RespError}) ->
                      1 -> Result;     % keep both result and error for v1.0 responses
                      _ -> tl(Result)  % omit result or error for v2.0
                  end,
-    RespObj = {obj, Version ++ [{id, maybe_null(R#response.id)} | ResOrError]},
+    RespObj = {Version ++ [{id, maybe_null(R#response.id)} | ResOrError]},
     tpjrpc_json:encode(RespObj).
 
 %% ----------------------------------------------------------------------
@@ -165,7 +165,7 @@ request(Obj) ->
             single_request(Obj)
     end.
 
-single_request({obj, Props}) ->
+single_request({Props}) ->
     try
         Version = req_version(Props),
         ID      = case Version of
@@ -182,13 +182,13 @@ single_request({obj, Props}) ->
                      _         -> throw({invalid, ID, Version})
                  end,
         Params = case property(Props, "params", []) of
-                     List when is_list(List)         -> List;
-                     Obj = {obj, _} when Version > 1 -> Obj;
-                     _                               -> throw({invalid, ID, Version})
+                     List when is_list(List)    -> List;
+                     Obj = {_} when Version > 1 -> Obj;
+                     _                          -> throw({invalid, ID, Version})
                  end,
         {ok, #request{version = Version, method = Method, params = Params, id = ID}}
     catch
-        throw:invalid            -> {error, std_error(invalid_request)};
+        throw:invalid             -> {error, std_error(invalid_request)};
         throw:{invalid, RID, Vsn} -> {error, std_error(#request{id = RID, version = Vsn}, invalid_request)}
     end;
 single_request(_Other) ->

@@ -56,7 +56,7 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
                       undefined -> [];
                       _         -> [{"id", Id}]
                   end,
-    RequestJSON = tpjrpc_json:encode({obj, IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
+    RequestJSON = tpjrpc_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
     {ok, Hostname, _Path} = split_url(HostURL),
     Headers     = [{"Host", Hostname}, {"Connection", "keep-alive"},
                    {"Content-Length", integer_to_list(iolist_size(RequestJSON))},
@@ -78,12 +78,12 @@ call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
         {ok, Body} ->
             case tpjrpc_json:decode(Body) of
                {error, syntax_error} -> {error, syntax_error};
-               {ok, {obj, Props}, _Rest} ->
+               {ok, {Props}, _Rest} ->
                    case proplists:get_value("error", Props, null) of
                        null ->
                            Result = proplists:get_value("result", Props),
                            {ok, Result};
-                       {obj, ErrorObject} ->
+                       {ErrorObject} ->
                            case proplists:get_value("code", ErrorObject) of
                                -32600 -> {error, invalid_request};
                                -32601 -> {error, method_not_found};
@@ -107,8 +107,7 @@ notification(Host, Method, ArgList) ->
 %% @spec (Host::string(), Method::binary_or_string(), Arguments::[{string(), tpjrpc_json:json()}]) -> {ok, tpjrpc_json:json()} | {error, rpc_error()}
 %% @doc Performs a JSON-RPC method call with named parameters (property list).
 call_np(Host, Method, List) when is_list(List) ->
-    ArgList={obj,List},
-    call(Host, Method, ArgList).
+    call(Host, Method, {List}).
 
 into_bin(Bin) when is_list(Bin) -> list_to_binary(Bin);
 into_bin(Bin)                   -> Bin.

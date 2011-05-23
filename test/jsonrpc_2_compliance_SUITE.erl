@@ -47,30 +47,30 @@ param_structures(_Config) ->
     1    = field(Req1, "result"),
 
     % by-name
-    Req2 = request("spec_suite", {"subtract", {obj, [{"subtrahend", 2}, {"minuend", 1}]}}),
+    Req2 = request("spec_suite", {"subtract", {[{"subtrahend", 2}, {"minuend", 1}]}}),
     1    = field(Req2, "result"),
 
     % by-name reversed order
-    Req3 = request("spec_suite", {"subtract", {obj, [{"minuend", 1}, {"subtrahend", 2}]}}),
+    Req3 = request("spec_suite", {"subtract", {[{"minuend", 1}, {"subtrahend", 2}]}}),
     1    = field(Req3, "result").
 
 response_fields(_Config) ->
     % success case
-    Req1 = {obj, Props1} = request("spec_suite", {"subtract", [2,1]}),
+    Req1 = {Props1} = request("spec_suite", {"subtract", [2,1]}),
     1         = field(Req1, "result"),
     <<"2.0">> = field(Req1, "jsonrpc"),
     ?REQ_ID   = field(Req1, "id"),
     false     = proplists:is_defined("error", Props1), % error may not be included
 
     % error case
-    Req2 = {obj, Props2} = request("spec_suite", {"subtract", [1]}),
+    Req2 = {Props2} = request("spec_suite", {"subtract", [1]}),
     false     = proplists:is_defined("result", Props2), % result may not be included
     <<"2.0">> = field(Req2, "jsonrpc"),
     ?REQ_ID   = field(Req2, "id"),
     -32602    = field(Req2, "error.code"),
 
     % error case where request isn't read
-    Req3 = {obj, Props3} = request("spec_suite", "{aa"),
+    Req3 = {Props3} = request("spec_suite", "{aa"),
     <<"2.0">> = field(Req3, "jsonrpc"),
     null      = proplists:get_value("id", Props3),
     -32700    = field(Req3, "error.code").
@@ -80,7 +80,7 @@ notification(_Config) ->
     {no_json, <<"">>} = request("spec_suite", "{\"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
 
     % although it's use is discouraged, null is a valid id (in jsonrpc 2.0)
-    {obj, Res} = request("spec_suite", "{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
+    {Res} = request("spec_suite", "{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
     null = proplists:get_value("id", Res).
 
 batch_calls(_Config) ->
@@ -140,7 +140,7 @@ end_per_suite(_Config) ->
 % ---------------------------------------------------------------------
 % -- utilities
 request(Service, {Method, Params}) ->
-    Req = {obj, [{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
+    Req = {[{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
     request(Service, tpjrpc_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
     request(Service, list_to_binary(Request));
@@ -153,6 +153,6 @@ request(Service, Request) ->
 
 field(Object, Field) ->
 	Flist = re:split(Field, "\\.", [{return, list}]),
-	lists:foldl(fun (Name, {obj, CurProps}) ->
+	lists:foldl(fun (Name, {CurProps}) ->
 		    	    proplists:get_value(Name, CurProps)
 			    end, Object, Flist).

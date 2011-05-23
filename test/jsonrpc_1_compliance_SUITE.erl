@@ -36,7 +36,7 @@ response_fields(_Config) ->
     Req2 = request("spec_suite_1", {"subtract", []}),
     null      = field(Req2, "result"),
     ?REQ_ID   = field(Req2, "id"),
-    {obj, _}  = field(Req2, "error").
+    {_}  = field(Req2, "error").
 
 notification(_Config) ->
     % leaving id off is treated as an invalid request
@@ -79,7 +79,7 @@ end_per_suite(_Config) ->
 % ---------------------------------------------------------------------
 % -- utilities
 request(Service, {Method, Params}) ->
-    Req = {obj, [{id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
+    Req = {[{id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
     request(Service, tpjrpc_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
     request(Service, list_to_binary(Request));
@@ -92,6 +92,6 @@ request(Service, Request) ->
 
 field(Object, Field) ->
 	Flist = re:split(Field, "\\.", [{return, list}]),
-	lists:foldl(fun (Name, {obj, CurProps}) ->
+	lists:foldl(fun (Name, {CurProps}) ->
                     proplists:get_value(Name, CurProps)
 			    end, Object, Flist).

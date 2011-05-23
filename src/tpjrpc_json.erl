@@ -29,6 +29,7 @@ encode(Num) when is_float(Num)   -> list_to_binary(float_to_list(Num));
 encode(true)                     -> <<"true">>;
 encode(false)                    -> <<"false">>;
 encode(null)                     -> <<"null">>;
+encode({Props})                  -> enc_obj(Props, <<"{">>);
 encode({obj, Props})             -> enc_obj(Props, <<"{">>);
 encode(Lis) when is_list(Lis)    -> enc_array(Lis, <<"[">>);
 encode(AnythingElse)             -> enc_string(AnythingElse).
@@ -165,14 +166,14 @@ dec_array(<<Bin/binary>>, Res) ->
 dec_object(<<Bin/binary>>, Res) ->
     case skipspace(Bin) of
         <<"}", Rest/binary>> ->
-            {{obj, []}, Rest};
+            {{[]}, Rest};
         <<$", R1/binary>> ->
             {Key, R2} = dec_string(R1, []),
             <<":", R3/binary>> = skipspace(R2),
             {Value, R4} = decode2(R3),
             case skipspace(R4) of
                 <<",", R5/binary>> -> dec_object(R5, [{Key, Value} | Res]);
-                <<"}", R5/binary>> -> {{obj, [{Key, Value} | Res]}, R5};
+                <<"}", R5/binary>> -> {{[{Key, Value} | Res]}, R5};
                 _                  -> error(syntax_error)
             end;
         _ ->

@@ -37,7 +37,7 @@
 %%      <li>`undefined' is converted to `null'</li>
 %%      <li>The values contained in the record should adhere to the {@link tpjrpc_json:json()} type specification.
 %%          Among other things, this means that all strings must be encoded as binaries and the only kind
-%%          of tuple allowed is `{obj, proplist()}'.<br/>
+%%          of tuple allowed is `{proplist()}'.<br/>
 %%          If any value cannot be encoded, the conversion will exit with reason `json_incompatible'.
 %%      </li>
 %%      <li>The value passed in as `Record' must match the record definition of `RecordName'.
@@ -218,7 +218,7 @@ atom_from_enum(Param, Enum, Input) ->
     end.
 
 has_type(boolean, Val) when (Val == true) or (Val == false) -> true;
-has_type(object, {obj, _}) -> true;
+has_type(object, {_}) -> true;
 has_type(integer, Val) when is_integer(Val) -> true;
 has_type(float, Val) when is_float(Val) -> true;
 has_type(number, Val) when is_number(Val) -> true;
@@ -228,7 +228,7 @@ has_type(array, Val) when is_list(Val) -> true;
 has_type(any, _Val) -> true;
 has_type(_T, _Val) -> false.
 
-params_to_proplist(_PInfo, {obj, Props}) -> Props;
+params_to_proplist(_PInfo, {Props}) -> Props;
 params_to_proplist(PInfo,  Params) when is_list(Params) ->
     Names = lists:map(fun (P) -> atom_to_list(P#rpc_param.name) end, PInfo),
     {Proplist, TooMany} = zip(Names, Params, {[], false}),
@@ -255,7 +255,7 @@ wait_result({Pid,Ref}) ->
     end.
 
 %% @hidden
-object_to_record(RecName, RecAttrs, RecSize, Templ, {obj, Props}) when is_list(Props) ->
+object_to_record(RecName, RecAttrs, RecSize, Templ, {Props}) when is_list(Props) ->
     try
         (not is_tuple(Templ))          andalso throw(bad_defaults),
         (element(1, Templ) /= RecName) andalso throw(bad_defaults),
@@ -284,7 +284,7 @@ record_to_object(RecName, RecAttrs, RecSize, Tuple) when is_tuple(Tuple) ->
     lists:foldl(fun (Attr, {Posn, Proplis}) ->
                     {Posn + 1, [{atom_to_list(Attr), ensure_json_compat(element(Posn, Tuple))} | Proplis]}
                 end, {2, []}, RecAttrs),
-    {obj, ObjProps};
+    {ObjProps};
 record_to_object(_RecNam, _RecAttr, _RecSiz, _Tuple) ->
     exit(badarg).
 
@@ -297,7 +297,7 @@ ensure_json_compat(B) when is_binary(B) -> B;
 ensure_json_compat(N) when is_number(N) -> N;
 ensure_json_compat(L) when is_list(L) ->
     lists:map(fun ensure_json_compat/1, L);
-ensure_json_compat({obj, Props}) when is_list(Props) ->
-    {obj, lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props)};
+ensure_json_compat({Props}) when is_list(Props) ->
+    {lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props)};
 ensure_json_compat(_Val) ->
     exit(json_incompatible).
