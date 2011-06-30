@@ -27,15 +27,15 @@
 %%    One particularly useful facility is the automated conversion
 %%    of JSON objects to and from Erlang records. Because record definitions
 %%    exist only at compile time, the conversion routines are defined as
-%%    macros in the `tp_json_rpc.hrl' include file. They are documented below.
+%%    macros in the `hello.hrl' include file. They are documented below.
 %%
 %%    <br/>
-%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> tpjrpc_json:jsonobj() | none()'</b>
+%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> hello_json:jsonobj() | none()'</b>
 %%
 %%    This macro converts a record to a JSON object. Some things to be aware of:
 %%    <ul>
 %%      <li>`undefined' is converted to `null'</li>
-%%      <li>The values contained in the record should adhere to the {@link tpjrpc_json:json()} type specification.
+%%      <li>The values contained in the record should adhere to the {@link hello_json:json()} type specification.
 %%          Among other things, this means that all strings must be encoded as binaries and the only kind
 %%          of tuple allowed is `{proplist()}'.<br/>
 %%          If any value cannot be encoded, the conversion will exit with reason `json_incompatible'.
@@ -46,7 +46,7 @@
 %%    </ul>
 %%
 %%    <br/>
-%%    <b>`?json_obj_to_record(RecordName::atom(), Obj::tpjrpc_json:jsonobj()) -> {ok, tuple()} | {error, not_object}'</b>
+%%    <b>`?json_obj_to_record(RecordName::atom(), Obj::hello_json:jsonobj()) -> {ok, tuple()} | {error, not_object}'</b>
 %%
 %%    This macro converts a JSON object into an Erlang record. The conversion will ignore any keys in the object that
 %%    that do not have a corresponding field in the record. For missing keys the default value specified <i>in the record definition</i>
@@ -57,7 +57,7 @@
 %%    </ul>
 %%
 %%    <br/>
-%%    <b>`?json_obj_into_record(RecordName::atom(), Defaults::tuple(), Obj::tpjrpc_json:jsonobj()) -> {ok, tuple()} | {error, not_object} | {error, bad_defaults}'</b>
+%%    <b>`?json_obj_into_record(RecordName::atom(), Defaults::tuple(), Obj::hello_json:jsonobj()) -> {ok, tuple()} | {error, not_object} | {error, bad_defaults}'</b>
 %%
 %%    This macro performs the same function as <b>`?json_obj_to_record/2'</b>, except that in case of missing keys the value
 %%    used is taken <i>from the `Defaults' record</i>. You might find this macro useful if you want to merge an object
@@ -66,16 +66,16 @@
 %%    `{error, bad_defaults}' is returned if `Defaults' does not match the definition of `RecordName'.
 %% @end
 
--module(tp_json_rpc_service).
+-module(hello_service).
 -export([behaviour_info/1]).
 -export([init/0, register/1, register/2, unregister/1, lookup/1, handle_request/2]).
 -export([object_to_record/5, record_to_object/4]).
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
--include("tp_json_rpc.hrl").
--include("jrpc_internal.hrl").
--define(SERVICE_TABLE, tp_json_rpc_services).
+-include("hello.hrl").
+-include("internal.hrl").
+-define(SERVICE_TABLE, hello_services).
 -record(service, {name, module}).
 
 behaviour_info(callbacks) -> [{handle_request,3}, {method_info,0}, {param_info,1}];
@@ -128,30 +128,30 @@ handle_request_m(Mod, Req) ->
 
 do_handle_request(Mod, Req = #request{method = MethodName, params = Params}) ->
     case find_method(Mod, MethodName) of
-        undefined -> tpjrpc_proto:std_error(Req, method_not_found);
+        undefined -> hello_proto:std_error(Req, method_not_found);
         Method    ->
             case validate_params(Mod, Method, Params) of
                 {ok, Validated} -> run_request(Req, Mod, Method, Validated);
-                {error, Msg}    -> tpjrpc_proto:std_error(Req, {invalid_params, Msg})
+                {error, Msg}    -> hello_proto:std_error(Req, {invalid_params, Msg})
             end
     end.
 
 run_request(Req, Mod, Method, ValidatedParams) ->
     try Mod:handle_request(Req, Method#rpc_method.name, ValidatedParams) of
         {ok, Result} ->
-            tpjrpc_proto:response(Req, Result);
+            hello_proto:response(Req, Result);
         {error, Message} ->
-            tpjrpc_proto:error_response(Req, 0, Message);
+            hello_proto:error_response(Req, 0, Message);
         {error, Code, Message} ->
-            tpjrpc_proto:error_response(Req, Code, Message);
+            hello_proto:error_response(Req, Code, Message);
         _ ->
-            tpjrpc_proto:std_error(Req, server_error)
+            hello_proto:std_error(Req, server_error)
     catch
          Type:Error ->
             error_logger:error_msg("Error (~p) thrown by a JSON-RPC handler function while executing ~s/~s~n"
                                    "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
                                    [Type, Req#request.service, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
-            tpjrpc_proto:std_error(Req, server_error)
+            hello_proto:std_error(Req, server_error)
     end.
 
 find_method(Mod, MethodName) when is_binary(MethodName) ->

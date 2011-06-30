@@ -9,12 +9,12 @@
 
 -module(jsonrpc_1_compliance_SUITE).
 
--behaviour(tp_json_rpc_service).
+-behaviour(hello_service).
 -export([method_info/0, param_info/1, handle_request/3]).
 -compile(export_all).
 
 -include("ct.hrl").
--include_lib("tp_json_rpc/include/tp_json_rpc.hrl").
+-include("../include/hello.hrl").
 
 -define(REQ_ID, 1).
 
@@ -67,25 +67,25 @@ all() -> [param_structures, response_fields, notification].
 
 init_per_suite(Config) ->
 	application:start(inets),
-	application:start(tp_json_rpc),
-	tp_json_rpc_service:register(spec_suite_1, ?MODULE),
+	application:start(hello),
+	hello_service:register(spec_suite_1, ?MODULE),
 	Config.
 
 end_per_suite(_Config) ->
-	tp_json_rpc_service:unregister(spec_suite_1),
-	application:stop(tp_json_rpc),
+	hello_service:unregister(spec_suite_1),
+	application:stop(hello),
 	application:stop(inets).
 
 % ---------------------------------------------------------------------
 % -- utilities
 request(Service, {Method, Params}) ->
     Req = {[{id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
-    request(Service, tpjrpc_json:encode(Req));
+    request(Service, hello_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
     request(Service, list_to_binary(Request));
 request(Service, Request) ->
-    RespJSON = tp_json_rpc:handle_request(Service, Request),
-    case tpjrpc_json:decode(RespJSON) of
+    RespJSON = hello:handle_request(Service, Request),
+    case hello_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}
     end.

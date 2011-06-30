@@ -19,10 +19,10 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(tpjrpc_inets).
+-module(hello_inets).
 -export([do/1, load/2, store/2, remove/1]).
 
--include("jrpc_internal.hrl").
+-include("internal.hrl").
 -record(mod,{init_data,
 	         data = [],
              socket_type = ip_comm,
@@ -43,11 +43,11 @@ do(ModData = #mod{request_uri = Path, entity_body = Body, config_db = Config}) -
                no_handle   -> ModData#mod.data;
                empty       -> json_error(404, service_missing);
                ServiceName ->
-                   case tp_json_rpc_service:lookup(ServiceName) of
+                   case hello_service:lookup(ServiceName) of
                        {ok, _Module} ->
                            case lists:member(ModData#mod.method, ["PUT", "POST"]) of
                                true ->
-                                   JSON_Resp = tp_json_rpc:handle_request(ServiceName, list_to_binary(Body)),
+                                   JSON_Resp = hello:handle_request(ServiceName, list_to_binary(Body)),
                                    json_response(200, JSON_Resp);
                                false ->
                                    json_error(400, bad_http_method)
@@ -61,8 +61,8 @@ json_response(Code, Body) ->
     Len = integer_to_list(byte_size(Body)),
     [{response, {response, [{code, Code}, {content_type, "application/json"}, {content_length, Len}], [Body]}}].
 
-json_error(Code, Resp = #response{}) -> json_response(Code, tpjrpc_proto:response_json(Resp));
-json_error(Code, Msg)                -> json_error(Code,    tpjrpc_proto:std_error(Msg)).
+json_error(Code, Resp = #response{}) -> json_response(Code, hello_proto:response_json(Resp));
+json_error(Code, Msg)                -> json_error(Code,    hello_proto:std_error(Msg)).
 
 path_service(Prefix, PathIn) ->
     {Decoded, _Query} = httpd_util:split_path(PathIn),

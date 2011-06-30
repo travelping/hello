@@ -18,10 +18,10 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
--module(tpjrpc_proto).
+-module(hello_proto).
 -export([request/1, request_json/1, response/2, error_response/3, error_response/4,
          response_json/1, std_error/1, std_error/2]).
--include("jrpc_internal.hrl").
+-include("internal.hrl").
 
 %% ----------------------------------------------------------------------
 %% -- Responses
@@ -77,7 +77,7 @@ std_error(Req, Error) ->
            end,
     error_response(Req, Code, Msg, Data).
 
-%% @spec (Request::request(), Result::tpjrpc_json:json()) -> response()
+%% @spec (Request::request(), Result::hello_json:json()) -> response()
 %% @doc  Creates a response object matching the given request.
 response(#request{id = undefined}, _Resp) ->
     empty_response;
@@ -119,7 +119,7 @@ response_json(R = #response{version = RespVersion, error = RespError}) ->
                      _ -> tl(Result)  % omit result or error for v2.0
                  end,
     RespObj = {Version ++ [{id, maybe_null(R#response.id)} | ResOrError]},
-    tpjrpc_json:encode(RespObj).
+    hello_json:encode(RespObj).
 
 %% ----------------------------------------------------------------------
 %% -- Requests
@@ -134,12 +134,12 @@ response_json(R = #response{version = RespVersion, error = RespError}) ->
 %%      the appropriate JSON-RPC error response object is returned.
 %% @see request/1
 request_json(JSON) ->
-    case tpjrpc_json:decode(JSON) of
+    case hello_json:decode(JSON) of
         {error, _Error}      -> {error, std_error(parse_error)};
         {ok, Request, _Rest} -> request(Request)
     end.
 
-%% @spec (JSON::tpjrpc_json:json_value()) -> {ok, request()} | {error, response()} | {batch, Valid, Invalid}
+%% @spec (JSON::hello_json:json_value()) -> {ok, request()} | {error, response()} | {batch, Valid, Invalid}
 %%     Valid   = [request()]
 %%     Invalid = [response()]
 %% @doc Create a request object from parsed request structure

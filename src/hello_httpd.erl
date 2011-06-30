@@ -19,10 +19,10 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(tpjrpc_httpd).
+-module(hello_httpd).
 -export([start_link/0]).
 
--define(OurModule, tpjrpc_inets).
+-define(OurModule, hello_inets).
 
 start_link() ->
     Defaults = default_config(),
@@ -42,7 +42,7 @@ start_link() ->
     inets:start(httpd, InetsConfig, stand_alone).
 
 default_config() ->
-    DefaultRoot  = filename:join(code:priv_dir(tp_json_rpc), "server_root"),
+    DefaultRoot  = filename:join(code:priv_dir(hello), "server_root"),
     Port         = getenv(httpd_port, 5671),
     Prefix       = getenv(httpd_rpc_prefix, "/rpc"),
     BindAddr     = getenv(httpd_bind_address, any),

@@ -11,7 +11,7 @@
 -compile(export_all).
 
 -include("ct.hrl").
--include_lib("tp_json_rpc/include/tp_json_rpc.hrl").
+-include("../include/hello.hrl").
 
 % ---------------------------------------------------------------------
 % -- test cases

@@ -19,27 +19,28 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(tpjrpc_logger).
--export([open/1, close/1, log/2]).
 
--define(LOG_NAME, tpjrpc_request_log).
+-module(hello_app).
 
-open(File) ->
-    disk_log:open([{name, ?LOG_NAME}, {file, File}, {format, external}, {type, halt}]).
+-behaviour(application).
+-export([start/2, stop/1]).
 
-close(Log) ->
-    disk_log:close(Log).
+start(_Type, _StartArgs) ->
+    hello_service:init(),
 
-log(Request, Response) ->
-    Date = list_to_binary(httpd_util:rfc1123_date()),
-    RequestNew  = split_bnr(Request, <<"> ">>),
-    ResponseNew = split_bnr(Response, <<"< ">>),
-    Msg  = <<Date/binary, "\n", RequestNew/binary,
-             "\n", ResponseNew/binary, "\n-----------------------------\n">>,
-    disk_log:blog(?LOG_NAME, Msg).
+    RequestLog = case application:get_env(hello, request_log_enabled) of
+                     {ok, true} ->
+                        {ok, RequestLogFile} = application:get_env(hello, request_log_file),
+                        {ok, Log} = hello_logger:open(RequestLogFile),
+                        Log;
+                     {ok, false} ->
+                        undefined
+                 end,
+    {ok, Super} = hello_sup:start_link(),
+    {ok, Super, RequestLog}.
 
-split_bnr(Body, Line) when is_binary(Body) -> splitacc(Body, Line, Line).
-
-splitacc(<<>>    , _Line           , Acc)  -> Acc;
-splitacc(<<"\n"  , T/binary>>, Line, Acc)  -> splitacc(T, Line, <<Acc/binary, "\n", Line/binary>> );
-splitacc(<<H/utf8, T/binary>>, Line, Acc)  -> splitacc(T, Line, <<Acc/binary, H/utf8>> ).
+stop(undefined) ->
+    ok;
+stop(Log) ->
+    hello_logger:close(Log),
+    ok.

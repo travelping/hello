@@ -18,12 +18,12 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
-% @doc This module contains a JSON-RPC client.
--module(tp_json_rpc).
+% @doc This module is the main interface to the hello application.
+-module(hello).
 
 -export([start/0, handle_request/2, call/3, notification/3, call_np/3]).
 
--include("jrpc_internal.hrl").
+-include("internal.hrl").
 -define(TIME_OUT, {timeout, 15000}).
 
 %% @type binary_or_string() = binary() | string()
@@ -34,20 +34,20 @@
 %% @doc Starts the application. This is useful for debugging purposes.
 start() ->
     application:start(inets),
-    application:start(tp_json_rpc).
+    application:start(hello).
 
 handle_request(Service, JSON) ->
-    Resp = case tpjrpc_proto:request_json(JSON) of
+    Resp = case hello_proto:request_json(JSON) of
                {ok, Request}  ->
-                   tp_json_rpc_service:handle_request(Service, Request);
+                   hello_service:handle_request(Service, Request);
                {batch, Valid, Invalid} ->
-                   Resps = tp_json_rpc_service:handle_request(Service, Valid),
+                   Resps = hello_service:handle_request(Service, Valid),
                    Invalid ++ Resps;
                {error, Error} ->
                    Error
            end,
-    ResponseJSON = tpjrpc_proto:response_json(Resp),
-    tpjrpc_logger:log(JSON,ResponseJSON),
+    ResponseJSON = hello_proto:response_json(Resp),
+    hello_logger:log(JSON,ResponseJSON),
     ResponseJSON.
 
 rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
@@ -56,27 +56,27 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
                       undefined -> [];
                       _         -> [{"id", Id}]
                   end,
-    RequestJSON = tpjrpc_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
+    RequestJSON = hello_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
     {ok, Hostname, _Path} = split_url(HostURL),
     Headers     = [{"Host", Hostname}, {"Connection", "keep-alive"},
                    {"Content-Length", integer_to_list(iolist_size(RequestJSON))},
                    {"Content-Type", "application/json"},
                    {"Accept", "application/json"},
-                   {"User-Agent", "tp_json_rpc"}],
+                   {"User-Agent", "hello/" ++ application:get_key(hello, vsn)}],
     HTTPRequest = {HostURL, Headers, "application/json", RequestJSON},
     case httpc:request(post, HTTPRequest, [?TIME_OUT], [{headers_as_is, true}, {full_result, false}]) of
        {ok, {_Code, Body}} -> {ok, Body};
        {error, Reason}     -> {error, {http, Reason}}
     end.
 
-%% @spec (Host::string(), Method::binary_or_string(), Arguments::list()) -> {ok, tpjrpc_json:json()} | {error, rpc_error()}
+%% @spec (Host::string(), Method::binary_or_string(), Arguments::list()) -> {ok, hello_json:json()} | {error, rpc_error()}
 %% @doc Function performs a JSON-RPC method call using HTTP.
 call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
     Request = #request{id = 1, method = Method, params = ArgList},
     case rpc_request(Host, Request) of
         {error, Error} -> {error, Error};
         {ok, Body} ->
-            case tpjrpc_json:decode(Body) of
+            case hello_json:decode(Body) of
                {error, syntax_error} -> {error, syntax_error};
                {ok, {Props}, _Rest} ->
                    case proplists:get_value("error", Props, null) of
@@ -104,7 +104,7 @@ notification(Host, Method, ArgList) ->
         {ok, _Body}     -> ok
     end.
 
-%% @spec (Host::string(), Method::binary_or_string(), Arguments::[{string(), tpjrpc_json:json()}]) -> {ok, tpjrpc_json:json()} | {error, rpc_error()}
+%% @spec (Host::string(), Method::binary_or_string(), Arguments::[{string(), hello_json:json()}]) -> {ok, hello_json:json()} | {error, rpc_error()}
 %% @doc Performs a JSON-RPC method call with named parameters (property list).
 call_np(Host, Method, List) when is_list(List) ->
     call(Host, Method, {List}).

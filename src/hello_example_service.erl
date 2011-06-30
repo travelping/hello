@@ -18,14 +18,14 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
--module(tpjrpc_example_service).
--behaviour(tp_json_rpc_service).
+-module(hello_example_service).
+-behaviour(hello_service).
 
 -export([register_yourself/0]).
 -export([handle_request/3, param_info/1, method_info/0]).
--include_lib("tp_json_rpc/include/tp_json_rpc.hrl").
+-include("hello.hrl").
 
-register_yourself() -> tp_json_rpc_service:register(example, ?MODULE).
+register_yourself() -> hello_service:register(example, ?MODULE).
 
 method_info() ->
     [#rpc_method{name        = echo,
@@ -33,7 +33,7 @@ method_info() ->
      #rpc_method{name        = append,
                  description = "append the given strings"},
      #rpc_method{name        = enum_test,
-                 description = "test tp_json_rpc's support for enums"},
+                 description = "test hello's support for enums"},
      #rpc_method{name        = return_error,
                  description = "always returns an error reply"}].
 

@@ -8,12 +8,12 @@
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
 -module(jsonrpc_2_compliance_SUITE).
--behaviour(tp_json_rpc_service).
+-behaviour(hello_service).
 -export([method_info/0, param_info/1, handle_request/3]).
 -compile(export_all).
 
 -include("ct.hrl").
--include_lib("tp_json_rpc/include/tp_json_rpc.hrl").
+-include("../include/hello.hrl").
 
 -define(REQ_ID, 1).
 
@@ -128,25 +128,25 @@ all() -> [error_codes, param_structures, response_fields, notification, batch_ca
 
 init_per_suite(Config) ->
 	application:start(inets),
-	application:start(tp_json_rpc),
-	tp_json_rpc_service:register(spec_suite, ?MODULE),
+	application:start(hello),
+	hello_service:register(spec_suite, ?MODULE),
 	Config.
 
 end_per_suite(_Config) ->
-	tp_json_rpc_service:unregister(spec_suite),
-	application:stop(tp_json_rpc),
+	hello_service:unregister(spec_suite),
+	application:stop(hello),
 	application:stop(inets).
 
 % ---------------------------------------------------------------------
 % -- utilities
 request(Service, {Method, Params}) ->
     Req = {[{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
-    request(Service, tpjrpc_json:encode(Req));
+    request(Service, hello_json:encode(Req));
 request(Service, Request) when is_list(Request) ->
     request(Service, list_to_binary(Request));
 request(Service, Request) ->
-    RespJSON = tp_json_rpc:handle_request(Service, Request),
-    case tpjrpc_json:decode(RespJSON) of
+    RespJSON = hello:handle_request(Service, Request),
+    case hello_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}
     end.

@@ -17,31 +17,31 @@
 % ---------------------------------------------------------------------
 % -- test cases
 call(_Config) ->
-    {ok,<<"abcdef">>} = tp_json_rpc:call(?HOST, "append", [<<"abc">>,<<"def">>]).
+    {ok,<<"abcdef">>} = hello:call(?HOST, "append", [<<"abc">>,<<"def">>]).
 
 call_errors(_Config) ->
-    {error, method_not_found} = tp_json_rpc:call(?HOST, "nonamemethod", [<<"test">>]),
-    {error, invalid_params} = tp_json_rpc:call(?HOST, "append", [1]),
-    {error, 30000} = tp_json_rpc:call(?HOST, "return_error", [30000]),
-    {error, syntax_error} = tp_json_rpc:call("http://localhost:5671/", "foo", []).
+    {error, method_not_found} = hello:call(?HOST, "nonamemethod", [<<"test">>]),
+    {error, invalid_params} = hello:call(?HOST, "append", [1]),
+    {error, 30000} = hello:call(?HOST, "return_error", [30000]),
+    {error, syntax_error} = hello:call("http://localhost:5671/", "foo", []).
 
 call_http_error(_Config) ->
-    {error, {http, _Reason}} = tp_json_rpc:call("http://localhost:44557", "foo", []).
+    {error, {http, _Reason}} = hello:call("http://localhost:44557", "foo", []).
 
 notification(_Config) ->
-    ok = tp_json_rpc:notification(?HOST, "echo", [<<"test">>]).
+    ok = hello:notification(?HOST, "echo", [<<"test">>]).
 
 notification_http_error(_Config) ->
-    {error, {http, _Reason}} = tp_json_rpc:notification("http://localhost:44557", "foo", []).
+    {error, {http, _Reason}} = hello:notification("http://localhost:44557", "foo", []).
 
 call_np(_Config) ->
-    {ok, <<"cdab">>} = tp_json_rpc:call_np(?HOST, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    {ok, <<"cdab">>} = hello:call_np(?HOST, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
 
 call_np_method_not_found(_Config) ->
-    {error, method_not_found} = tp_json_rpc:call_np(?HOST, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    {error, method_not_found} = hello:call_np(?HOST, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
 
 call_np_http_error(_Config) ->
-    {error, {http, _Reason}} = tp_json_rpc:call_np("http://localhost:44557", "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    {error, {http, _Reason}} = hello:call_np("http://localhost:44557", "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
@@ -52,10 +52,10 @@ all() ->
 
 init_per_suite(Config) ->
 	application:start(inets),
-	application:start(tp_json_rpc),
-    tpjrpc_example_service:register_yourself(),
+	application:start(hello),
+    hello_example_service:register_yourself(),
     Config.
 
 end_per_suite(_Config) ->
-	application:stop(tp_json_rpc),
+	application:stop(hello),
 	application:stop(inets).
