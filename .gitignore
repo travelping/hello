@@ -1,5 +1,5 @@
 *.beam
 test-log/
-doc/*
-!doc/overview.edoc
-*~
+/dist/
+/doc/*
+!/doc/overview.edoc
