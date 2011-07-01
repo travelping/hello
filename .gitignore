@@ -1,6 +1,7 @@
-/ebin/*.app
 *.beam
-test-log/
+/ebin/*.app
+/test-log/
+/json_requests.log
 /dist/
 /doc/*
 !/doc/overview.edoc
