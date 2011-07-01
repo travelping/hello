@@ -66,15 +66,13 @@ handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
 all() -> [param_structures, response_fields, notification].
 
 init_per_suite(Config) ->
-	application:start(inets),
-	application:start(hello),
+    hello:start(),
 	hello_service:register(spec_suite_1, ?MODULE),
 	Config.
 
 end_per_suite(_Config) ->
 	hello_service:unregister(spec_suite_1),
-	application:stop(hello),
-	application:stop(inets).
+    application:stop(hello).
 
 % ---------------------------------------------------------------------
 % -- utilities

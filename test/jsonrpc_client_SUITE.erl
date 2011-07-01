@@ -23,7 +23,7 @@ call_errors(_Config) ->
     {error, method_not_found} = hello:call(?HOST, "nonamemethod", [<<"test">>]),
     {error, invalid_params} = hello:call(?HOST, "append", [1]),
     {error, 30000} = hello:call(?HOST, "return_error", [30000]),
-    {error, syntax_error} = hello:call("http://localhost:5671/", "foo", []).
+    {error, syntax_error} = hello:call(?HOST, "foo", []).
 
 call_http_error(_Config) ->
     {error, {http, _Reason}} = hello:call("http://localhost:44557", "foo", []).
@@ -51,11 +51,10 @@ all() ->
      call_np, call_np_method_not_found, call_np_http_error].
 
 init_per_suite(Config) ->
-	application:start(inets),
-	application:start(hello),
+    hello:start(),
     hello_example_service:register_yourself(),
     Config.
 
 end_per_suite(_Config) ->
 	application:stop(hello),
-	application:stop(inets).
+    application:stop(inets).

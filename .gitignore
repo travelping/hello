@@ -1,3 +1,4 @@
+/ebin/*.app
 *.beam
 test-log/
 /dist/

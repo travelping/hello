@@ -20,12 +20,11 @@
 
 % @private
 -module(hello_httpd).
--export([start_link/0]).
+-export([start/1, stop/1]).
 
--define(OurModule, hello_inets).
+-define(HANDLER, hello_http_handler).
 
-start_link() ->
-    Defaults = default_config(),
+start(ServerName) ->
     User = case application:get_env(httpd_config) of
                {ok, File} ->
                    case file:consult(File) of
@@ -38,71 +37,34 @@ start_link() ->
                    error_logger:info_msg("No httpd config file specified, starting with defaults.~n"),
                    []
            end,
-    InetsConfig = merge_config(Defaults, User),
-    inets:start(httpd, InetsConfig, stand_alone).
+    Config   = merge_config(default_config(), User),
+    Match    = unslash(proplists:get_value(prefix, Config)) ++ ['...'],
+    Dispatch = [{'_', [{Match, ?HANDLER, []}]}],
+    cowboy:start_listener(ServerName, proplists:get_value(acceptors, Config),
+        cowboy_tcp_transport, [{port, proplists:get_value(port, Config)}],
+        cowboy_http_protocol, [{dispatch, Dispatch}]).
+
+stop(ServerName) ->
+    cowboy:stop_listener(ServerName).
 
 default_config() ->
-    DefaultRoot  = filename:join(code:priv_dir(hello), "server_root"),
-    Port         = getenv(httpd_port, 5671),
-    Prefix       = getenv(httpd_rpc_prefix, "/rpc"),
-    BindAddr     = getenv(httpd_bind_address, any),
-    Name         = getenv(httpd_server_name, "localhost"),
+    [{port,      getenv(httpd_port, 5671)},
+     {prefix,    getenv(httpd_rpc_prefix, "/rpc")},
+     {acceptors, getenv(httpd_acceptors, 10)},
+     {bind_addr, getenv(httpd_bind_address, any)}].
 
-    ErrorLog    = filename:absname("inets_error.log"),
-    TransferLog = filename:absname("inets_transfer.log"),
-    SecurityLog = filename:absname("inets_security.log"),
-
-    [{modules, [?OurModule]},
-     {port, Port},
-     {server_name, Name},
-     {bind_address, BindAddr},
-     {json_rpc_prefix, Prefix},
-     {error_log, ErrorLog},
-     {transfer_log, TransferLog},
-     {security_log, SecurityLog},
-     {server_root,   DefaultRoot},
-     {document_root, DefaultRoot}].
-
-merge_config(Defaults, UserIn) ->
-    User = case proplists:get_value(server_root, UserIn) of
-               undefined -> lists:map(fun absnamed/1, UserIn);
-               _Else     -> UserIn
-           end,
-    Snd = fun (_, _, Y) -> Y end,
-    Dic = dict:merge(Snd, dict:from_list(Defaults), dict:from_list(User)),
-    Modules = dict:fetch(modules, Dic),
-    Merged  = case lists:member(?OurModule, Modules) of
-                  true  -> Dic;
-                  false -> dict:store(modules, [?OurModule | Modules], Dic)
-              end,
-    dict:to_list(Merged).
-
-absnamed({Key, Value}) ->
-    PathParam = [document_root, error_log, security_log, transfer_log,
-                 transfer_disk_log, error_disk_log, security_disk_log,
-                 ssl_ca_certificate_file, ssl_certificate_file, auth_user_file,
-                 auth_group_file, security_group_file],
-    case lists:member(Key, PathParam) of
-        true  -> {Key, filename:absname(Value)};
-        false ->
-           case Key of
-              mime_types ->
-                  if is_tuple(Value) -> {Key, Value};
-                     true            -> {Key, filename:absname(Value)}
-                  end;
-              directory ->
-                  {Path, Props} = Value,
-                  {Key, {Path, lists:map(fun absnamed/1, Props)}};
-              security_directory ->
-                  {Path, Props} = Value,
-                  {Key, {Path, lists:map(fun absnamed/1, Props)}};
-              _ ->
-                  {Key, Value}
-          end
-    end.
+merge_config(Config1, Config2) ->
+    lists:keymerge(1, lists:keysort(1, Config1), lists:keysort(1, Config2)).
 
 getenv(Key, Default) ->
   case application:get_env(Key) of
     {ok, Val} -> Val;
     undefined -> Default
   end.
+
+unslash(Path) ->
+    case re:split(Path, "/", [{return, binary}]) of
+        []            -> [];
+        [<<>> | Rest] -> Rest;
+        List          -> List
+    end.

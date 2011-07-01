@@ -20,11 +20,13 @@
 
 % @doc This module is the main interface to the hello application.
 -module(hello).
-
+-behaviour(application).
+-export([start/2, stop/1]).
 -export([start/0, handle_request/2, call/3, notification/3, call_np/3]).
 
 -include("internal.hrl").
 -define(TIME_OUT, {timeout, 15000}).
+-define(HTTPD, hello_httpd).
 
 %% @type binary_or_string() = binary() | string()
 %% @type rpc_error() = {error, {http, term()}} | {error, syntax_error}
@@ -33,8 +35,32 @@
 
 %% @doc Starts the application. This is useful for debugging purposes.
 start() ->
+    application:start(cowboy),
     application:start(inets),
     application:start(hello).
+
+start(_Type, _StartArgs) ->
+    hello_service:init(),
+
+    RequestLog = case application:get_env(hello, request_log_enabled) of
+                     {ok, true} ->
+                        {ok, RequestLogFile} = application:get_env(hello, request_log_file),
+                        {ok, Log} = hello_logger:open(RequestLogFile),
+                        Log;
+                     {ok, false} ->
+                        undefined
+                 end,
+    {ok, _Httpd} = hello_httpd:start(?HTTPD),
+    Supervisor = self(),
+    {ok, Supervisor, RequestLog}.
+
+stop(undefined) ->
+    hello_httpd:stop(?HTTPD),
+    ok;
+stop(Log) ->
+    hello_httpd:stop(?HTTPD),
+    hello_logger:close(Log),
+    ok.
 
 handle_request(Service, JSON) ->
     Resp = case hello_proto:request_json(JSON) of

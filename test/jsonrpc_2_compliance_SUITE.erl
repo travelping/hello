@@ -127,15 +127,13 @@ handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
 all() -> [error_codes, param_structures, response_fields, notification, batch_calls].
 
 init_per_suite(Config) ->
-	application:start(inets),
-	application:start(hello),
+    hello:start(),
 	hello_service:register(spec_suite, ?MODULE),
 	Config.
 
 end_per_suite(_Config) ->
 	hello_service:unregister(spec_suite),
-	application:stop(hello),
-	application:stop(inets).
+	application:stop(hello).
 
 % ---------------------------------------------------------------------
 % -- utilities
