@@ -31,7 +31,7 @@ close(Log) ->
     disk_log:close(Log).
 
 log(Request, Response) ->
-    Date = list_to_binary(httpd_util:rfc1123_date()),
+    Date = cowboy_clock:rfc1123(),
     RequestNew  = split_bnr(Request, <<"> ">>),
     ResponseNew = split_bnr(Response, <<"< ">>),
     Msg  = <<Date/binary, "\n", RequestNew/binary,
