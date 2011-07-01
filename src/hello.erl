@@ -58,11 +58,12 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
                   end,
     RequestJSON = hello_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
     {ok, Hostname, _Path} = split_url(HostURL),
+    {ok, Vsn}   = application:get_key(hello, vsn),
     Headers     = [{"Host", Hostname}, {"Connection", "keep-alive"},
                    {"Content-Length", integer_to_list(iolist_size(RequestJSON))},
                    {"Content-Type", "application/json"},
                    {"Accept", "application/json"},
-                   {"User-Agent", "hello/" ++ application:get_key(hello, vsn)}],
+                   {"User-Agent", "hello/" ++ Vsn}],
     HTTPRequest = {HostURL, Headers, "application/json", RequestJSON},
     case httpc:request(post, HTTPRequest, [?TIME_OUT], [{headers_as_is, true}, {full_result, false}]) of
        {ok, {_Code, Body}} -> {ok, Body};
