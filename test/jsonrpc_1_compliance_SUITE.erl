@@ -22,18 +22,18 @@
 % -- test cases
 param_structures(_Config) ->
     % by-position
-    Req1 = request("spec_suite_1", {"subtract", [2,1]}),
+    Req1 = request({"subtract", [2,1]}),
     1    = field(Req1, "result").
 
 response_fields(_Config) ->
     % success case
-    Req1 = request("spec_suite_1", {"subtract", [2,1]}),
+    Req1 = request({"subtract", [2,1]}),
     1         = field(Req1, "result"),
     ?REQ_ID   = field(Req1, "id"),
     null      = field(Req1, "error"),
 
     % error case
-    Req2 = request("spec_suite_1", {"subtract", []}),
+    Req2 = request({"subtract", []}),
     null      = field(Req2, "result"),
     ?REQ_ID   = field(Req2, "id"),
     {_}  = field(Req2, "error").
@@ -41,11 +41,11 @@ response_fields(_Config) ->
 notification(_Config) ->
     % leaving id off is treated as an invalid request
     % since we handle errors jsonrpc-2.0 style, this can be checked
-    Res    = request("spec_suite_1", "{\"method\": \"subtract\", \"params\": [2, 1]}"),
+    Res    = request("{\"method\": \"subtract\", \"params\": [2, 1]}"),
     -32600 = field(Res, "error.code"),
 
     % null giving null for the id indicates a notification
-    {no_json, <<"">>} = request("spec_suite_1", "{\"id\": null, \"method\": \"subtract\", \"params\": [2, 1]}").
+    {no_json, <<"">>} = request("{\"id\": null, \"method\": \"subtract\", \"params\": [2, 1]}").
 
 % ---------------------------------------------------------------------
 % -- service callbacks
@@ -65,24 +65,15 @@ handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
 % -- common_test callbacks
 all() -> [param_structures, response_fields, notification].
 
-init_per_suite(Config) ->
-    hello:start(),
-	hello_service:register(spec_suite_1, ?MODULE),
-	Config.
-
-end_per_suite(_Config) ->
-	hello_service:unregister(spec_suite_1),
-    application:stop(hello).
-
 % ---------------------------------------------------------------------
 % -- utilities
-request(Service, {Method, Params}) ->
+request({Method, Params}) ->
     Req = {[{id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
-    request(Service, hello_json:encode(Req));
-request(Service, Request) when is_list(Request) ->
-    request(Service, list_to_binary(Request));
-request(Service, Request) ->
-    RespJSON = hello:handle_request(Service, Request),
+    request(hello_json:encode(Req));
+request(Request) when is_list(Request) ->
+    request(list_to_binary(Request));
+request(Request) ->
+    RespJSON = hello:handle_request(?MODULE, Request),
     case hello_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}

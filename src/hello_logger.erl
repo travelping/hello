@@ -31,12 +31,17 @@ close(Log) ->
     disk_log:close(Log).
 
 log(Request, Response) ->
-    Date = cowboy_clock:rfc1123(),
-    RequestNew  = split_bnr(Request, <<"> ">>),
-    ResponseNew = split_bnr(Response, <<"< ">>),
-    Msg  = <<Date/binary, "\n", RequestNew/binary,
-             "\n", ResponseNew/binary, "\n-----------------------------\n">>,
-    disk_log:blog(?LOG_NAME, Msg).
+    case erlang:whereis(?LOG_NAME) of
+        undefined ->
+            ok;
+        _Pid ->
+            Date = cowboy_clock:rfc1123(),
+            RequestNew  = split_bnr(Request, <<"> ">>),
+            ResponseNew = split_bnr(Response, <<"< ">>),
+            Msg  = <<Date/binary, "\n", RequestNew/binary,
+                     "\n", ResponseNew/binary, "\n-----------------------------\n">>,
+            disk_log:blog(?LOG_NAME, Msg)
+    end.
 
 split_bnr(Body, Line) when is_binary(Body) -> splitacc(Body, Line, Line).
 

@@ -20,7 +20,7 @@
 % ---------------------------------------------------------------------
 % -- test cases
 error_codes(_Config) ->
-	ErrorCode = fun (Code, Req) -> Code = field(request("spec_suite", Req), "error.code") end,
+	ErrorCode = fun (Code, Req) -> Code = field(request(Req), "error.code") end,
 
 	% parse error
 	ErrorCode(-32700, "{aa"),
@@ -43,68 +43,68 @@ error_codes(_Config) ->
 
 param_structures(_Config) ->
     % by-position
-    Req1 = request("spec_suite", {"subtract", [2,1]}),
+    Req1 = request({"subtract", [2,1]}),
     1    = field(Req1, "result"),
 
     % by-name
-    Req2 = request("spec_suite", {"subtract", {[{"subtrahend", 2}, {"minuend", 1}]}}),
+    Req2 = request({"subtract", {[{"subtrahend", 2}, {"minuend", 1}]}}),
     1    = field(Req2, "result"),
 
     % by-name reversed order
-    Req3 = request("spec_suite", {"subtract", {[{"minuend", 1}, {"subtrahend", 2}]}}),
+    Req3 = request({"subtract", {[{"minuend", 1}, {"subtrahend", 2}]}}),
     1    = field(Req3, "result").
 
 response_fields(_Config) ->
     % success case
-    Req1 = {Props1} = request("spec_suite", {"subtract", [2,1]}),
+    Req1 = {Props1} = request({"subtract", [2,1]}),
     1         = field(Req1, "result"),
     <<"2.0">> = field(Req1, "jsonrpc"),
     ?REQ_ID   = field(Req1, "id"),
     false     = proplists:is_defined("error", Props1), % error may not be included
 
     % error case
-    Req2 = {Props2} = request("spec_suite", {"subtract", [1]}),
+    Req2 = {Props2} = request({"subtract", [1]}),
     false     = proplists:is_defined("result", Props2), % result may not be included
     <<"2.0">> = field(Req2, "jsonrpc"),
     ?REQ_ID   = field(Req2, "id"),
     -32602    = field(Req2, "error.code"),
 
     % error case where request isn't read
-    Req3 = {Props3} = request("spec_suite", "{aa"),
+    Req3 = {Props3} = request("{aa"),
     <<"2.0">> = field(Req3, "jsonrpc"),
     null      = proplists:get_value("id", Props3),
     -32700    = field(Req3, "error.code").
 
 notification(_Config) ->
     % leaving id off is treated as notification
-    {no_json, <<"">>} = request("spec_suite", "{\"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
+    {no_json, <<"">>} = request("{\"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
 
     % although it's use is discouraged, null is a valid id (in jsonrpc 2.0)
-    {Res} = request("spec_suite", "{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
+    {Res} = request("{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
     null = proplists:get_value("id", Res).
 
 batch_calls(_Config) ->
     % success cases
-    [Resp1] = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"id\": 344, \"method\":\"subtract\", \"params\": [2,1]}]"),
+    [Resp1] = request("[{\"jsonrpc\":\"2.0\", \"id\": 344, \"method\":\"subtract\", \"params\": [2,1]}]"),
     1       = field(Resp1, "result"),
     344     = field(Resp1, "id"),
 
-    Resp2   = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"id\": 300, \"method\":\"subtract\", \"params\": [2,1]}"
-                                    ",{\"jsonrpc\":\"2.0\", \"id\": 400, \"method\":\"subtract\", \"params\": [80,3]}]"),
+    Resp2   = request("[{\"jsonrpc\":\"2.0\", \"id\": 300, \"method\":\"subtract\", \"params\": [2,1]}"
+                      ",{\"jsonrpc\":\"2.0\", \"id\": 400, \"method\":\"subtract\", \"params\": [80,3]}]"),
     2       = length(Resp2),
 
     % with notifications
-    [Resp3] = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
-                                    ",{\"jsonrpc\":\"2.0\", \"id\": 400, \"method\":\"subtract\", \"params\": [80,3]}]"),
+    [Resp3] = request("[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
+                      ",{\"jsonrpc\":\"2.0\", \"id\": 400, \"method\":\"subtract\", \"params\": [80,3]}]"),
     400     = field(Resp3, "id"),
     77      = field(Resp3, "result"),
 
     % only notifications
-    {no_json, <<"">>} = request("spec_suite", "[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
-                                              ",{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [80,3]}]"),
+    {no_json, <<"">>} = request("[{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [2,1]}"
+                                ",{\"jsonrpc\":\"2.0\", \"method\":\"subtract\", \"params\": [80,3]}]"),
 
     % rpc call with invalid batch (but not empty)
-    [Resp4] = request("spec_suite", "[1]"),
+    [Resp4] = request("[1]"),
     null    = field(Resp4, "id"),
     -32600  = field(Resp4, "error.code").
 
@@ -126,24 +126,15 @@ handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
 % -- common_test callbacks
 all() -> [error_codes, param_structures, response_fields, notification, batch_calls].
 
-init_per_suite(Config) ->
-    hello:start(),
-	hello_service:register(spec_suite, ?MODULE),
-	Config.
-
-end_per_suite(_Config) ->
-	hello_service:unregister(spec_suite),
-	application:stop(hello).
-
 % ---------------------------------------------------------------------
 % -- utilities
-request(Service, {Method, Params}) ->
+request({Method, Params}) ->
     Req = {[{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
-    request(Service, hello_json:encode(Req));
-request(Service, Request) when is_list(Request) ->
-    request(Service, list_to_binary(Request));
-request(Service, Request) ->
-    RespJSON = hello:handle_request(Service, Request),
+    request(hello_json:encode(Req));
+request(Request) when is_list(Request) ->
+    request(list_to_binary(Request));
+request(Request) ->
+    RespJSON = hello:handle_request(?MODULE, Request),
     case hello_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}

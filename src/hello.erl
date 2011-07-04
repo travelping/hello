@@ -39,6 +39,7 @@
 start() ->
     application:start(cowboy),
     application:start(inets),
+    application:start(ex_uri),
     application:start(hello).
 
 start(_Type, _StartArgs) ->
@@ -75,6 +76,7 @@ bind(URL, CallbackModule) ->
         {ok, Rec = #ex_uri{}, _} ->
             bind_1(Rec, CallbackModule);
         _ ->
+        _Other ->
             error(badarg)
     end.
 
