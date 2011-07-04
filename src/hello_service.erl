@@ -110,12 +110,10 @@ unregister(List) when is_list(List) and is_list(hd(List)) ->
 unregister(Name) when is_list(Name) ->
     ets:delete(?SERVICE_TABLE, Name).
 
-handle_request(ServiceName, BatchReq) when is_list(BatchReq) ->
-    {ok, Mod} = lookup(ServiceName),
-    pmap(fun (Req) -> handle_request_m(Mod, Req#request{service = ServiceName}) end, BatchReq);
-handle_request(ServiceName, Req) ->
-    {ok, Mod} = lookup(ServiceName),
-    handle_request_m(Mod, Req#request{service = ServiceName}).
+handle_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
+    pmap(fun (Req) -> handle_request_m(CallbackModule, Req) end, BatchReq);
+handle_request(CallbackModule, Req) ->
+    handle_request_m(CallbackModule, Req).
 
 handle_request_m(Mod, Req) ->
     case Req#request.id of
@@ -148,9 +146,9 @@ run_request(Req, Mod, Method, ValidatedParams) ->
             hello_proto:std_error(Req, server_error)
     catch
          Type:Error ->
-            error_logger:error_msg("Error (~p) thrown by a JSON-RPC handler function while executing ~s/~s~n"
+            error_logger:error_msg("Error (~p) thrown by a JSON-RPC handler function while executing the method ~s~n"
                                    "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
-                                   [Type, Req#request.service, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
+                                   [Type, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
             hello_proto:std_error(Req, server_error)
     end.
 

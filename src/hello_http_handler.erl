@@ -24,31 +24,26 @@
 -export([init/3, handle/2, terminate/2]).
 
 -include("internal.hrl").
+-record(st, {path, mod}).
 
-init({tcp, http}, Req, _Opts) ->
-    {ok, Req, undefined_state}.
+init({tcp, http}, Req, [Path, CallbackModule]) ->
+    {ok, Req, #st{path = Path, mod = CallbackModule}}.
 
-handle(Req, State) ->
+handle(Req, State = #st{path = MatchPath, mod = CallbackModule}) ->
     {PathInfo, _} = cowboy_http_req:path_info(Req),
     case PathInfo of
-        [] ->
-            {ok, Req2} = json_error(Req, 404, service_missing);
-        [SBin | _] ->
-            ServiceName = binary_to_list(SBin),
-            case hello_service:lookup(ServiceName) of
-                {ok, _Module} ->
-                    {Method, _} = cowboy_http_req:method(Req),
-                    case lists:member(Method, ['PUT', 'POST']) of
-                        true ->
-                            {ok, Body, _} = cowboy_http_req:body(Req),
-                            JSON_Resp = hello:handle_request(ServiceName, Body),
-                            {ok, Req2} = json_response(Req, 200, JSON_Resp);
-                        false ->
-                            {ok, Req2} = json_error(Req, 400, bad_http_method)
-                    end;
-                {error, _} ->
-                    {ok, Req2} = json_error(Req, 404, service_not_found)
-            end
+        MatchPath ->
+            {Method, _} = cowboy_http_req:method(Req),
+            case lists:member(Method, ['PUT', 'POST']) of
+                true ->
+                    {ok, Body, _} = cowboy_http_req:body(Req),
+                    JSON_Resp = hello:handle_request(CallbackModule, Body),
+                    {ok, Req2} = json_response(Req, 200, JSON_Resp);
+                false ->
+                    {ok, Req2} = json_error(Req, 400, bad_http_method)
+            end;
+        _Other ->
+            {ok, Req2} = json_error(Req, 404, service_not_found)
     end,
     {ok, Req2, State}.
 

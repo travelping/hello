@@ -23,8 +23,10 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, handle_request/2, call/3, notification/3, call_np/3]).
+-export([bind/2]).
 
 -include("internal.hrl").
+-include_lib("ex_uri/include/ex_uri.hrl").
 -define(TIME_OUT, {timeout, 15000}).
 -define(HTTPD, hello_httpd).
 
@@ -50,9 +52,8 @@ start(_Type, _StartArgs) ->
                      {ok, false} ->
                         undefined
                  end,
-    {ok, _Httpd} = hello_httpd:start(?HTTPD),
-    Supervisor = self(),
-    {ok, Supervisor, RequestLog}.
+
+    {ok, self(), RequestLog}.
 
 stop(undefined) ->
     hello_httpd:stop(?HTTPD),
@@ -62,18 +63,36 @@ stop(Log) ->
     hello_logger:close(Log),
     ok.
 
-handle_request(Service, JSON) ->
+-type url() :: string().
+-type urn() :: string().
+
+-spec bind(url() | urn(), module()) -> ok | {error, already_bound} | no_return().
+
+bind("urn:" ++ _, _Module) ->
+    error(notsup);
+bind(URL, CallbackModule) ->
+    case (catch ex_uri:decode(URL)) of
+        {ok, Rec = #ex_uri{}, _} ->
+            bind_1(Rec, CallbackModule);
+        _ ->
+            error(badarg)
+    end.
+
+bind_1(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
+    hello_httpd:start("http", Host, Port, Path, Mod).
+
+handle_request(CallbackModule, JSON) ->
     Resp = case hello_proto:request_json(JSON) of
                {ok, Request}  ->
-                   hello_service:handle_request(Service, Request);
+                   hello_service:handle_request(CallbackModule, Request);
                {batch, Valid, Invalid} ->
-                   Resps = hello_service:handle_request(Service, Valid),
+                   Resps = hello_service:handle_request(CallbackModule, Valid),
                    Invalid ++ Resps;
                {error, Error} ->
                    Error
            end,
     ResponseJSON = hello_proto:response_json(Resp),
-    hello_logger:log(JSON,ResponseJSON),
+    hello_logger:log(JSON, ResponseJSON),
     ResponseJSON.
 
 rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->

@@ -25,7 +25,7 @@
 -export([handle_request/3, param_info/1, method_info/0]).
 -include("hello.hrl").
 
-register_yourself() -> hello_service:register(example, ?MODULE).
+register_yourself() -> hello:bind("http://*:5671/rpc/example", ?MODULE).
 
 method_info() ->
     [#rpc_method{name        = echo,

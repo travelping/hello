@@ -20,47 +20,23 @@
 
 % @private
 -module(hello_httpd).
--export([start/1, stop/1]).
+-export([start/5, stop/1]).
 
 -define(HANDLER, hello_http_handler).
 
-start(ServerName) ->
-    User = case application:get_env(httpd_config) of
-               {ok, File} ->
-                   case file:consult(File) of
-                       {ok, Terms} -> Terms;
-                       {error, Reason} ->
-                           error_logger:error_msg("httpd config file (~p) parse error: ~p~n", [File, Reason]),
-                           exit({error, config_file_syntax})
-                   end;
-               undefined ->
-                   error_logger:info_msg("No httpd config file specified, starting with defaults.~n"),
-                   []
-           end,
-    Config   = merge_config(default_config(), User),
-    Match    = unslash(proplists:get_value(prefix, Config)) ++ ['...'],
-    Dispatch = [{'_', [{Match, ?HANDLER, []}]}],
-    cowboy:start_listener(ServerName, proplists:get_value(acceptors, Config),
-        cowboy_tcp_transport, [{port, proplists:get_value(port, Config)}],
+start("http", Host, undefined, Path, CallbackModule) ->
+    start("http", Host, 80, Path, CallbackModule);
+start("http", Host, Port, Path, CallbackModule) ->
+    %% TODO: handle IP addresses
+    MatchPath = unslash(Path),
+    Dispatch = [{transform_host(Host), [{['...'], ?HANDLER, [MatchPath, CallbackModule]}]}],
+    ServerName = hello_httpd,
+    cowboy:start_listener(ServerName, 100,
+        cowboy_tcp_transport, [{port, Port}],
         cowboy_http_protocol, [{dispatch, Dispatch}]).
 
 stop(ServerName) ->
     cowboy:stop_listener(ServerName).
-
-default_config() ->
-    [{port,      getenv(httpd_port, 5671)},
-     {prefix,    getenv(httpd_rpc_prefix, "/rpc")},
-     {acceptors, getenv(httpd_acceptors, 10)},
-     {bind_addr, getenv(httpd_bind_address, any)}].
-
-merge_config(Config1, Config2) ->
-    lists:keymerge(1, lists:keysort(1, Config1), lists:keysort(1, Config2)).
-
-getenv(Key, Default) ->
-  case application:get_env(Key) of
-    {ok, Val} -> Val;
-    undefined -> Default
-  end.
 
 unslash(Path) ->
     case re:split(Path, "/", [{return, binary}]) of
@@ -68,3 +44,6 @@ unslash(Path) ->
         [<<>> | Rest] -> Rest;
         List          -> List
     end.
+
+transform_host("*") -> '_';
+transform_host(Host) -> re:split(Host, "\\.", [{return,binary}]).
