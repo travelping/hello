@@ -74,12 +74,12 @@ bind("urn:" ++ _, _Module) ->
 bind(URL, CallbackModule) ->
     case (catch ex_uri:decode(URL)) of
         {ok, Rec = #ex_uri{}, _} ->
-            bind_1(Rec, CallbackModule);
+            bind_uri(Rec, CallbackModule);
         _Other ->
-            error(badarg)
+            error(badurl)
     end.
 
-bind_1(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
+bind_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
     hello_httpd:start("http", Host, Port, Path, Mod).
 
 handle_request(CallbackModule, JSON) ->
@@ -96,13 +96,40 @@ handle_request(CallbackModule, JSON) ->
     hello_logger:log(JSON, ResponseJSON),
     ResponseJSON.
 
-rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
-    Methodto    = into_bin(Method),
-    IDField     = case Id of
-                      undefined -> [];
-                      _         -> [{"id", Id}]
-                  end,
-    RequestJSON = hello_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"version", <<"1.1">>}, {"method", Methodto}, {"params", ArgList}]}),
+rpc_request(HostURL, Request) ->
+    case (catch ex_uri:decode(HostURL)) of
+        {ok, Rec = #ex_uri{}, _} ->
+            rpc_request_scheme(Rec, Request);
+        _Other ->
+            error(badurl)
+    end.
+
+rpc_request_scheme(URI = #ex_uri{scheme = "http"}, Request) ->
+    rpc_request_http((URI), Request);
+rpc_request_scheme(URI = #ex_uri{scheme = "https"}, Request) ->
+    rpc_request_http(URI, Request);
+rpc_request_scheme(URI = #ex_uri{scheme = "zmq-tcp"}, Request) ->
+    rpc_request_zmq(URI#ex_uri{scheme = "tcp"}, Request);
+rpc_request_scheme(URI = #ex_uri{scheme = "zmq-ipc"}, Request) ->
+    rpc_request_zmq(URI#ex_uri{scheme = "ipc"}, Request).
+
+rpc_request_zmq(URI, Request = #request{id = ReqID}) ->
+    RequestJSON = encode_request(Request),
+    {ok, Context} = erlzmq:context(),
+    {ok, Socket} = erlzmq:socket(Context, req),
+    ok = erlzmq:connect(Socket, ex_uri:encode(URI)),
+    erlzmq:send(Socket, RequestJSON),
+    case ReqID of
+        undefined -> Resp = {ok, undefined};
+        _         -> Resp = erlzmq:recv(Socket)
+    end,
+    erlzmq:close(Socket),
+    erlzmq:term(Context),
+    Resp.
+
+rpc_request_http(URI, Request) ->
+    HostURL     = ex_uri:encode(URI),
+    RequestJSON = encode_request(Request),
     {ok, Hostname, _Path} = split_url(HostURL),
     {ok, Vsn}   = application:get_key(hello, vsn),
     Headers     = [{"Host", Hostname}, {"Connection", "keep-alive"},
@@ -115,6 +142,14 @@ rpc_request(HostURL, #request{id = Id, method = Method, params = ArgList}) ->
        {ok, {_Code, Body}} -> {ok, Body};
        {error, Reason}     -> {error, {http, Reason}}
     end.
+
+encode_request(#request{id = Id, method = Method, params = ArgList}) ->
+    Methodto    = into_bin(Method),
+    IDField     = case Id of
+                      undefined -> [];
+                      _         -> [{"id", Id}]
+                  end,
+    hello_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"method", Methodto}, {"params", ArgList}]}).
 
 %% @spec (Host::string(), Method::binary_or_string(), Arguments::list()) -> {ok, hello_json:json()} | {error, rpc_error()}
 %% @doc Function performs a JSON-RPC method call using HTTP.
