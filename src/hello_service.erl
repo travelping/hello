@@ -68,47 +68,16 @@
 
 -module(hello_service).
 -export([behaviour_info/1]).
--export([init/0, register/1, register/2, unregister/1, lookup/1, handle_request/2]).
+-export([handle_request/2]).
 -export([object_to_record/5, record_to_object/4]).
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
 -include("hello.hrl").
 -include("internal.hrl").
--define(SERVICE_TABLE, hello_services).
--record(service, {name, module}).
 
 behaviour_info(callbacks) -> [{handle_request,3}, {method_info,0}, {param_info,1}];
 behaviour_info(_Other)    -> undefined.
-
-init() ->
-    ets:new(?SERVICE_TABLE, [set, public, named_table, {keypos, #service.name}]).
-
-lookup(Service) ->
-    case ets:lookup(?SERVICE_TABLE, Service) of
-        []                          -> {error, not_found};
-        [#service{module = Module}] -> {ok, Module}
-    end.
-
-register(Mods) when is_list(Mods) ->
-    lists:map(fun ({Name, Module}) -> ?MODULE:register(Name, Module) end, Mods).
-register(Name, Module) when is_atom(Name) ->
-    ?MODULE:register(atom_to_list(Name), Module);
-register(Name, Module) when is_list(Name) and is_atom(Module) ->
-    case code:ensure_loaded(Module) of
-        {module, Module} -> ets:insert(?SERVICE_TABLE, #service{name = Name, module = Module});
-        Error            -> Error
-    end.
-
-unregister([]) -> ok;
-unregister(Name) when is_atom(Name) ->
-    ?MODULE:unregister(atom_to_list(Name));
-unregister(List) when is_list(List) and is_atom(hd(List)) ->
-    lists:map(fun ?MODULE:unregister/1, List);
-unregister(List) when is_list(List) and is_list(hd(List)) ->
-    lists:map(fun ?MODULE:unregister/1, List);
-unregister(Name) when is_list(Name) ->
-    ets:delete(?SERVICE_TABLE, Name).
 
 handle_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
     pmap(fun (Req) -> handle_request_m(CallbackModule, Req) end, BatchReq);

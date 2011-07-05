@@ -43,8 +43,6 @@ start() ->
     application:start(hello).
 
 start(_Type, _StartArgs) ->
-    hello_service:init(),
-
     ets:new(?HANDLER_TAB, [public, named_table, {read_concurrency, true}]),
 
     RequestLog = case application:get_env(hello, request_log_enabled) of
