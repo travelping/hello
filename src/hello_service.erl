@@ -76,7 +76,7 @@
 -include("hello.hrl").
 -include("internal.hrl").
 
-behaviour_info(callbacks) -> [{handle_request,3}, {method_info,0}, {param_info,1}];
+behaviour_info(callbacks) -> [{handle_request,2}, {method_info,0}, {param_info,1}];
 behaviour_info(_Other)    -> undefined.
 
 handle_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
@@ -104,7 +104,7 @@ do_handle_request(Mod, Req = #request{method = MethodName, params = Params}) ->
     end.
 
 run_request(Req, Mod, Method, ValidatedParams) ->
-    try Mod:handle_request(Req, Method#rpc_method.name, ValidatedParams) of
+    try Mod:handle_request(Method#rpc_method.name, ValidatedParams) of
         {ok, Result} ->
             hello_proto:response(Req, Result);
         {error, Message} ->

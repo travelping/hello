@@ -22,7 +22,7 @@
 -behaviour(hello_service).
 
 -export([register_yourself/0]).
--export([handle_request/3, param_info/1, method_info/0]).
+-export([handle_request/2, param_info/1, method_info/0]).
 -include("hello.hrl").
 
 register_yourself() -> hello:bind("http://*:5671/rpc/example", ?MODULE).
@@ -62,11 +62,11 @@ param_info(return_error) ->
                 optional = true,
                 default  = <<"">>}].
 
-handle_request(_Req, echo, [Str]) ->
+handle_request(echo, [Str]) ->
     {ok, Str};
-handle_request(_Req, append, [Str1, Str2]) ->
+handle_request(append, [Str1, Str2]) ->
     {ok, <<Str1/binary, Str2/binary>>};
-handle_request(_Req, enum_test, [Atom]) ->
+handle_request(enum_test, [Atom]) ->
     {ok, Atom};
-handle_request(_Req, return_error, [Code, Message]) ->
+handle_request(return_error, [Code, Message]) ->
     {error, Code, Message}.

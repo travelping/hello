@@ -9,7 +9,7 @@
 
 -module(jsonrpc_2_compliance_SUITE).
 -behaviour(hello_service).
--export([method_info/0, param_info/1, handle_request/3]).
+-export([method_info/0, param_info/1, handle_request/2]).
 -compile(export_all).
 
 -include("ct.hrl").
@@ -119,7 +119,7 @@ param_info(subtract) ->
      #rpc_param{name = minuend,
                 type = number}].
 
-handle_request(_Req, subtract, [Subtrahend, Minuend]) ->
+handle_request(subtract, [Subtrahend, Minuend]) ->
     {ok, Subtrahend - Minuend}.
 
 % ---------------------------------------------------------------------
