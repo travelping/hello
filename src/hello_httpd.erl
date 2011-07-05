@@ -20,8 +20,9 @@
 
 % @private
 -module(hello_httpd).
--export([start/5, stop/1]).
+-export([start/5, stop/1, lookup_service/1]).
 
+-include("internal.hrl").
 -define(HANDLER, hello_http_handler).
 
 start("http", Host, undefined, Path, CallbackModule) ->
@@ -29,14 +30,34 @@ start("http", Host, undefined, Path, CallbackModule) ->
 start("http", Host, Port, Path, CallbackModule) ->
     %% TODO: handle IP addresses
     MatchPath = unslash(Path),
-    Dispatch = [{transform_host(Host), [{['...'], ?HANDLER, [MatchPath, CallbackModule]}]}],
-    ServerName = hello_httpd,
-    cowboy:start_listener(ServerName, 100,
-        cowboy_tcp_transport, [{port, Port}],
-        cowboy_http_protocol, [{dispatch, Dispatch}]).
+    Key = {http, Host, Port, MatchPath},
+    case ets:lookup(?HANDLER_TAB, Key) of
+        [] ->
+            Dispatch   = [{transform_host(Host), [{['...'], ?HANDLER, []}]}],
+            ServerName = make_ref(),
+            ets:insert(?HANDLER_TAB, {Key, CallbackModule}),
+            cowboy:start_listener(ServerName, 100,
+                cowboy_tcp_transport, [{port, Port}],
+                cowboy_http_protocol, [{dispatch, Dispatch}]);
+        [{_Key, CallbackModule}] ->
+            {error, already_started};
+        [{_Key, _}]->
+            {error, occupied}
+    end.
 
 stop(ServerName) ->
     cowboy:stop_listener(ServerName).
+
+lookup_service(Req) ->
+    {Host, Req1} = cowboy_http_req:raw_host(Req),
+    {Port, Req2} = cowboy_http_req:port(Req1),
+    {Path, Req3} = cowboy_http_req:path_info(Req2),
+    case ets:lookup(?HANDLER_TAB, {http, binary_to_list(Host), Port, Path}) of
+        [] ->
+            {undefined, Req3};
+        [{_, CallbackModule}] ->
+            {CallbackModule, Req3}
+    end.
 
 unslash(Path) ->
     case re:split(Path, "/", [{return, binary}]) of

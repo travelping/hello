@@ -45,6 +45,8 @@ start() ->
 start(_Type, _StartArgs) ->
     hello_service:init(),
 
+    ets:new(?HANDLER_TAB, [public, named_table, {read_concurrency, true}]),
+
     RequestLog = case application:get_env(hello, request_log_enabled) of
                      {ok, true} ->
                         {ok, RequestLogFile} = application:get_env(hello, request_log_file),
@@ -75,7 +77,6 @@ bind(URL, CallbackModule) ->
     case (catch ex_uri:decode(URL)) of
         {ok, Rec = #ex_uri{}, _} ->
             bind_1(Rec, CallbackModule);
-        _ ->
         _Other ->
             error(badarg)
     end.
