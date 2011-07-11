@@ -22,54 +22,11 @@
 %%    This module implements the generic part of
 %%    a JSON-RPC service. It also manages the service registry
 %%    and serves as the backbone of parameter validation.
-%%
-%%    == Object-to-Record Conversion ==
-%%    One particularly useful facility is the automated conversion
-%%    of JSON objects to and from Erlang records. Because record definitions
-%%    exist only at compile time, the conversion routines are defined as
-%%    macros in the `hello.hrl' include file. They are documented below.
-%%
-%%    <br/>
-%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> hello_json:jsonobj() | none()'</b>
-%%
-%%    This macro converts a record to a JSON object. Some things to be aware of:
-%%    <ul>
-%%      <li>`undefined' is converted to `null'</li>
-%%      <li>The values contained in the record should adhere to the {@link hello_json:json()} type specification.
-%%          Among other things, this means that all strings must be encoded as binaries and the only kind
-%%          of tuple allowed is `{proplist()}'.<br/>
-%%          If any value cannot be encoded, the conversion will exit with reason `json_incompatible'.
-%%      </li>
-%%      <li>The value passed in as `Record' must match the record definition of `RecordName'.
-%%          If it doesn't, the conversion will exit with reason `badarg'.
-%%      </li>
-%%    </ul>
-%%
-%%    <br/>
-%%    <b>`?json_obj_to_record(RecordName::atom(), Obj::hello_json:jsonobj()) -> {ok, tuple()} | {error, not_object}'</b>
-%%
-%%    This macro converts a JSON object into an Erlang record. The conversion will ignore any keys in the object that
-%%    that do not have a corresponding field in the record. For missing keys the default value specified <i>in the record definition</i>
-%%    will be used. Furthermore,
-%%    <ul>
-%%      <li>`null' is converted to `undefined'.</li>
-%%      <li>`{error, not_object}' is returned if `Obj' is not a JSON object.</li>
-%%    </ul>
-%%
-%%    <br/>
-%%    <b>`?json_obj_into_record(RecordName::atom(), Defaults::tuple(), Obj::hello_json:jsonobj()) -> {ok, tuple()} | {error, not_object} | {error, bad_defaults}'</b>
-%%
-%%    This macro performs the same function as <b>`?json_obj_to_record/2'</b>, except that in case of missing keys the value
-%%    used is taken <i>from the `Defaults' record</i>. You might find this macro useful if you want to merge an object
-%%    <i>into</i> an existing instance of the record type in question.
-%%
-%%    `{error, bad_defaults}' is returned if `Defaults' does not match the definition of `RecordName'.
 %% @end
 
 -module(hello_service).
 -export([behaviour_info/1]).
 -export([handle_request/2]).
--export([object_to_record/5, record_to_object/4]).
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
@@ -221,50 +178,3 @@ wait_result({Pid,Ref}) ->
         {'DOWN', Ref, _, _, Reason} -> exit(Reason)
     end.
 
-%% @hidden
-object_to_record(RecName, RecAttrs, RecSize, Templ, {Props}) when is_list(Props) ->
-    try
-        (not is_tuple(Templ))          andalso throw(bad_defaults),
-        (element(1, Templ) /= RecName) andalso throw(bad_defaults),
-        (tuple_size(Templ) /= RecSize) andalso throw(bad_defaults),
-
-        {_EndP, Rec} =
-            lists:foldl(fun (Attr, {Posn, TheRec}) ->
-                            case proplists:get_value(atom_to_list(Attr), Props) of
-                                undefined -> {Posn + 1, TheRec};
-                                null      -> {Posn + 1, setelement(Posn, TheRec, undefined)};
-                                Value     -> {Posn + 1, setelement(Posn, TheRec, Value)}
-                            end
-                        end, {2, Templ}, RecAttrs),
-        {ok, Rec}
-    catch
-        throw:Err -> {error, Err}
-    end;
-object_to_record(_RecName, _RecAttrs, _RecSize, _Defaults, _NonObject) ->
-    {error, not_object}.
-
-%% @hidden
-record_to_object(RecName, RecAttrs, RecSize, Tuple) when is_tuple(Tuple) ->
-    (element(1, Tuple) /= RecName) andalso exit(badarg),
-    (tuple_size(Tuple) /= RecSize) andalso exit(badarg),
-    {_EndP, ObjProps} =
-    lists:foldl(fun (Attr, {Posn, Proplis}) ->
-                    {Posn + 1, [{atom_to_list(Attr), ensure_json_compat(element(Posn, Tuple))} | Proplis]}
-                end, {2, []}, RecAttrs),
-    {ObjProps};
-record_to_object(_RecNam, _RecAttr, _RecSiz, _Tuple) ->
-    exit(badarg).
-
-ensure_json_compat(undefined)           -> null;
-ensure_json_compat(null)                -> null;
-ensure_json_compat(true)                -> true;
-ensure_json_compat(false)               -> false;
-ensure_json_compat(A) when is_atom(A)   -> atom_to_binary(A, utf8);
-ensure_json_compat(B) when is_binary(B) -> B;
-ensure_json_compat(N) when is_number(N) -> N;
-ensure_json_compat(L) when is_list(L) ->
-    lists:map(fun ensure_json_compat/1, L);
-ensure_json_compat({Props}) when is_list(Props) ->
-    {lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props)};
-ensure_json_compat(_Val) ->
-    exit(json_incompatible).

@@ -19,11 +19,83 @@
 % OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 % THE SOFTWARE.
 
+%% @doc
+%%    This module provides a JSON codec (UTF-8 only),
+%%    and some utitlies to make working with JSON data a bit easier.
+%%
+%%    == Erlang JSON encoding ==
+%%    The JSON data encoding used by this module is summarized by the table below.
+%%
+%%    <table border="1">
+%%      <thead><tr><td><b>JSON Type</b></td><td><b>Erlang Type</b></td></tr></thead>
+%%      <tbody>
+%%        <tr><td>string</td><td>binary()</td></tr>
+%%        <tr><td>number</td><td>integer() | float()</td></tr>
+%%        <tr><td>boolean</td><td>'true' | 'false'</td></tr>
+%%        <tr><td>array</td><td>list()</td></tr>
+%%        <tr><td>object</td><td>{proplist()}</td></tr>
+%%      </tbody>
+%%    </table>
+%%
+%%    == Object-to-Record Conversion ==
+%%    One particularly useful facility is the automated conversion
+%%    of JSON objects to and from Erlang records. Because record definitions
+%%    exist only at compile time, the conversion routines are defined as
+%%    macros in the `hello.hrl' include file. They are documented below.
+%%
+%%    <br/>
+%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> value()'</b>
+%%
+%%    This macro converts a record to a JSON object. Some things to be aware of:
+%%    <ul>
+%%      <li>`undefined' is converted to `null'</li>
+%%      <li>The values contained in the record should adhere to the {@link value()} type specification.
+%%          Among other things, this means that all strings must be encoded as binaries and the only kind
+%%          of tuple allowed is `{proplist()}'.<br/>
+%%          If any value cannot be encoded, the conversion will exit with error `badjson'.
+%%      </li>
+%%      <li>The value passed in as `Record' must match the record definition of `RecordName'.
+%%          If it doesn't, the conversion will exit with reason `badarg'.
+%%      </li>
+%%    </ul>
+%%
+%%    <br/>
+%%    <b>`?json_obj_to_record(RecordName::atom(), Obj::value()) -> tuple()'</b>
+%%
+%%    This macro converts a JSON object into an Erlang record. The conversion will ignore any keys in the object that
+%%    that do not have a corresponding field in the record. For missing keys the default value specified <i>in the record definition</i>
+%%    will be used. Furthermore,
+%%    <ul>
+%%      <li>`null' is converted to `undefined'.</li>
+%%      <li>The conversion will exit with error `badarg' if `Obj' is not a JSON object.</li>
+%%    </ul>
+%%
+%%    <br/>
+%%    <b>`?json_obj_into_record(RecordName::atom(), Defaults::tuple(), Obj::value()) -> tuple()'</b>
+%%
+%%    This macro performs the same function as <b>`?json_obj_to_record/2'</b>, except that in case of missing keys the value
+%%    used is taken <i>from the `Defaults' record</i>. You might find this macro useful if you want to merge an object
+%%    <i>into</i> an existing instance of the record type in question.
+%% @end
+
 -module(hello_json).
 -export([encode/1, decode/1]).
+-export([object_to_record/5, record_to_object/4]).
+-export_type([value/0, json_string/0, json_number/0, json_boolean/0, json_array/0, json_object/0, json_null/0]).
+
+-type value() :: json_string() | json_number() | json_boolean() | json_array() | json_object() | json_null().
+-type json_string()  :: binary().
+-type json_number()  :: integer() | float().
+-type json_boolean() :: boolean().
+-type json_array()   :: list(value()).
+-type json_object()  :: {list({binary(), value()})}.
+-type json_null()    :: 'null'.
+
 
 %% --------------------------------------------------------------------------------
 %% -- Encoder
+-spec encode(value()) -> binary().
+
 encode(Num) when is_integer(Num) -> list_to_binary(integer_to_list(Num));
 encode(Num) when is_float(Num)   -> list_to_binary(float_to_list(Num));
 encode(true)                     -> <<"true">>;
@@ -79,6 +151,8 @@ pad4(Bin)         -> Bin.
 
 %% --------------------------------------------------------------------------------
 %% -- Decoder
+-spec decode(string() | binary()) -> {ok, value(), binary()} | {error, syntax_error}.
+
 decode(JSON) when is_list(JSON) ->
     decode1(iolist_to_binary(JSON));
 decode(JSON) when is_binary(JSON) ->
@@ -189,3 +263,52 @@ skipspace(<<Bin/binary>>) ->
         <<"\f", R/binary>> -> skipspace(R);
         Else -> Else
     end.
+
+%% --------------------------------------------------------------------------------
+%% -- Object to Record
+%% @hidden
+-spec object_to_record(atom(), [atom()], integer(), tuple(), json_object()) -> tuple().
+
+object_to_record(RecName, RecAttrs, RecSize, Templ, {Props}) when is_list(Props) ->
+    (not is_tuple(Templ))          andalso error(badarg),
+    (element(1, Templ) /= RecName) andalso error(badarg),
+    (tuple_size(Templ) /= RecSize) andalso error(badarg),
+
+    {_EndP, Rec} = lists:foldl(fun (Attr, {Posn, TheRec}) ->
+                                       case proplists:get_value(atom_to_list(Attr), Props) of
+                                           undefined -> {Posn + 1, TheRec};
+                                           null      -> {Posn + 1, setelement(Posn, TheRec, undefined)};
+                                           Value     -> {Posn + 1, setelement(Posn, TheRec, Value)}
+                                       end
+                               end, {2, Templ}, RecAttrs),
+    Rec;
+object_to_record(_RecName, _RecAttrs, _RecSize, _Defaults, _NonObject) ->
+    error(badarg).
+
+%% @hidden
+-spec record_to_object(atom(), [atom()], integer(), tuple()) -> json_object().
+
+record_to_object(RecName, RecAttrs, RecSize, Tuple) when is_tuple(Tuple) ->
+    (element(1, Tuple) /= RecName) andalso error(badarg),
+    (tuple_size(Tuple) /= RecSize) andalso error(badarg),
+    {_EndP, ObjProps} =
+    lists:foldl(fun (Attr, {Posn, Proplis}) ->
+                    {Posn + 1, [{atom_to_list(Attr), ensure_json_compat(element(Posn, Tuple))} | Proplis]}
+                end, {2, []}, RecAttrs),
+    {ObjProps};
+record_to_object(_RecNam, _RecAttr, _RecSiz, _Tuple) ->
+    error(badarg).
+
+ensure_json_compat(undefined)           -> null;
+ensure_json_compat(null)                -> null;
+ensure_json_compat(true)                -> true;
+ensure_json_compat(false)               -> false;
+ensure_json_compat(A) when is_atom(A)   -> atom_to_binary(A, utf8);
+ensure_json_compat(B) when is_binary(B) -> B;
+ensure_json_compat(N) when is_number(N) -> N;
+ensure_json_compat(L) when is_list(L) ->
+    lists:map(fun ensure_json_compat/1, L);
+ensure_json_compat({Props}) when is_list(Props) ->
+    {lists:map(fun ({K, V}) -> {K, ensure_json_compat(V)} end, Props)};
+ensure_json_compat(_Val) ->
+    error(badjson).
