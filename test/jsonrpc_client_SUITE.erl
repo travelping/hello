@@ -52,7 +52,7 @@ all() ->
 
 init_per_suite(Config) ->
     hello:start(),
-    hello:bind(?HOST, hello_example_service),
+    hello:bind_stateless(?HOST, hello_stateless_server_example),
     Config.
 
 end_per_suite(_Config) ->

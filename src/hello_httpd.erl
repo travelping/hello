@@ -23,7 +23,7 @@
 -export([start/5, stop/1, lookup_service/1]).
 
 -include("internal.hrl").
--define(HANDLER, hello_http_handler).
+-define(HANDLER, hello_stateless_http_server).
 
 start("http", Host, undefined, Path, CallbackModule) ->
     start("http", Host, 80, Path, CallbackModule);

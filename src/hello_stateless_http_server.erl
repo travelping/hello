@@ -37,7 +37,7 @@ handle(Req, State) ->
             case lists:member(Method, ['PUT', 'POST']) of
                 true ->
                     {ok, Body, Req3} = cowboy_http_req:body(Req2),
-                    JSON_Resp = hello:run_stateless_request(Module, Body),
+                    JSON_Resp = hello:run_stateless_binary_request(Module, Body),
                     {ok, ReturnReq} = json_response(Req3, 200, JSON_Resp);
                 false ->
                     {ok, ReturnReq} = json_error(Req1, 400, bad_http_method)
