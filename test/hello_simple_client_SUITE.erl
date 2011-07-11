@@ -2,7 +2,7 @@
 -compile(export_all).
 
 -include("ct.hrl").
--define(HOST, "http://localhost:5671/rpc/example").
+-define(HOST, "http://localhost:5690/rpc/example").
 -define(UNKNOWN_HOST, "http://undefined.undefined:8888").
 
 % ---------------------------------------------------------------------

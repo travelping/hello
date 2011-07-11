@@ -33,12 +33,10 @@ start("http", Host, Port, Path, CallbackModule) ->
     Key = {http, Host, Port, MatchPath},
     case ets:lookup(?HANDLER_TAB, Key) of
         [] ->
-            Dispatch   = [{transform_host(Host), [{['...'], ?HANDLER, []}]}],
-            ServerName = make_ref(),
+            Dispatch = [{transform_host(Host), [{['...'], ?HANDLER, []}]}],
             ets:insert(?HANDLER_TAB, {Key, CallbackModule}),
-            cowboy:start_listener(ServerName, 100,
-                cowboy_tcp_transport, [{port, Port}],
-                cowboy_http_protocol, [{dispatch, Dispatch}]);
+            {ok, _Pid} = start_listener(Port, Dispatch),
+            ok;
         [{_Key, CallbackModule}] ->
             {error, already_started};
         [{_Key, _}]->
@@ -47,6 +45,9 @@ start("http", Host, Port, Path, CallbackModule) ->
 
 stop(ServerName) ->
     cowboy:stop_listener(ServerName).
+
+start_listener(Port, Dispatch) ->
+    cowboy:start_listener(make_ref(), 100, cowboy_tcp_transport, [{port, Port}], cowboy_http_protocol, [{dispatch, Dispatch}]).
 
 lookup_service(Req) ->
     {Host, Req1} = cowboy_http_req:raw_host(Req),
