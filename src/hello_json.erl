@@ -91,7 +91,6 @@
 -type json_object()  :: {list({binary(), value()})}.
 -type json_null()    :: 'null'.
 
-
 %% --------------------------------------------------------------------------------
 %% -- Encoder
 -spec encode(value()) -> binary().

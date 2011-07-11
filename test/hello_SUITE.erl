@@ -7,16 +7,16 @@
 % ---------------------------------------------------------------------
 % -- test cases
 bind_http_url(_Config) ->
-    {ok, _Pid} = hello:bind("http://localhost:5671/test", hello_example_service).
+    {ok, _Pid} = hello:bind_stateless("http://localhost:5671/test", hello_example_service).
 
 bind_http_url_errors(_Config) ->
-    {ok, _Pid} = hello:bind("http://localhost:5672/test", hello_example_service),
+    {ok, _Pid} = hello:bind_stateless("http://localhost:5672/test", hello_example_service),
 
     %% binding the same module returns already_started
-    {error, already_started} = hello:bind("http://localhost:5672/test", hello_example_service),
+    {error, already_started} = hello:bind_stateless("http://localhost:5672/test", hello_example_service),
 
     %% binding a different one returns occupied
-    {error, occupied} = hello:bind("http://localhost:5672/test", ?MODULE).
+    {error, occupied} = hello:bind_stateless("http://localhost:5672/test", ?MODULE).
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks

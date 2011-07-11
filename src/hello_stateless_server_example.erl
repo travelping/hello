@@ -18,14 +18,16 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
--module(hello_example_service).
--behaviour(hello_service).
+% @hidden
+-module(hello_stateless_server_example).
+-behaviour(hello_stateless_server).
 
 -export([register_yourself/0]).
 -export([handle_request/2, param_info/1, method_info/0]).
 -include("hello.hrl").
 
-register_yourself() -> hello:bind("http://*:5671/rpc/example", ?MODULE).
+register_yourself() ->
+    hello:bind_stateless("http://*:5671/rpc/example", ?MODULE).
 
 method_info() ->
     [#rpc_method{name        = echo,

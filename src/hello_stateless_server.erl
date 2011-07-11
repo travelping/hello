@@ -19,48 +19,48 @@
 % DEALINGS IN THE SOFTWARE.
 
 %% @doc
-%%    This module implements the generic part of
-%%    a JSON-RPC service. It also manages the service registry
-%%    and serves as the backbone of parameter validation.
+%%    Behaviour for stateless RPC servers. 
 %% @end
 
--module(hello_service).
+-module(hello_stateless_server).
 -export([behaviour_info/1]).
--export([handle_request/2]).
+-export([run_request/2]).
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
 -include("hello.hrl").
 -include("internal.hrl").
 
+-spec behaviour_info(callbacks) -> [{atom(), integer()}]. 
 behaviour_info(callbacks) -> [{handle_request,2}, {method_info,0}, {param_info,1}];
 behaviour_info(_Other)    -> undefined.
 
-handle_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
-    pmap(fun (Req) -> handle_request_m(CallbackModule, Req) end, BatchReq);
-handle_request(CallbackModule, Req) ->
-    handle_request_m(CallbackModule, Req).
+-spec run_request(module(), hello:request() | [hello:request()]) -> hello:response() | [hello:response()].
+run_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
+    lists:map(fun (Req) -> run_maybe_notification(CallbackModule, Req) end, BatchReq);
+run_request(CallbackModule, Req) ->
+    run_maybe_notification(CallbackModule, Req).
 
-handle_request_m(Mod, Req) ->
+run_maybe_notification(Mod, Req) ->
     case Req#request.id of
         undefined ->
-            spawn(fun () -> do_handle_request(Mod, Req) end),
+            spawn(fun () -> do_single_request(Mod, Req) end),
             empty_response;
         _ID ->
-            do_handle_request(Mod, Req)
+            do_single_request(Mod, Req)
     end.
 
-do_handle_request(Mod, Req = #request{method = MethodName, params = Params}) ->
+do_single_request(Mod, Req = #request{method = MethodName, params = Params}) ->
     case find_method(Mod, MethodName) of
         undefined -> hello_proto:std_error(Req, method_not_found);
         Method    ->
             case validate_params(Mod, Method, Params) of
-                {ok, Validated} -> run_request(Req, Mod, Method, Validated);
+                {ok, Validated} -> run_callback_module(Req, Mod, Method, Validated);
                 {error, Msg}    -> hello_proto:std_error(Req, {invalid_params, Msg})
             end
     end.
 
-run_request(Req, Mod, Method, ValidatedParams) ->
+run_callback_module(Req, Mod, Method, ValidatedParams) ->
     try Mod:handle_request(Method#rpc_method.name, ValidatedParams) of
         {ok, Result} ->
             hello_proto:response(Req, Result);
@@ -167,14 +167,3 @@ zip(_1, [], Result) ->
     zip([], [], Result);
 zip([H1|R1], [H2|R2], {Result, TooMany}) ->
     zip(R1, R2, {[{H1, H2}|Result], TooMany}).
-
-pmap(F, List) ->
-    [wait_result(Worker) || Worker <- [spawn_worker(self(),F,E) || E <- List]].
-spawn_worker(Parent, F, E) ->
-    erlang:spawn_monitor(fun() -> Parent ! {self(), F(E)} end).
-wait_result({Pid,Ref}) ->
-    receive
-        {'DOWN', Ref, _, _, normal} -> receive {Pid,Result} -> Result end;
-        {'DOWN', Ref, _, _, Reason} -> exit(Reason)
-    end.
-

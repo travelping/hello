@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_http_handler).
+-module(hello_stateless_http_server).
 -behaviour(cowboy_http_handler).
 -export([init/3, handle/2, terminate/2]).
 
@@ -37,7 +37,7 @@ handle(Req, State) ->
             case lists:member(Method, ['PUT', 'POST']) of
                 true ->
                     {ok, Body, Req3} = cowboy_http_req:body(Req2),
-                    JSON_Resp = hello:handle_request(Module, Body),
+                    JSON_Resp = hello:run_stateless_request(Module, Body),
                     {ok, ReturnReq} = json_response(Req3, 200, JSON_Resp);
                 false ->
                     {ok, ReturnReq} = json_error(Req1, 400, bad_http_method)

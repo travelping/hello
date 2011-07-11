@@ -8,7 +8,7 @@
 % Copyright (c) Travelping GmbH <info@travelping.com>
 
 -module(jsonrpc_2_compliance_SUITE).
--behaviour(hello_service).
+-behaviour(hello_stateless_server).
 -export([method_info/0, param_info/1, handle_request/2]).
 -compile(export_all).
 
@@ -134,7 +134,7 @@ request({Method, Params}) ->
 request(Request) when is_list(Request) ->
     request(list_to_binary(Request));
 request(Request) ->
-    RespJSON = hello:handle_request(?MODULE, Request),
+    RespJSON = hello:run_stateless_binary_request(?MODULE, Request),
     case hello_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}
