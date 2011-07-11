@@ -20,21 +20,81 @@
 
 % @private
 -module(hello_stateless_zmq_server).
+-behaviour(gen_server).
 -export([start_link/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-start_link(Endpoint, CallbackModule) ->
-    {ok, Context} = erlzmq:context(),
-    {ok, Socket} = erlzmq:socket(Context, rep),
-    ok = erlzmq:bind(Socket, Endpoint),
-    recv_loop(CallbackModule, Socket).
+-include_lib("ex_uri/include/ex_uri.hrl").
 
-recv_loop(CallbackModule, Socket) ->
-    case erlzmq:recv(Socket) of
-        {ok, Message} ->
-            Reply = hello:run_stateless_request(CallbackModule, Message),
-            erlzmq:send(Socket, Reply),
-            recv_loop(CallbackModule, Socket);
+%% --------------------------------------------------------------------------------
+%% -- API
+start_link(URI, Module) ->
+    gen_server:start_link(?MODULE, {URI, Module}, []).
+
+%% --------------------------------------------------------------------------------
+%% -- gen_server callbacks
+-record(state, {socket, context,  mod}).
+
+init({URI = #ex_uri{}, Mod}) ->
+    case try_register(URI, Mod) of
+        ok ->
+            process_flag(trap_exit, true),
+            Endpoint = ex_uri:encode(URI),
+            {ok, Context} = erlzmq:context(),
+            {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
+            io:format(user, "~p~n", [Endpoint]),
+            case erlzmq:bind(Socket, Endpoint) of
+                ok ->
+                    {ok, #state{socket = Socket, context = Context, mod = Mod}};
+                {error, Error} ->
+                    {stop, Error}
+            end;
         {error, Error} ->
-            erlzmq:close(Socket),
-            exit({zmq_recv, Error})
+            {stop, Error}
+    end.
+
+handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, mod = Mod}) ->
+    JSONReply = hello:run_stateless_binary_request(Mod, Message),
+    ok = erlzmq:send(Socket, JSONReply),
+    {noreply, State}.
+
+terminate(_Reason, State) ->
+    erlzmq:close(State#state.socket),
+    erlzmq:term(State#state.context).
+
+%% unused callbacks
+handle_call(_Call, _From, State) ->
+    {reply, {error, unknown_call}, State}.
+handle_cast(_Cast, State) ->
+    {noreply, State}.
+code_change(_FromVsn, _ToVsn, State) ->
+    {ok, State}.
+
+%% --------------------------------------------------------------------------------
+%% -- helpers
+try_register(URI, Module) ->
+    Key = {zmq, reg_key(URI)},
+    case register(Key) of
+        ok ->
+            gproc:add_local_property(Key, Module),
+            ok;
+        error ->
+            case gproc:lookup_local_properties(Key) of
+                [{_Pid, Module}]       -> {error, already_started};
+                [{_Pid, _OtherModule}] -> {error, occupied}
+            end
+    end.
+
+register(Name) ->
+    case (catch gproc:add_local_name(Name)) of
+        true                  -> ok;
+        {'EXIT', {badarg, _}} -> error
+    end.
+
+reg_key(#ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
+    {tcp, Host, Port};
+reg_key(#ex_uri{scheme = "ipc", path = Path, authority = #ex_uri_authority{host = Host}}) ->
+    case Host of
+        undefined -> {ipc, Path};
+        _         -> {ipc, filename:join(Host, Path)}
     end.
