@@ -33,7 +33,7 @@ start_link(URI, Module) ->
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {socket, context,  mod}).
+-record(state, {socket, context, mod}).
 
 init({URI = #ex_uri{}, Mod}) ->
     case try_register(URI, Mod) of
@@ -42,7 +42,6 @@ init({URI = #ex_uri{}, Mod}) ->
             Endpoint = ex_uri:encode(URI),
             {ok, Context} = erlzmq:context(),
             {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
-            io:format(user, "~p~n", [Endpoint]),
             case erlzmq:bind(Socket, Endpoint) of
                 ok ->
                     {ok, #state{socket = Socket, context = Context, mod = Mod}};
