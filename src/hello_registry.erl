@@ -21,7 +21,7 @@
 % @private
 -module(hello_registry).
 -behaviour(gen_server).
--export([start_link/0, register/3, multi_register/2, lookup/1, lookup_pid/1]).
+-export([start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(TABLE, hello_registry_tab).
@@ -46,7 +46,7 @@ register(Name, Data, Pid) ->
 %% @doc Atomically register a pid under multiple names
 %%   When one of the names is already registered, the function returns the pid and data
 %%   of the existing process.
--spec multi_register(list({name(), data()}), pid()) -> ok | {already_registered, pid(), data()} | {error, occupied}.
+-spec multi_register(list({name(), data()}), pid()) -> ok | {already_registered, pid(), data()}.
 multi_register(RegSpecs, Pid) ->
     gen_server:call(?SERVER, {register, RegSpecs, Pid}).
 
@@ -70,6 +70,10 @@ lookup_pid(Pid) ->
             {ok, Results}
     end.
 
+-spec unregister(name()) -> ok.
+unregister(Name) ->
+    gen_server:call(?SERVER, {unregister, Name}).
+
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 init({}) ->
@@ -92,16 +96,18 @@ handle_call({register, RegSpecs, Pid}, _From, Table) ->
         false ->
             {reply, {error, noproc}, Table}
     end;
+handle_call({unregister, Name}, _From, Table) ->
+    ets:delete(Table, {name, Name}),
+    {reply, ok, Table};
+
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
-    NameMS   = [{{{name, Name}, '_', '_'}, [], [true]} || Name <- lookup_pid_ms(Table, Pid)],
-    PidMS    = {{{pid, Pid, '_'}}, [], [true]},
-    DelCount = ets:select_delete(Table, [PidMS | NameMS]),
+    DelCount = delete_pid(Table, Pid),
     case DelCount of
         0 -> error_logger:error_report(io_lib:format("Got down message from unregistered pid: ~p~n", [Pid]));
-        _ -> io:format("del: ~p~n", [DelCount])
+        _ -> ok
     end,
     {noreply, Table};
 handle_info(_InfoMsg, State) ->
@@ -117,6 +123,11 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
+delete_pid(Table, Pid) ->
+    NameMS = [{{{name, Name}, '_', '_'}, [], [true]} || Name <- lookup_pid_ms(Table, Pid)],
+    PidMS  = {{{pid, Pid, '_'}}, [], [true]},
+    ets:select_delete(Table, [PidMS | NameMS]).
+
 lookup_pid_ms(Table, Pid) ->
     PidMS = [{{{pid, Pid, '$1'}}, [], ['$1']}],
     ets:select(Table, PidMS).
