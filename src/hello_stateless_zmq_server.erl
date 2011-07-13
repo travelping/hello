@@ -55,8 +55,10 @@ init({URI = #ex_uri{}, CallbackModule}) ->
     end.
 
 handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, mod = Mod}) ->
-    JSONReply = hello:run_stateless_binary_request(Mod, Message),
-    ok = erlzmq:send(Socket, JSONReply),
+    spawn(fun () ->
+                  JSONReply = hello:run_stateless_binary_request(Mod, Message),
+                  ok = erlzmq:send(Socket, JSONReply)
+          end),
     {noreply, State}.
 
 terminate(_Reason, State) ->

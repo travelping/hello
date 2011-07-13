@@ -44,7 +44,7 @@ run_request(CallbackModule, Req) ->
 run_maybe_notification(Mod, Req) ->
     case Req#request.id of
         undefined ->
-            spawn(fun () -> do_single_request(Mod, Req) end),
+            do_single_request(Mod, Req),
             empty_response;
         _ID ->
             do_single_request(Mod, Req)
