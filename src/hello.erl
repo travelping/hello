@@ -27,7 +27,6 @@
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
--define(HTTPD, hello_httpd).
 
 %% @doc Starts the application and all dependencies.
 %% This is useful for debugging purposes.
@@ -39,8 +38,7 @@ start() ->
     application:start(hello).
 
 start(_Type, _StartArgs) ->
-    ets:new(?HANDLER_TAB, [public, named_table, {read_concurrency, true}]),
-    {ok, Supervisor} = hello_stateless_zmq_supervisor:start_link(),
+    {ok, Supervisor} = hello_supervisor:start_link(),
     RequestLog = case application:get_env(hello, request_log_enabled) of
                      {ok, true} ->
                          {ok, RequestLogFile} = application:get_env(hello, request_log_file),
@@ -52,10 +50,8 @@ start(_Type, _StartArgs) ->
     {ok, Supervisor, RequestLog}.
 
 stop(undefined) ->
-    hello_httpd:stop(?HTTPD),
     ok;
 stop(Log) ->
-    hello_httpd:stop(?HTTPD),
     hello_logger:close(Log),
     ok.
 
@@ -74,7 +70,7 @@ bind_stateless(URL, CallbackModule) ->
     end.
 
 bind_stateless_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
-    hello_httpd:start("http", Host, Port, Path, Mod);
+    hello_stateless_httpd:start("http", Host, Port, Path, Mod);
 bind_stateless_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod) ->
     hello_stateless_zmq_supervisor:start_listener(URL#ex_uri{scheme = "tcp"}, Mod);
 bind_stateless_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod) ->

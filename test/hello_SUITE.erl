@@ -9,8 +9,12 @@
 bind_stateless_http_url(_Config) ->
     ok = hello:bind_stateless("http://localhost:5671/test", hello_stateless_server_example).
 
+bind_stateless_http_same_listener(_Config) ->
+    ok = hello:bind_stateless("http://localhost:5672/test1", hello_stateless_server_example),
+    ok = hello:bind_stateless("http://localhost:5672/test2", hello_stateless_server_example).
+
 bind_stateless_http_url_errors(_Config) ->
-    URL = "http://localhost:5672/test",
+    URL = "http://localhost:5673/test",
     ok = hello:bind_stateless(URL, hello_stateless_server_example),
 
     %% binding the same module returns already_started
@@ -36,6 +40,7 @@ bind_stateless_zmq_url_errors(_Config) ->
 % -- common_test callbacks
 all() ->
     [bind_stateless_http_url, bind_stateless_http_url_errors,
+     bind_stateless_http_same_listener,
      bind_stateless_zmq_url, bind_stateless_zmq_url_errors].
 
 init_per_suite(Config) ->

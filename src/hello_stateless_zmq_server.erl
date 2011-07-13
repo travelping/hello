@@ -35,8 +35,8 @@ start_link(URI, Module) ->
 %% -- gen_server callbacks
 -record(state, {socket, context, mod}).
 
-init({URI = #ex_uri{}, Mod}) ->
-    case try_register(URI, Mod) of
+init({URI = #ex_uri{}, CallbackModule}) ->
+    case hello_registry:register(reg_key(URI), CallbackModule, self()) of
         ok ->
             process_flag(trap_exit, true),
             Endpoint = ex_uri:encode(URI),
@@ -44,12 +44,14 @@ init({URI = #ex_uri{}, Mod}) ->
             {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
             case erlzmq:bind(Socket, Endpoint) of
                 ok ->
-                    {ok, #state{socket = Socket, context = Context, mod = Mod}};
+                    {ok, #state{socket = Socket, context = Context, mod = CallbackModule}};
                 {error, Error} ->
                     {stop, Error}
             end;
-        {error, Error} ->
-            {stop, Error}
+        {already_registered, _Pid, CallbackModule} ->
+            {stop, already_started};
+        {already_registered, _Pid, _OtherModule} ->
+            {stop, occupied}
     end.
 
 handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, mod = Mod}) ->
@@ -71,25 +73,6 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-try_register(URI, Module) ->
-    Key = {zmq, reg_key(URI)},
-    case register(Key) of
-        ok ->
-            gproc:add_local_property(Key, Module),
-            ok;
-        error ->
-            case gproc:lookup_local_properties(Key) of
-                [{_Pid, Module}]       -> {error, already_started};
-                [{_Pid, _OtherModule}] -> {error, occupied}
-            end
-    end.
-
-register(Name) ->
-    case (catch gproc:add_local_name(Name)) of
-        true                  -> ok;
-        {'EXIT', {badarg, _}} -> error
-    end.
-
 reg_key(#ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
     {tcp, Host, Port};
 reg_key(#ex_uri{scheme = "ipc", path = Path, authority = #ex_uri_authority{host = Host}}) ->

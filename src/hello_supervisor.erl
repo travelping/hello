@@ -19,24 +19,21 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_stateless_zmq_supervisor).
+-module(hello_supervisor).
 -behaviour(supervisor).
--export([start_link/0, start_listener/2]).
+-export([start_link/0]).
 -export([init/1]).
 
--define(SERVER, hello_stateless_zmq_supervisor).
+-define(SERVER, hello_supervisor).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
-start_listener(URL, Module) ->
-    case supervisor:start_child(?SERVER, [URL, Module]) of
-        {ok, _Pid}     -> ok;
-        {error, Error} -> {error, Error}
-    end.
-
 init({}) ->
-    Children = [{stateless_server, {hello_stateless_zmq_server, start_link, []},
-                 transient, 5000, worker, [hello_stateless_zmq_server]}],
-    RestartStrategy = {simple_one_for_one, 5, 10},
+    RegistrySpec     = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
+    StatelessZMQSpec = {stateless_zmq, {hello_stateless_zmq_supervisor, start_link, []},
+                        transient, infinity, supervisor, [hello_stateless_zmq_supervisor]},
+
+    Children = [RegistrySpec, StatelessZMQSpec],
+    RestartStrategy = {one_for_one, 5, 10},
     {ok, {RestartStrategy, Children}}.

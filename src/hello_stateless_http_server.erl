@@ -29,7 +29,7 @@ init({tcp, http}, Req, []) ->
     {ok, Req, undefined}.
 
 handle(Req, State) ->
-    case hello_httpd:lookup_service(Req) of
+    case hello_stateless_httpd:lookup_service(Req) of
         {undefined, Req1} ->
             {ok, ReturnReq} = json_error(Req1, 404, service_not_found);
         {Module, Req1} ->
