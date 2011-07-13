@@ -38,7 +38,7 @@ start_link() ->
     gen_server:start_link({local, hello_registry}, ?MODULE, {}, []).
 
 %% @doc Atomically register a pid under the given name
-%% @equiv multi_register([{Name, Data}], Pid).
+%% @equiv multi_register([{Name, Data}], Pid)
 -spec register(name(), data(), pid()) -> ok | {already_registered, pid(), data()}.
 register(Name, Data, Pid) ->
     multi_register([{Name, Data}], Pid).
