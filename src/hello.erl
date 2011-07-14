@@ -48,8 +48,7 @@ stop(_) -> ok.
 
 %% @doc Start a stateless RPC server on the given URL.
 -type url() :: string().
--type urn() :: string().
--spec bind_stateless(url() | urn(), module()) -> ok | {error, already_bound} | {error, occupied}.
+-spec bind_stateless(url(), module()) -> ok | {error, already_bound} | {error, occupied} | {error, {transport, term()}}.
 bind_stateless("urn:" ++ _, _Module) ->
     error(badurl);
 bind_stateless(URL, CallbackModule) ->

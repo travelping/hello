@@ -47,7 +47,7 @@ init({URI = #ex_uri{}, CallbackModule}) ->
                     EncURI     = list_to_binary(ex_uri:encode(uri_for_log(URI))),
                     {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
                 {error, Error} ->
-                    {stop, Error}
+                    {stop, {transport, Error}}
             end;
         {already_registered, _Pid, CallbackModule} ->
             {stop, already_started};
