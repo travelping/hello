@@ -34,26 +34,17 @@ start() ->
     application:start(cowboy),
     application:start(inets),
     application:start(ex_uri),
-    application:start(gproc),
     application:start(hello).
 
 start(_Type, _StartArgs) ->
-    {ok, Supervisor} = hello_supervisor:start_link(),
-    RequestLog = case application:get_env(hello, request_log_enabled) of
-                     {ok, true} ->
-                         {ok, RequestLogFile} = application:get_env(hello, request_log_file),
-                         {ok, Log} = hello_logger:open(RequestLogFile),
-                         Log;
-                     {ok, false} ->
-                         undefined
-                 end,
-    {ok, Supervisor, RequestLog}.
+    %% create the log dir
+    {ok, LogDir} = application:get_env(hello, request_log_dir),
+    ok           = filelib:ensure_dir(filename:join(LogDir, ".")),
 
-stop(undefined) ->
-    ok;
-stop(Log) ->
-    hello_logger:close(Log),
-    ok.
+    {ok, Supervisor} = hello_supervisor:start_link(),
+    {ok, Supervisor, undefined}.
+
+stop(_) -> ok.
 
 %% @doc Start a stateless RPC server on the given URL.
 -type url() :: string().
@@ -81,7 +72,7 @@ bind_stateless_uri(_, _Mod) ->
 %% @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
 %%   This can be used for testing, but please note that the request must be
 %%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for that.
-%%   At the moment, this will also write the request to the log.
+%%   Please note that the request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary()) -> binary().
 run_stateless_binary_request(CallbackModule, JSON) ->
     case hello_proto:request_json(JSON) of
@@ -93,9 +84,7 @@ run_stateless_binary_request(CallbackModule, JSON) ->
         {error, Error} ->
             Response = Error
     end,
-    ResponseJSON = hello_proto:response_json(Response),
-    hello_logger:log(JSON, ResponseJSON),
-    ResponseJSON.
+    hello_proto:response_json(Response).
 
 %% @doc Run a single JSON-RPC request against the given callback module.
 %%   Use this function to test your stateless servers.

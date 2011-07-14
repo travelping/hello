@@ -33,18 +33,19 @@ start_link(URI, Module) ->
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {socket, context, mod}).
+-record(state, {socket, uri, context, mod}).
 
 init({URI = #ex_uri{}, CallbackModule}) ->
     case hello_registry:register(reg_key(URI), CallbackModule, self()) of
         ok ->
-            process_flag(trap_exit, true),
             Endpoint = ex_uri:encode(URI),
             {ok, Context} = erlzmq:context(),
             {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
             case erlzmq:bind(Socket, Endpoint) of
                 ok ->
-                    {ok, #state{socket = Socket, context = Context, mod = CallbackModule}};
+                    {ok, _Log} = hello_request_log:open(CallbackModule, self()),
+                    EncURI     = list_to_binary(ex_uri:encode(URI#ex_uri{scheme = "zmq-" ++ URI#ex_uri.scheme})),
+                    {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
                 {error, Error} ->
                     {stop, Error}
             end;
@@ -54,14 +55,16 @@ init({URI = #ex_uri{}, CallbackModule}) ->
             {stop, occupied}
     end.
 
-handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, mod = Mod}) ->
+handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, uri = URI, mod = Mod}) ->
     spawn(fun () ->
                   JSONReply = hello:run_stateless_binary_request(Mod, Message),
+                  ok = hello_request_log:request(Mod, URI, Message, JSONReply),
                   ok = erlzmq:send(Socket, JSONReply)
           end),
     {noreply, State}.
 
 terminate(_Reason, State) ->
+    hello_request_log:close(State#state.mod),
     erlzmq:close(State#state.socket),
     erlzmq:term(State#state.context).
 
