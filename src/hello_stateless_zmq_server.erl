@@ -44,7 +44,7 @@ init({URI = #ex_uri{}, CallbackModule}) ->
             case erlzmq:bind(Socket, Endpoint) of
                 ok ->
                     {ok, _Log} = hello_request_log:open(CallbackModule, self()),
-                    EncURI     = list_to_binary(ex_uri:encode(URI#ex_uri{scheme = "zmq-" ++ URI#ex_uri.scheme})),
+                    EncURI     = list_to_binary(ex_uri:encode(uri_for_log(URI))),
                     {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
                 {error, Error} ->
                     {stop, Error}
@@ -80,8 +80,16 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- helpers
 reg_key(#ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
     {tcp, Host, Port};
-reg_key(#ex_uri{scheme = "ipc", path = Path, authority = #ex_uri_authority{host = Host}}) ->
+reg_key(URI = #ex_uri{scheme = "ipc"}) ->
+    {ipc, ipc_path(URI)}.
+
+uri_for_log(URI = #ex_uri{scheme = "tcp"}) ->
+    URI#ex_uri{scheme = "tcp"};
+uri_for_log(URI = #ex_uri{scheme = "ipc"}) ->
+    URI#ex_uri{scheme = "zmq-ipc", path = filename:absname(ipc_path(URI)), authority = #ex_uri_authority{host = ""}}.
+
+ipc_path(#ex_uri{path = Path, authority = #ex_uri_authority{host = Host}}) ->
     case Host of
-        undefined -> {ipc, Path};
-        _         -> {ipc, filename:join(Host, Path)}
+        undefined -> Path;
+        _         -> filename:join(Host, Path)
     end.
