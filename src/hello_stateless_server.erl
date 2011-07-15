@@ -18,9 +18,82 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
-%% @doc
-%%    Behaviour for stateless RPC servers. 
-%% @end
+% @doc Behaviour for stateless RPC servers.
+%   A module implementing this behaviour should always include the
+%   hello header file.
+%
+%   ```
+%       -include_lib("hello/include/hello.hrl").
+%   '''
+%
+%   == The Callbacks in Detail ==
+%
+%   === method_info() -> [#rpc_method{}] ===
+%   The ``method_info/0'' callback is used to determine which RPC methods the server
+%   provides. It is called on every request. The return value is a list of ``#rpc_method{}''
+%   records that contain information about each method.
+%
+%   ```
+%      -record(rpc_method, {
+%          name              :: atom(),
+%          params_as = list  :: 'list' | 'proplist',
+%          description = ""  :: string()
+%      }).
+%   '''
+%
+%   === param_info(MethodName :: atom()) -> [#rpc_param{}] ===
+%   The ``param_info/1'' callback should have a clause for every method name returned from ``method_info/0''.
+%   Its return value is a list of records that describe the parameters of the method requested.
+%
+%   ```
+%      -record(rpc_param, {
+%          name               :: atom(),
+%          type = any         :: hello:param_type(),
+%          optional = false   :: boolean(),
+%          default            :: term(),
+%          description = ""   :: string()
+%      }).
+%   '''
+%
+%   The parameter list is used by hello to validate the arguments of an RPC call.
+%   As evident in the record definition, parameters can be optional. When there is no
+%   argument value for an optional parameter, the default value given in the record is used.
+%   Please note that the default value does not need to be of a JSON-compatible data type, but
+%   can be any Erlang term.
+%
+%   The type field of the record is used to validate the argument value.
+%   The following types are supported:
+%
+%    <table border="1">
+%      <thead><tr><td><b>Type</b></td><td><b>Matches</b></td></tr></thead>
+%      <tbody>
+%        <tr><td>any</td><td>all JSON values</td></tr>
+%        <tr><td>boolean</td><td>JSON booleans</td></tr>
+%        <tr><td>string</td><td>JSON strings</td></tr>
+%        <tr><td>{enum, [atom()]}</td><td>a limited choice of JSON strings (converted to atom)</td></tr>
+%        <tr><td>number</td><td>all JSON numbers</td></tr>
+%        <tr><td>integer</td><td>JSON numbers that are integers</td></tr>
+%        <tr><td>float</td><td>JSON numbers that are floats</td></tr>
+%        <tr><td>array</td><td>JSON arrays</td></tr>
+%        <tr><td>list</td><td>JSON arrays</td></tr>
+%        <tr><td>object</td><td>JSON objects</td></tr>
+%      </tbody>
+%    </table>
+%
+%   === handle_request(MethodName :: atom(), Params :: list() | proplist()) -> Return ===
+%   ```
+%   Return = {ok, hello_json:value()} | {error, Code :: integer(), Message :: string()}
+%   '''
+%
+%   This callback contains the actual implementation of the RPC method. It is called to
+%   compute the reponse to an RPC call.
+%
+%   The type of the argument list depends on the ``params_as'' field of the ``#rpc_method{}'' record.
+%   If you declare ``list'' in the record, the arguments are passed by position, as a list.
+%   Otherwise, they are passed by name, as a property list (the keys are atoms).
+%
+%   <br/>
+% @end
 
 -module(hello_stateless_server).
 -export([behaviour_info/1]).
@@ -31,10 +104,11 @@
 -include("hello.hrl").
 -include("internal.hrl").
 
--spec behaviour_info(callbacks) -> [{atom(), integer()}]. 
+-spec behaviour_info(callbacks) -> [{atom(), integer()}].
 behaviour_info(callbacks) -> [{handle_request,2}, {method_info,0}, {param_info,1}];
 behaviour_info(_Other)    -> undefined.
 
+% @private
 -spec run_request(module(), hello:request() | [hello:request()]) -> hello:response() | [hello:response()].
 run_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
     lists:map(fun (Req) -> run_maybe_notification(CallbackModule, Req) end, BatchReq);

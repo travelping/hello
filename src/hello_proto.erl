@@ -18,6 +18,7 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
+% @private
 -module(hello_proto).
 -export([request/1, request_json/1, response/2, error_response/3, error_response/4,
          response_json/1, std_error/1, std_error/2]).

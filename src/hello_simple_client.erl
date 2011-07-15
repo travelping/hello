@@ -23,6 +23,7 @@
 %%   for testing and debugging purposes, not in actual production code.
 -module(hello_simple_client).
 -export([call/3, notification/3, call_np/3]).
+-export_type([url/0, method/0, rpc_error/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -30,16 +31,17 @@
 
 %% --------------------------------------------------------------------------------
 %% -- Client API
--type binary_or_string() :: binary() | string().
+-type url() :: string().
+-type method() :: binary() | string() | atom().
 -type rpc_error() :: {error, {http, term()}} | {error, syntax_error}
                      | {error, invalid_request} | {error, method_not_found} | {error, invalid_params}
                      | {error, internal_error} | {error, internal_error} | {error, integer()}.
 
 %% @doc Perform a JSON-RPC method call.
--spec call(string(), binary_or_string(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
+-spec call(url(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+call(Server, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
     Request = #request{id = 1, method = Method, params = ArgList},
-    case rpc_request(Host, Request) of
+    case rpc_request(Server, Request) of
         {error, Error} -> {error, Error};
         {ok, Body} ->
             case hello_json:decode(Body) of
@@ -63,14 +65,14 @@ call(Host, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
     end.
 
 %% @doc Performs a JSON-RPC method call with named parameters (property list).
--spec call_np(string(), binary_or_string(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call_np(Host, Method, List) when is_list(List) ->
-    call(Host, Method, {List}).
+-spec call_np(url(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+call_np(Server, Method, ArgProps) when is_list(ArgProps) ->
+    call(Server, Method, {ArgProps}).
 
 %% @doc Special form of a JSON-RPC method call that returns no result.
--spec notification(string(), binary_or_string(), list()) -> ok | {error, rpc_error()}.
-notification(Host, Method, ArgList) ->
-    case rpc_request(Host, #request{method=Method, params=ArgList}) of
+-spec notification(url(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
+notification(Server, Method, ArgList) ->
+    case rpc_request(Server, #request{method=Method, params=ArgList}) of
         {error, Reason} -> {error, Reason};
         {ok, _Body}     -> ok
     end.

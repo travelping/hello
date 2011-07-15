@@ -1,12 +1,31 @@
+@title Hello: JSON-RPC API framework
 @copyright Travelping GmbH <info@travelping.com>
 
 @doc
-This application provides a generic JSON-RPC server.
-RPC functions may be called using HTTP and configuration
-of varius various HTTP features like Basic Authentication and HTTPS is
-possible through application parameters or a config file.
+== Overview ==
 
-Erlang modules that follow the {@link tp_json_rpc_service} behaviour
-can register themselves as RPC services with a certain interface.
-RPC calls are mapped to Erlang function calls aided by a validation
-mechanism.
+The hello application provides an API to expose functionality through
+JSON-RPC protocol over various transports (such as HTTP and ZeroMQ).
+
+In order to build a server with hello, the first step would be to implement
+a callback module with the {@link hello_stateless_server} behaviour.
+The callback module is made available on the network by <em>binding</em> it
+({@link hello:bind_stateless/2}) to a particular URL:
+
+```
+    ok = hello:bind_stateless("zmq-tcp://127.0.0.1:5999", my_module).
+'''
+
+When you bind a server, hello will start a supervised listener
+for the given transport, which will handle RPC requests and call your module.
+Since hello servers adhere to the [http://groups.google.com/group/json-rpc/web/json-rpc-2-0 JSON-RPC 2.0 specification]
+(JSON-RPC 1.0 is transparently supported as well) any JSON-RPC client can be used to talk to a server.
+
+To communicate with the server from Erlang, use the {@link hello_simple_client} module,
+as it supports all the transports and its interface is streamlined with the rest of the framework.
+The hello client will always use JSON-RPC 2.0.
+
+Hello provides request logging.
+A separate request log is written for each callback module.
+By default, the request logs are placed in ``[current working directory]/request-logs/''
+but the request log directory can be changed through an application parameter.

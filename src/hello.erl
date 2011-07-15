@@ -28,8 +28,8 @@
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
-%% @doc Starts the application and all dependencies.
-%% This is useful for debugging purposes.
+% @doc Starts the application and all dependencies.
+% This is useful for debugging purposes.
 start() ->
     application:start(cowboy),
     application:start(inets),
@@ -46,11 +46,36 @@ start(_Type, _StartArgs) ->
 
 stop(_) -> ok.
 
-%% @doc Start a stateless RPC server on the given URL.
+% @doc Starts a stateless RPC server on the given URL.
+%   The transport implementation that is chosen depends on
+%   the protocol field of the URL. The available transports are documented
+%   below:
+%
+%    <table border="1">
+%      <thead><tr><td width="140"><b>URL scheme</b></td><td><b>Transport</b></td><td><b>Notes</b></td></tr></thead>
+%      <tbody>
+%        <tr><td>http://...</td><td>HTTP</td><td>Multiple services can be bound to the same host/port
+%                                                combination, as long as the path is different.</td></tr>
+%        <tr><td>zmq-tcp://...</td><td>ZeroMQ over TCP</td><td>The port <em>must</em> be specified.</td></tr>
+%        <tr><td>zmq-ipc://...</td><td>ZeroMQ over Unix Sockets</td><td>The path can be either absolute or relative.</td></tr>
+%      </tbody>
+%    </table>
+%   <br/>
+%   The function returns:
+%   <ul>
+%     <li>``ok'' when the server has been bound successfully</li>
+%     <li>``{error, already_started}'' when the same module is already bound to the given URL</li>
+%     <li>``{error, occupied}'' when a different module is already bound to the given URL</li>
+%     <li>``{error, {transport, term()}}'' when there was an error starting the server</li>
+%   </ul>
+%
+%   The function will <b>exit</b>:
+%   <ul>
+%     <li>with reason ``badurl'' when the URL is malformed</li>
+%     <li>with reason ``badprotocol'' when the URL uses an unknown scheme</li>
+%   </ul>
 -type url() :: string().
--spec bind_stateless(url(), module()) -> ok | {error, already_bound} | {error, occupied} | {error, {transport, term()}}.
-bind_stateless("urn:" ++ _, _Module) ->
-    error(badurl);
+-spec bind_stateless(url(), module()) -> ok | {error, already_started} | {error, occupied} | {error, {transport, term()}}.
 bind_stateless(URL, CallbackModule) ->
     case (catch ex_uri:decode(URL)) of
         {ok, Rec = #ex_uri{}, _} ->
@@ -66,12 +91,13 @@ bind_stateless_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod) ->
 bind_stateless_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod) ->
     hello_stateless_zmq_supervisor:start_listener(URL#ex_uri{scheme = "ipc"}, Mod);
 bind_stateless_uri(_, _Mod) ->
-    exit(badprotocol).
+    error(badurl).
 
-%% @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
-%%   This can be used for testing, but please note that the request must be
-%%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for that.
-%%   Please note that the request is <b>not</b> logged.
+% @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
+%   This can be used for testing, but please note that the request must be
+%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for testing.
+%
+%   The request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary()) -> binary().
 run_stateless_binary_request(CallbackModule, JSON) ->
     case hello_proto:request_json(JSON) of
@@ -85,12 +111,15 @@ run_stateless_binary_request(CallbackModule, JSON) ->
     end,
     hello_proto:response_json(Response).
 
-%% @doc Run a single JSON-RPC request against the given callback module.
-%%   Use this function to test your stateless servers.
-%%   Please note that the request is <b>not</b> logged.
+% @doc Run a single JSON-RPC request against the given callback module.
+%   This function allows you to test your stateless servers without binding
+%   to any URL. The request argument should be a complete JSON-RPC request in
+%   Erlang data form.
+%
+%   The request is <b>not</b> logged.
 -spec run_stateless_request(module(), hello_json:value()) -> hello_json:value().
-run_stateless_request(CallbackModule, DecodedRequest) ->
-    case hello_proto:request(DecodedRequest) of
+run_stateless_request(CallbackModule, Request) ->
+    case hello_proto:request(Request) of
         {ok, RequestRec} ->
             hello_stateless_server:run_request(CallbackModule, RequestRec);
         {batch, Valid, Invalid} ->

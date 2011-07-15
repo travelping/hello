@@ -33,9 +33,12 @@
 %%        <tr><td>number</td><td>integer() | float()</td></tr>
 %%        <tr><td>boolean</td><td>'true' | 'false'</td></tr>
 %%        <tr><td>array</td><td>list()</td></tr>
-%%        <tr><td>object</td><td>{proplist()}</td></tr>
+%%        <tr><td>object</td><td>{[{binary(), value()}]}</td></tr>
 %%      </tbody>
 %%    </table>
+%%
+%%    When <em>encoding</em> JSON objects, the keys may be specified as a binary,
+%%    string or atom.
 %%
 %%    == Object-to-Record Conversion ==
 %%    One particularly useful facility is the automated conversion
@@ -43,8 +46,7 @@
 %%    exist only at compile time, the conversion routines are defined as
 %%    macros in the `hello.hrl' include file. They are documented below.
 %%
-%%    <br/>
-%%    <b>`?record_to_json_obj(RecordName::atom(), Record::tuple()) -> value()'</b>
+%%    === ?record_to_json_obj(RecordName::atom(), Record::tuple()) -> value() ===
 %%
 %%    This macro converts a record to a JSON object. Some things to be aware of:
 %%    <ul>
@@ -59,8 +61,7 @@
 %%      </li>
 %%    </ul>
 %%
-%%    <br/>
-%%    <b>`?json_obj_to_record(RecordName::atom(), Obj::value()) -> tuple()'</b>
+%%    === ?json_obj_to_record(RecordName::atom(), Obj::value()) -> tuple() ===
 %%
 %%    This macro converts a JSON object into an Erlang record. The conversion will ignore any keys in the object that
 %%    that do not have a corresponding field in the record. For missing keys the default value specified <i>in the record definition</i>
@@ -70,8 +71,7 @@
 %%      <li>The conversion will exit with error `badarg' if `Obj' is not a JSON object.</li>
 %%    </ul>
 %%
-%%    <br/>
-%%    <b>`?json_obj_into_record(RecordName::atom(), Defaults::tuple(), Obj::value()) -> tuple()'</b>
+%%    === ?json_obj_into_record(RecordName::atom(), Defaults::tuple(), Obj::value()) -> tuple() ===
 %%
 %%    This macro performs the same function as <b>`?json_obj_to_record/2'</b>, except that in case of missing keys the value
 %%    used is taken <i>from the `Defaults' record</i>. You might find this macro useful if you want to merge an object
