@@ -6,15 +6,35 @@
 
 % ---------------------------------------------------------------------
 % -- test cases
-bind_stateless_http_url(_Config) ->
-    ok = hello:bind_stateless("http://localhost:5671/test", hello_stateless_server_example).
+bind_stateless_http_url_ip(_Config) ->
+    meck:expect(cowboy, start_listener, fun (_, _, cowboy_tcp_transport, [{port, 5671}, {ip, {127,0,0,1}}], cowboy_http_protocol, _) ->
+                                                {ok, self()};
+                                            (_, _, _, _, _, _) ->
+                                                {error, bad_args}
+                                        end),
 
-bind_stateless_http_same_listener(_Config) ->
-    ok = hello:bind_stateless("http://localhost:5672/test1", hello_stateless_server_example),
-    ok = hello:bind_stateless("http://localhost:5672/test2", hello_stateless_server_example).
+    ok  = hello:bind_stateless("http://127.0.0.1:5671/test", hello_stateless_server_example),
+
+    [_] = meck:history(cowboy).
+
+bind_stateless_http_same_listener_ip(_Config) ->
+    meck:expect(cowboy, start_listener, fun (_, _, cowboy_tcp_transport, [{port, 5672}, {ip, {127,0,0,1}}], cowboy_http_protocol, _) ->
+                                                {ok, self()};
+                                            (_, _, _, _, _, _) ->
+                                                {error, bad_args}
+                                        end),
+
+    ok = hello:bind_stateless("http://127.0.0.1:5672/test1", mod_test1),
+    ok = hello:bind_stateless("http://127.0.0.1:5672/test2", mod_test2),
+
+    mod_test1 = hello_stateless_httpd:lookup_service({127,0,0,1}, 5672, [<<"test1">>]),
+    mod_test2 = hello_stateless_httpd:lookup_service({127,0,0,1}, 5672, [<<"test2">>]),
+
+    %% start_listener should only be called once
+    [_] = meck:history(cowboy).
 
 bind_stateless_http_url_errors(_Config) ->
-    URL = "http://localhost:5673/test",
+    URL = "http://127.0.0.1:5673/test",
     ok = hello:bind_stateless(URL, hello_stateless_server_example),
 
     %% binding the same module returns already_started
@@ -39,8 +59,8 @@ bind_stateless_zmq_url_errors(_Config) ->
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-    [bind_stateless_http_url, bind_stateless_http_url_errors,
-     bind_stateless_http_same_listener,
+    [bind_stateless_http_url_ip, bind_stateless_http_url_errors,
+     bind_stateless_http_same_listener_ip,
      bind_stateless_zmq_url, bind_stateless_zmq_url_errors].
 
 init_per_suite(Config) ->
@@ -49,3 +69,10 @@ init_per_suite(Config) ->
 
 end_per_suite(_Config) ->
     application:stop(hello).
+
+init_per_testcase(_Case, Config) ->
+    meck:new(cowboy, [passthrough]),
+    Config. 
+
+end_per_testcase(_Case, _Config) ->
+    meck:unload(cowboy).

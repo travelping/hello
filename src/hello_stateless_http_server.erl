@@ -24,23 +24,30 @@
 -export([init/3, handle/2, terminate/2]).
 
 -include("internal.hrl").
+-include_lib("ex_uri/include/ex_uri.hrl").
 
-init({tcp, http}, Req, []) ->
-    {ok, Req, undefined}.
+init({tcp, http}, Req, [IP]) ->
+    {ok, Req, IP}.
 
-handle(Req, State) ->
-    case hello_stateless_httpd:lookup_service(Req) of
+handle(Req, State = IP) ->
+    case hello_stateless_httpd:lookup_service(IP, Req) of
         {undefined, Req1} ->
-            {ok, ReturnReq} = json_error(Req1, 404, service_not_found);
+            ResponseJSON = json_error(service_not_found),
+            Req2 = log_request(hello, Req1, ResponseJSON),
+            {ok, ReturnReq} = json_response(Req2, 404, ResponseJSON);
+
         {Module, Req1} ->
             {Method, Req2} = cowboy_http_req:method(Req1),
             case lists:member(Method, ['PUT', 'POST']) of
                 true ->
-                    {ok, Body, Req3} = cowboy_http_req:body(Req2),
-                    JSON_Resp = hello:run_stateless_binary_request(Module, Body),
-                    {ok, ReturnReq} = json_response(Req3, 200, JSON_Resp);
+                    {Body, Req3} = get_body(Req2),
+                    ResponseJSON = hello:run_stateless_binary_request(Module, Body),
+                    Req4 = log_request(Module, Req3, ResponseJSON),
+                    {ok, ReturnReq} = json_response(Req4, 200, ResponseJSON);
                 false ->
-                    {ok, ReturnReq} = json_error(Req1, 400, bad_http_method)
+                    ResponseJSON = json_error(bad_http_method),
+                    Req2 = log_request(Module, Req2, ResponseJSON),
+                    {ok, ReturnReq} = json_response(Req2, 400, ResponseJSON)
             end
     end,
     {ok, ReturnReq, State}.
@@ -54,5 +61,27 @@ json_response(Req, Code, Body) ->
                  {'Server', erlang:list_to_binary("hello/" ++ Vsn)}],
     cowboy_http_req:reply(Code, Headers, Body, Req).
 
-json_error(Req, Code, Resp = #response{}) -> json_response(Req, Code, hello_proto:response_json(Resp));
-json_error(Req, Code, Msg)                -> json_error(Req, Code, hello_proto:std_error(Msg)).
+json_error(Resp = #response{}) -> hello_proto:response_json(Resp);
+json_error(Msg)                -> json_error(hello_proto:std_error(Msg)).
+
+log_request(CallbackModule, Request, ResponseJSON) ->
+    {ok, _Log} = hello_request_log:open(CallbackModule, self()),
+    try
+        {Host, Req1} = cowboy_http_req:raw_host(Request),
+        {Port, Req2} = cowboy_http_req:port(Req1),
+        {Path, Req3} = cowboy_http_req:raw_path(Req2),
+        {Body, Req4} = get_body(Req3),
+        URI          = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port},
+                               path = Path, scheme = "http"},
+        URIBinary    = list_to_binary(ex_uri:encode(URI)),
+        hello_request_log:request(CallbackModule, URIBinary, Body, ResponseJSON),
+        Req4
+    after
+        hello_request_log:close(CallbackModule)
+    end.
+
+get_body(Req) ->
+    case cowboy_http_req:body(Req) of
+        {ok, Body, Req2} -> {Body, Req2};
+        {error, badarg}  -> {<<>>, Req}
+    end.
