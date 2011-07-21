@@ -58,7 +58,7 @@ call(Server, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
                                -32602 -> {error, invalid_params};
                                -32603 -> {error, internal_error};
                                Code when (Code >= -32099) and (Code =< -32000) -> {error, server_error};
-                               Code -> {error, {Code, proplists:get_value("message", ErrorObject)}}
+                               Code -> {error, {Code, proplists:get_value(<<"message">>, ErrorObject)}}
                            end
                    end
             end
