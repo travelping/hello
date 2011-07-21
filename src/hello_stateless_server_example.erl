@@ -27,7 +27,7 @@
 -include("hello.hrl").
 
 register_yourself() ->
-    hello:bind_stateless("http://*:5671/rpc/example", ?MODULE).
+    hello:bind_stateless("zmq-tcp://127.0.0.1:5999", ?MODULE).
 
 method_info() ->
     [#rpc_method{name        = echo,

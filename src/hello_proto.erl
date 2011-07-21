@@ -170,19 +170,19 @@ single_request({Props}) ->
     try
         Version = req_version(Props),
         ID      = case Version of
-                      2 -> proplists:get_value("id", Props);
-                      1 -> case proplists:get_value("id", Props) of
+                      2 -> proplists:get_value(<<"id">>, Props);
+                      1 -> case proplists:get_value(<<"id">>, Props) of
                               undefined -> throw({invalid, null, Version});
                               null      -> undefined;
                               Value     -> Value
                           end
                   end,
-        Method = case property(Props, "method") of
+        Method = case property(Props, <<"method">>) of
                      Name when is_list(Name) or is_binary(Name) -> Name;
                      undefined -> throw({invalid, ID, Version});
                      _         -> throw({invalid, ID, Version})
                  end,
-        Params = case property(Props, "params", []) of
+        Params = case property(Props, <<"params">>, []) of
                      List when is_list(List)    -> List;
                      Obj = {_} when Version > 1 -> Obj;
                      _                          -> throw({invalid, ID, Version})

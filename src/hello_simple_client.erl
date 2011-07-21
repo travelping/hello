@@ -47,12 +47,12 @@ call(Server, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
             case hello_json:decode(Body) of
                {error, syntax_error} -> {error, syntax_error};
                {ok, {Props}, _Rest} ->
-                   case proplists:get_value("error", Props, null) of
+                   case proplists:get_value(<<"error">>, Props, null) of
                        null ->
-                           Result = proplists:get_value("result", Props),
+                           Result = proplists:get_value(<<"result">>, Props),
                            {ok, Result};
                        {ErrorObject} ->
-                           case proplists:get_value("code", ErrorObject) of
+                           case proplists:get_value(<<"code">>, ErrorObject) of
                                -32600 -> {error, invalid_request};
                                -32601 -> {error, method_not_found};
                                -32602 -> {error, invalid_params};
