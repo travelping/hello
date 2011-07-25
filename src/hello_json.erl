@@ -274,7 +274,7 @@ object_to_record(RecName, RecAttrs, RecSize, Templ, {Props}) when is_list(Props)
     (tuple_size(Templ) /= RecSize) andalso error(badarg),
 
     {_EndP, Rec} = lists:foldl(fun (Attr, {Posn, TheRec}) ->
-                                       case proplists:get_value(atom_to_list(Attr), Props) of
+                                       case proplists:get_value(atom_to_binary(Attr, utf8), Props) of
                                            undefined -> {Posn + 1, TheRec};
                                            null      -> {Posn + 1, setelement(Posn, TheRec, undefined)};
                                            Value     -> {Posn + 1, setelement(Posn, TheRec, Value)}
