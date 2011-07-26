@@ -47,27 +47,27 @@ record_to_json_object(_Config) ->
     ok.
 
 json_object_to_record(_Config) ->
-    Obj1 = {[{"a", 1}, {"b", 2}, {"c", 3}]},
+    Obj1 = {[{<<"a">>, 1}, {<<"b">>, 2}, {<<"c">>, 3}]},
     #example_rec{a = 1, b = 2, c = 3} = ?json_obj_to_record(example_rec, Obj1),
 
     % null -> undefined
-    Obj2 = {[{"a", 1}, {"b", null}, {"c", 3}]},
+    Obj2 = {[{<<"a">>, 1}, {<<"b">>, null}, {<<"c">>, 3}]},
     #example_rec{a = 1, b = undefined, c = 3} = ?json_obj_to_record(example_rec, Obj2),
 
     % default value from record definition for keys that are not present
-    Obj3 = {[{"b", 2}]},
+    Obj3 = {[{<<"b">>, 2}]},
     #example_rec{a = "default value of a from record definition", b = 2, c = undefined} =
         ?json_obj_to_record(example_rec, Obj3),
 
     % custom defaults record
-    Obj4 = {[{"a", 1}]},
+    Obj4 = {[{<<"a">>, 1}]},
     #example_rec{a = 1, b = <<"default b">>, c = <<"default c">>} =
         ?json_obj_into_record(example_rec, #example_rec{b = <<"default b">>, c = <<"default c">>}, Obj4),
 
     % error for non-objects
     ?checkExit(badarg, ?json_obj_to_record(example_rec, <<"not an object">>)),
     ?checkExit(badarg, ?json_obj_to_record(example_rec, 1)),
-    ?checkExit(badarg, ?json_obj_to_record(example_rec, ["a", "b", "c"])),
+    ?checkExit(badarg, ?json_obj_to_record(example_rec, [<<"a">>, <<"b">>, <<"c">>])),
 
     % error if custom defaults record doesn't match definition
     ?checkExit(badarg, ?json_obj_into_record(example_rec, {foobar, 1, 2, 3}, {[]})),

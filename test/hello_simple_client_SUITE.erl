@@ -13,7 +13,7 @@ call(_Config) ->
 call_errors(_Config) ->
     {error, method_not_found} = hello_simple_client:call(?HOST, "nonamemethod", [<<"test">>]),
     {error, invalid_params} = hello_simple_client:call(?HOST, "append", [1]),
-    {error, 30000} = hello_simple_client:call(?HOST, "return_error", [30000]).
+    {error, {30000, <<"test error message">>}} = hello_simple_client:call(?HOST, "return_error", [30000, <<"test error message">>]).
 
 call_http_error(_Config) ->
     {error, {http, _Reason}} = hello_simple_client:call(?UNKNOWN_HOST, "foo", []).

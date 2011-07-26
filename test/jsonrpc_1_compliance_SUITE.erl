@@ -71,7 +71,7 @@ request(Request) ->
     end.
 
 field(Object, Field) ->
-	Flist = re:split(Field, "\\.", [{return, list}]),
+	Flist = re:split(Field, "\\.", [{return, binary}]),
 	lists:foldl(fun (Name, {CurProps}) ->
                     proplists:get_value(Name, CurProps)
 			    end, Object, Flist).

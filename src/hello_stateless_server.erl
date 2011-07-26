@@ -179,11 +179,11 @@ validate_params(Mod, #rpc_method{name = Method, params_as = WantParamEncoding}, 
     end.
 
 validate_field(Info = #rpc_param{name = PNameAtom}, Param) ->
-    PName = atom_to_list(PNameAtom),
+    PName = atom_to_binary(PNameAtom, utf8),
     Value = case proplists:get_value(PName, Param) of
                 Undef when (Undef =:= undefined) or (Undef =:= null) ->
                     if Info#rpc_param.optional -> Info#rpc_param.default;
-                       true -> throw({invalid, "required parameter '" ++ PName ++ "' is missing"})
+                       true -> throw({invalid, ["required parameter '", PName, "' is missing"]})
                     end;
                 GivenValue ->
                     validate_type(PName, Info, GivenValue)
@@ -197,8 +197,7 @@ validate_type(PName, #rpc_param{type = PType}, GivenValue) ->
         _T ->
             case has_type(PType, GivenValue) of
                 true -> GivenValue;
-                false -> throw({invalid, "invalid parameter type for param '" ++ PName
-                                          ++ "': expected " ++ atom_to_list(PType)})
+                false -> throw({invalid, ["invalid parameter type for param '", PName, "': expected ", atom_to_list(PType)]})
             end
     end.
 
@@ -211,8 +210,8 @@ atom_from_enum(Param, Enum, Input) ->
         end
     catch
         error:badarg ->
-            Choices = string:join(lists:map(fun (P) -> "\"" ++ atom_to_list(P) ++ "\"" end, Enum), ", "),
-            throw({invalid, "parameter '" ++ Param ++ "' must be one of: " ++ Choices})
+            Choices = string:join(lists:map(fun (P) -> ["\"", atom_to_list(P), "\""] end, Enum), ", "),
+            throw({invalid, ["parameter '", Param, "' must be one of: ", Choices]})
     end.
 
 has_type(boolean, Val) when (Val == true) or (Val == false) -> true;
@@ -228,7 +227,7 @@ has_type(_T, _Val) -> false.
 
 params_to_proplist(_PInfo, {Props}) -> Props;
 params_to_proplist(PInfo,  Params) when is_list(Params) ->
-    Names = lists:map(fun (P) -> atom_to_list(P#rpc_param.name) end, PInfo),
+    Names = lists:map(fun (P) -> atom_to_binary(P#rpc_param.name, utf8) end, PInfo),
     {Proplist, TooMany} = zip(Names, Params, {[], false}),
     TooMany andalso throw({invalid, "superfluous parameters"}),
     lists:reverse(Proplist).

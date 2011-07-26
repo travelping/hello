@@ -196,7 +196,7 @@ single_request(_Other) ->
     {error, std_error(invalid_request)}.
 
 req_version(Props) ->
-    case property(Props, "jsonrpc") of
+    case property(Props, <<"jsonrpc">>) of
         <<"2.0">> -> 2;
         <<"1.2">> -> 2;
         <<"1.0">> -> 1;

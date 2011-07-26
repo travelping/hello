@@ -63,7 +63,7 @@ response_fields(_Config) ->
     % error case where request isn't read
     Req3 = {Props3} = request("{aa"),
     <<"2.0">> = field(Req3, "jsonrpc"),
-    null      = proplists:get_value("id", Props3),
+    null      = proplists:get_value(<<"id">>, Props3),
     -32700    = field(Req3, "error.code").
 
 notification(_Config) ->
@@ -72,7 +72,7 @@ notification(_Config) ->
 
     % although it's use is discouraged, null is a valid id (in jsonrpc 2.0)
     {Res} = request("{\"id\": null, \"jsonrpc\":\"2.0\", \"method\": \"subtract\", \"params\": [2, 1]}"),
-    null = proplists:get_value("id", Res).
+    null = proplists:get_value(<<"id">>, Res).
 
 batch_calls(_Config) ->
     % success cases
@@ -127,12 +127,12 @@ request(Request) when is_list(Request) ->
 request(Request) ->
     RespJSON = hello:run_stateless_binary_request(?MODULE, Request),
     case hello_json:decode(RespJSON) of
-        {ok, RespObj, _Rest}  -> RespObj;
-        {error, syntax_error} -> {no_json, RespJSON}
+        {ok, DecRespObj, _Rest} -> DecRespObj;
+        {error, syntax_error}   -> {no_json, RespJSON}
     end.
 
 field(Object, Field) ->
-	Flist = re:split(Field, "\\.", [{return, list}]),
+	Flist = re:split(Field, "\\.", [{return, binary}]),
 	lists:foldl(fun (Name, {CurProps}) ->
 		    	    proplists:get_value(Name, CurProps)
 			    end, Object, Flist).
