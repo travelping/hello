@@ -30,7 +30,7 @@ start("http", Host, undefined, Path, CallbackModule) ->
 start("http", Host, Port, Path, CallbackModule) ->
     case Host of
         "*" ->
-            start_reg({0,0,0,0}, {0,0,0,0}, Port, Path, CallbackModule);
+            start_reg(<<"0.0.0.0">>, {0,0,0,0}, Port, Path, CallbackModule);
         _ ->
             case inet_parse:address(Host) of
                 {error, einval} ->
@@ -41,13 +41,14 @@ start("http", Host, Port, Path, CallbackModule) ->
     end.
 
 start_reg(Host, IP, Port, Path, CallbackModule) ->
-    SimpleKey = {http, IP, Port},
-    PathKey   = {http, Host, Port, unslash(Path)},
-    case get_listener(IP, Port) of
+    PathKey = {http, Host, Port, unslash(Path)},
+
+    case hello_registry:lookup_listener(IP, Port) of
         {error, not_found} ->
             %% no server running on Host:Port, we need to start a listener
             {ok, ListenerPid} = start_listener(IP, Port),
-            hello_registry:multi_register([{SimpleKey, []}, {PathKey, CallbackModule}], ListenerPid);
+            ListenerKey = hello_registry:listener_key(IP, Port),
+            hello_registry:multi_register([{ListenerKey, ?MODULE}, {PathKey, CallbackModule}], ListenerPid);
         {ok, ListenerPid, _} ->
             %% listener is already running
             case hello_registry:lookup(PathKey) of
@@ -65,16 +66,6 @@ start_listener(IP, Port) ->
     Dispatch = [{'_', [{['...'], ?HANDLER, [IP]}]}],
     cowboy:start_listener(make_ref(), 100, cowboy_tcp_transport, [{port, Port}, {ip, IP}],
                           cowboy_http_protocol, [{dispatch, Dispatch}]).
-
-get_listener(IP, Port) ->
-    IPKey = {http, IP, Port},
-    case hello_registry:lookup(IPKey) of
-        {error, not_found} ->
-            AnyKey = {http, {0,0,0,0}, Port},
-            hello_registry:lookup(AnyKey);
-        {ok, ListenerPid, Data} ->
-            {ok, ListenerPid, Data}
-    end.
 
 lookup_service(IP, Req) ->
     {Port, Req2}     = cowboy_http_req:port(Req),

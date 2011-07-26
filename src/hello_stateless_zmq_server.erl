@@ -36,15 +36,17 @@ start_link(URI, Module) ->
 -record(state, {socket, uri, context, mod}).
 
 init({URI = #ex_uri{}, CallbackModule}) ->
-    case hello_registry:register(reg_key(URI), CallbackModule, self()) of
+    {ListenURI, ListenIP, ListenPort} = reg_details(URI),
+
+    case hello_registry:register_listener(ListenIP, ListenPort, CallbackModule, self()) of
         ok ->
-            Endpoint = ex_uri:encode(URI),
+            Endpoint = ex_uri:encode(ListenURI),
             {ok, Context} = erlzmq:context(),
             {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
             case erlzmq:bind(Socket, Endpoint) of
                 ok ->
                     {ok, _Log} = hello_request_log:open(CallbackModule, self()),
-                    EncURI     = list_to_binary(ex_uri:encode(uri_for_log(URI))),
+                    EncURI     = list_to_binary(ex_uri:encode(uri_for_log(ListenURI))),
                     {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
                 {error, Error} ->
                     {stop, {transport, Error}}
@@ -78,10 +80,12 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-reg_key(#ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
-    {tcp, Host, Port};
-reg_key(URI = #ex_uri{scheme = "ipc"}) ->
-    {ipc, ipc_path(URI)}.
+reg_details(URI = #ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
+    IP = ensure_ip(Host),
+    ListenURI = URI#ex_uri{authority = #ex_uri_authority{host = inet_parse:ntoa(IP), port = Port}},
+    {ListenURI, IP, Port};
+reg_details(URI = #ex_uri{scheme = "ipc"}) ->
+    {URI, {ipc, filename:absname(ipc_path(URI))}, undefined}.
 
 uri_for_log(URI = #ex_uri{scheme = "tcp"}) ->
     URI#ex_uri{scheme = "tcp"};
@@ -92,4 +96,12 @@ ipc_path(#ex_uri{path = Path, authority = #ex_uri_authority{host = Host}}) ->
     case Host of
         undefined -> Path;
         _         -> filename:join(Host, Path)
+    end.
+
+ensure_ip("*")  ->
+    {0,0,0,0};
+ensure_ip(Host) ->
+    case inet_parse:address(Host) of
+        {ok, Addr}      -> Addr;
+        {error, einval} -> error({transport, badaddress})
     end.

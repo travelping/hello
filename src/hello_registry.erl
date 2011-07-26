@@ -23,6 +23,7 @@
 -behaviour(gen_server).
 -export([start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([register_listener/4, lookup_listener/2, listener_key/2]).
 
 -define(TABLE, hello_registry_tab).
 -define(SERVER, hello_registry).
@@ -31,6 +32,7 @@
 %% -- API
 -type name() :: term().
 -type data() :: term().
+-type address() :: inet:ip4_address() | inet:ip6_address() | {ipc, string()}.
 
 %% @doc Start the registry server
 -spec start_link() -> {ok, pid()}.
@@ -42,6 +44,17 @@ start_link() ->
 -spec register(name(), data(), pid()) -> ok | {already_registered, pid(), data()}.
 register(Name, Data, Pid) ->
     multi_register([{Name, Data}], Pid).
+
+-spec register_listener(address(), inet:ip_port() | undefined, pid(), module()) -> ok | {already_registered, pid(), module()}.
+register_listener({ipc, Path}, undefined, Pid, Module) ->
+    register(listener_key({ipc, Path}, undefined), Pid, Module);
+register_listener(IP, Port, Pid, Module) ->
+    case lookup_listener(IP, Port) of
+        {ok, OtherPid, OtherModule} ->
+            {already_registered, OtherPid, OtherModule};
+        {error, not_found} ->
+            register(listener_key(IP, Port), Pid, Module)
+    end.
 
 %% @doc Atomically register a pid under multiple names
 %%   When one of the names is already registered, the function returns the pid and data
@@ -60,6 +73,18 @@ lookup(Name) ->
             {ok, Pid, Data}
     end.
 
+-spec lookup_listener(address(), inet:ip_port() | undefined) -> {ok, pid(), module()} | {error, not_found}.
+lookup_listener({ipc, Path}, undefined) ->
+    lookup(listener_key({ipc, Path}, undefined));
+
+lookup_listener(IP, Port) ->
+    case lookup(listener_key({0,0,0,0}, Port)) of
+        {ok, Pid, Module} ->
+            {ok, Pid, Module};
+        {error, not_found} ->
+            lookup(listener_key(IP, Port))
+    end.
+
 %% @doc Lookup all names for the given pid
 -spec lookup_pid(pid()) -> {ok, list(name())} | {error, not_found}.
 lookup_pid(Pid) ->
@@ -73,6 +98,11 @@ lookup_pid(Pid) ->
 -spec unregister(name()) -> ok.
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
+
+listener_key({ipc, Path}, undefined) ->
+    {listener, {ipc, Path}, undefined};
+listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->
+    {listener, list_to_binary(inet_parse:ntoa(IP)), Port}.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
