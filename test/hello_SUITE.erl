@@ -27,8 +27,8 @@ bind_stateless_http_same_listener_ip(_Config) ->
     ok = hello:bind_stateless("http://127.0.0.1:5672/test1", mod_test1),
     ok = hello:bind_stateless("http://127.0.0.1:5672/test2", mod_test2),
 
-    mod_test1 = hello_stateless_httpd:lookup_service({127,0,0,1}, 5672, [<<"test1">>]),
-    mod_test2 = hello_stateless_httpd:lookup_service({127,0,0,1}, 5672, [<<"test2">>]),
+    mod_test1 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test1">>]),
+    mod_test2 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test2">>]),
 
     %% start_listener should only be called once
     [_] = meck:history(cowboy).
