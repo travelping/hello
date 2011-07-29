@@ -2,6 +2,7 @@
 /ebin/*.app
 /test-log/
 /request-logs/
+/status.ipc
 /dist/
 /doc/*
 !/doc/overview.edoc
