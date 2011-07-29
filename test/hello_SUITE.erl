@@ -56,8 +56,15 @@ bind_stateless_zmq_url_errors(_Config) ->
     %% binding a different one returns occupied
     {error, occupied} = hello:bind_stateless(URL, ?MODULE).
 
+bind_stateless_cross_protocol_checking(_Config) ->
+    ok = hello:bind_stateless("http://localhost:6008", test_1),
+    {error, occupied} = hello:bind_stateless("zmq-tcp://127.0.0.1:6008", test_2),
+
+    ok = hello:bind_stateless("zmq-tcp://*:6009", test_1),
+    {error, occupied} = hello:bind_stateless("http://127.0.0.1:6009", test_2).
+
 bindings(_Config) ->
-    [] = hello:bindings(),
+    [{_StatusIPC, hello_status}] = OrigBindings = hello:bindings(),
 
     IPCPath = filename:absname("bindings_test.ipc"),
 
@@ -71,7 +78,7 @@ bindings(_Config) ->
                           ok = hello:bind_stateless(URL, Module)
                   end, Bindings),
 
-    Bindings = hello:bindings().
+    Bindings = hello:bindings() -- OrigBindings.
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
@@ -79,7 +86,8 @@ all() ->
     [bindings,
      bind_stateless_http_url_ip, bind_stateless_http_url_errors,
      bind_stateless_http_same_listener_ip,
-     bind_stateless_zmq_url, bind_stateless_zmq_url_errors].
+     bind_stateless_zmq_url, bind_stateless_zmq_url_errors,
+     bind_stateless_cross_protocol_checking].
 
 init_per_suite(Config) ->
     hello:start(),

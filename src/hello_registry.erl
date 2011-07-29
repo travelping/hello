@@ -22,7 +22,7 @@
 -module(hello_registry).
 -behaviour(gen_server).
 -export([start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
--export([lookup_listener/2, listener_key/2]).
+-export([lookup_listener/1, lookup_listener/2, listener_key/2]).
 -export([bindings/0, lookup_binding/4, binding_key/4]).
 %% internal
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -39,6 +39,9 @@
 -type name() :: term().
 -type data() :: term().
 -type address() :: inet:ip4_address() | inet:ip6_address() | {ipc, string()}.
+
+-type listener_key() :: tuple().
+-type binding_key() :: tuple().
 
 %% @doc Start the registry server
 -spec start_link() -> {ok, pid()}.
@@ -77,6 +80,10 @@ bindings() ->
     [{Protocol, encode_binding_uri(Protocol, Host, Port, Path), Pid, Module} ||
         {Protocol, Host, Port, Path, Pid, Module} <- lookup_bindings_ms(?TABLE)].
 
+-spec lookup_listener(listener_key()) -> {ok, pid(), module()} | {error, not_found}.
+lookup_listener({listener, IP, Port}) ->
+    lookup_listener(IP, Port).
+
 -spec lookup_listener(address(), inet:ip_port() | undefined) -> {ok, pid(), module()} | {error, not_found}.
 lookup_listener({ipc, Path}, undefined) ->
     lookup(listener_key({ipc, Path}, undefined));
@@ -103,13 +110,13 @@ lookup_pid(Pid) ->
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
 
--spec listener_key({ipc, filename:name()} | inet:ip4_address() | inet:ip6_address(), inet:ip_port() | undefined) -> tuple().
+-spec listener_key({ipc, filename:name()} | inet:ip4_address() | inet:ip6_address(), inet:ip_port() | undefined) -> listener_key().
 listener_key({ipc, Path}, undefined) ->
     {listener, {ipc, Path}, undefined};
 listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->
-    {listener, list_to_binary(inet_parse:ntoa(IP)), Port}.
+    {listener, IP, Port}.
 
--spec binding_key(protocol(), binary(), inet:ip_port(), [binary()]) -> tuple().
+-spec binding_key(protocol(), binary(), inet:ip_port(), [binary()]) -> binding_key().
 binding_key(Protocol, Host, Port, Path) when is_atom(Protocol), is_binary(Host), is_list(Path) ->
     {binding, Protocol, Host, Port, Path}.
 

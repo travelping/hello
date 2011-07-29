@@ -38,15 +38,22 @@ start_link(URI, Module) ->
 init({URI = #ex_uri{}, CallbackModule}) ->
     {ListenURI, ListenerKey, BindingKey} = reg_details(URI),
 
+    case hello_registry:lookup_listener(ListenerKey) of
+        {ok, _Pid, CallbackModule} -> {stop, already_started};
+        {ok, _Pid, _OtherModule}   -> {stop, occupied};
+        {error, not_found}         -> start_reg(ListenURI, ListenerKey, BindingKey, CallbackModule)
+    end.
+
+start_reg(URI, ListenerKey, BindingKey, CallbackModule) ->
     case hello_registry:multi_register([{ListenerKey, CallbackModule}, {BindingKey, CallbackModule}], self()) of
         ok ->
-            Endpoint = ex_uri:encode(ListenURI),
+            Endpoint = ex_uri:encode(URI),
             {ok, Context} = erlzmq:context(),
             {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
             case erlzmq:bind(Socket, Endpoint) of
                 ok ->
                     {ok, _Log} = hello_request_log:open(CallbackModule, self()),
-                    EncURI     = list_to_binary(ex_uri:encode(uri_for_log(ListenURI))),
+                    EncURI     = list_to_binary(ex_uri:encode(uri_for_log(URI))),
                     {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
                 {error, Error} ->
                     {stop, {transport, Error}}

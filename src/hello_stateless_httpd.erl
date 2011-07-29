@@ -50,7 +50,7 @@ start_reg(Host, IP, Port, Path, CallbackModule) ->
             {ok, ListenerPid} = start_listener(IP, Port),
             ListenerKey = hello_registry:listener_key(IP, Port),
             hello_registry:multi_register([{ListenerKey, ?MODULE}, {BindingKey, CallbackModule}], ListenerPid);
-        {ok, ListenerPid, _} ->
+        {ok, ListenerPid, ?MODULE} ->
             %% listener is already running
             case hello_registry:lookup(BindingKey) of
                 {error, not_found} ->
@@ -60,7 +60,9 @@ start_reg(Host, IP, Port, Path, CallbackModule) ->
                     {error, already_started};
                 {ok, _Pid, _OtherModule} ->
                     {error, occupied}
-            end
+            end;
+        {ok, _OtherListener, _OtherModule} ->
+            {error, occupied}
     end.
 
 start_listener(IP, Port) ->
