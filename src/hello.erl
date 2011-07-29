@@ -34,6 +34,7 @@ start() ->
     application:start(cowboy),
     application:start(inets),
     application:start(ex_uri),
+    application:start(erlzmq),
     application:start(hello).
 
 start(_Type, _StartArgs) ->
