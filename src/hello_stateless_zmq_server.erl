@@ -36,9 +36,9 @@ start_link(URI, Module) ->
 -record(state, {socket, uri, context, mod}).
 
 init({URI = #ex_uri{}, CallbackModule}) ->
-    {ListenURI, ListenIP, ListenPort} = reg_details(URI),
+    {ListenURI, ListenerKey, BindingKey} = reg_details(URI),
 
-    case hello_registry:register_listener(ListenIP, ListenPort, CallbackModule, self()) of
+    case hello_registry:multi_register([{ListenerKey, CallbackModule}, {BindingKey, CallbackModule}], self()) of
         ok ->
             Endpoint = ex_uri:encode(ListenURI),
             {ok, Context} = erlzmq:context(),
@@ -82,10 +82,18 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- helpers
 reg_details(URI = #ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
     IP = ensure_ip(Host),
-    ListenURI = URI#ex_uri{authority = #ex_uri_authority{host = inet_parse:ntoa(IP), port = Port}},
-    {ListenURI, IP, Port};
+    StringIP = inet_parse:ntoa(IP),
+    ListenURI = URI#ex_uri{authority = #ex_uri_authority{host = StringIP, port = Port}},
+    ListenerKey = hello_registry:listener_key(IP, Port),
+    BindingKey  = hello_registry:binding_key('zmq-tcp', list_to_binary(StringIP), Port, []),
+    {ListenURI, ListenerKey, BindingKey};
+
 reg_details(URI = #ex_uri{scheme = "ipc"}) ->
-    {URI, {ipc, filename:absname(ipc_path(URI))}, undefined}.
+    Path = filename:absname(ipc_path(URI)),
+    ListenerKey = hello_registry:listener_key({ipc, Path}, undefined),
+    BindingKey  = hello_registry:binding_key('zmq-ipc', <<>>, undefined, hello_stateless_httpd:unslash(Path)),
+
+    {URI, ListenerKey, BindingKey}.
 
 uri_for_log(URI = #ex_uri{scheme = "tcp"}) ->
     URI#ex_uri{scheme = "tcp"};

@@ -23,7 +23,7 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_request/2, run_stateless_binary_request/2]).
--export([bind_stateless/2]).
+-export([bind_stateless/2, bindings/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -92,6 +92,11 @@ bind_stateless_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod) ->
     hello_stateless_zmq_supervisor:start_listener(URL#ex_uri{scheme = "ipc"}, Mod);
 bind_stateless_uri(_, _Mod) ->
     error(badurl).
+
+% @doc Return the list of bound modules.
+-spec bindings() -> [{url(), module()}].
+bindings() ->
+    [{URL, Mod} || {_Protocol, URL, _Pid, Mod} <- hello_registry:bindings()].
 
 % @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
 %   This can be used for testing, but please note that the request must be

@@ -22,14 +22,20 @@
 -module(hello_registry).
 -behaviour(gen_server).
 -export([start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
+-export([lookup_listener/2, listener_key/2]).
+-export([bindings/0, lookup_binding/4, binding_key/4]).
+%% internal
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([register_listener/4, lookup_listener/2, listener_key/2]).
 
 -define(TABLE, hello_registry_tab).
 -define(SERVER, hello_registry).
 
+-include_lib("ex_uri/include/ex_uri.hrl").
+
 %% --------------------------------------------------------------------------------
 %% -- API
+-type url() :: string().
+-type protocol() :: atom().
 -type name() :: term().
 -type data() :: term().
 -type address() :: inet:ip4_address() | inet:ip6_address() | {ipc, string()}.
@@ -44,17 +50,6 @@ start_link() ->
 -spec register(name(), data(), pid()) -> ok | {already_registered, pid(), data()}.
 register(Name, Data, Pid) ->
     multi_register([{Name, Data}], Pid).
-
--spec register_listener(address(), inet:ip_port() | undefined, pid(), module()) -> ok | {already_registered, pid(), module()}.
-register_listener({ipc, Path}, undefined, Pid, Module) ->
-    register(listener_key({ipc, Path}, undefined), Pid, Module);
-register_listener(IP, Port, Pid, Module) ->
-    case lookup_listener(IP, Port) of
-        {ok, OtherPid, OtherModule} ->
-            {already_registered, OtherPid, OtherModule};
-        {error, not_found} ->
-            register(listener_key(IP, Port), Pid, Module)
-    end.
 
 %% @doc Atomically register a pid under multiple names
 %%   When one of the names is already registered, the function returns the pid and data
@@ -72,6 +67,15 @@ lookup(Name) ->
         [{{name, _}, Pid, Data}] ->
             {ok, Pid, Data}
     end.
+
+-spec lookup_binding(atom(), binary(), inet:ip_port(), [binary()]) -> {ok, pid(), data()} | {error, not_found}.
+lookup_binding(Protocol, Host, Port, Path) ->
+    lookup(binding_key(Protocol, Host, Port, Path)).
+
+-spec bindings() -> [{protocol(), url(), pid(), module()}].
+bindings() ->
+    [{Protocol, encode_binding_uri(Protocol, Host, Port, Path), Pid, Module} ||
+        {Protocol, Host, Port, Path, Pid, Module} <- lookup_bindings_ms(?TABLE)].
 
 -spec lookup_listener(address(), inet:ip_port() | undefined) -> {ok, pid(), module()} | {error, not_found}.
 lookup_listener({ipc, Path}, undefined) ->
@@ -99,10 +103,15 @@ lookup_pid(Pid) ->
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
 
+-spec listener_key({ipc, filename:name()} | inet:ip4_address() | inet:ip6_address(), inet:ip_port() | undefined) -> tuple().
 listener_key({ipc, Path}, undefined) ->
     {listener, {ipc, Path}, undefined};
 listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->
     {listener, list_to_binary(inet_parse:ntoa(IP)), Port}.
+
+-spec binding_key(protocol(), binary(), inet:ip_port(), [binary()]) -> tuple().
+binding_key(Protocol, Host, Port, Path) when is_atom(Protocol), is_binary(Host), is_list(Path) ->
+    {binding, Protocol, Host, Port, Path}.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -161,6 +170,19 @@ delete_pid(Table, Pid) ->
 lookup_pid_ms(Table, Pid) ->
     PidMS = [{{{pid, Pid, '$1'}}, [], ['$1']}],
     ets:select(Table, PidMS).
+
+lookup_bindings_ms(Table) ->
+    [{Protocol, Host, Port, Path, Pid, Data} ||
+        {{name, {binding, Protocol, Host, Port, Path}}, Pid, Data} <- ets:match_object(Table, {{name, {binding, '_', '_', '_', '_'}}, '_', '_'})].
+
+encode_binding_uri(Protocol, Host, Port, PathList) ->
+    URI = #ex_uri{scheme    = atom_to_list(Protocol),
+                  path      = encode_path(PathList),
+                  authority = #ex_uri_authority{host = Host, port = Port}},
+    binary_to_list(iolist_to_binary(ex_uri:encode(URI))).
+
+encode_path([])        -> "";
+encode_path(PathList)  -> "/" ++ string:join(lists:map(fun binary_to_list/1, PathList), "/").
 
 any_registered_ms(Table, Names) ->
     NamesMS = [{{{name, Name}, '$1', '$2'}, [], [{{'$1', '$2'}}]} || {Name, _} <- Names],

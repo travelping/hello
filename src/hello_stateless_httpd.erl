@@ -21,6 +21,7 @@
 % @private
 -module(hello_stateless_httpd).
 -export([start/5, lookup_service/2, lookup_service/3]).
+-export([unslash/1]).
 
 -include("internal.hrl").
 -define(HANDLER, hello_stateless_http_server).
@@ -41,20 +42,20 @@ start("http", Host, Port, Path, CallbackModule) ->
     end.
 
 start_reg(Host, IP, Port, Path, CallbackModule) ->
-    PathKey = {http, Host, Port, unslash(Path)},
+    BindingKey = hello_registry:binding_key(http, Host, Port, unslash(Path)),
 
     case hello_registry:lookup_listener(IP, Port) of
         {error, not_found} ->
             %% no server running on Host:Port, we need to start a listener
             {ok, ListenerPid} = start_listener(IP, Port),
             ListenerKey = hello_registry:listener_key(IP, Port),
-            hello_registry:multi_register([{ListenerKey, ?MODULE}, {PathKey, CallbackModule}], ListenerPid);
+            hello_registry:multi_register([{ListenerKey, ?MODULE}, {BindingKey, CallbackModule}], ListenerPid);
         {ok, ListenerPid, _} ->
             %% listener is already running
-            case hello_registry:lookup(PathKey) of
+            case hello_registry:lookup(BindingKey) of
                 {error, not_found} ->
                     %% nobody is on that path yet, let's register the Module
-                    ok = hello_registry:register(PathKey, CallbackModule, ListenerPid);
+                    ok = hello_registry:register(BindingKey, CallbackModule, ListenerPid);
                 {ok, _Pid, CallbackModule} ->
                     {error, already_started};
                 {ok, _Pid, _OtherModule} ->
@@ -79,8 +80,7 @@ lookup_service(IP, Req) ->
     end.
 
 lookup_service(RegSpec, Port, PathList) ->
-    PathKey = {http, RegSpec, Port, PathList},
-    case hello_registry:lookup(PathKey) of
+    case hello_registry:lookup_binding(http, RegSpec, Port, PathList) of
         {ok, _Pid, CallbackModule} -> CallbackModule;
         {error, not_found}         -> undefined
     end.
