@@ -42,9 +42,23 @@ start(_Type, _StartArgs) ->
     ok           = filelib:ensure_dir(filename:join(LogDir, ".")),
 
     {ok, Supervisor} = hello_supervisor:start_link(),
+
+    case application:get_env(hello, status_ipc) of
+        {ok, StatusIPC} when is_list(StatusIPC) ->
+            ok = bind_stateless("zmq-ipc://" ++ StatusIPC, hello_status);
+        _ ->
+            error({option_value, status_ipc})
+    end,
+
     {ok, Supervisor, undefined}.
 
-stop(_) -> ok.
+stop(_) ->
+    case application:get_env(hello, status_ipc) of
+        {ok, StatusIPC} when is_list(StatusIPC) ->
+            file:delete(StatusIPC);
+        _ ->
+            ok
+    end.
 
 % @doc Starts a stateless RPC server on the given URL.
 %   The transport implementation that is chosen depends on
