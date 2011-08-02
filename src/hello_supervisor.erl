@@ -30,10 +30,9 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
 init({}) ->
-    RegistrySpec     = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
-    StatelessZMQSpec = {stateless_zmq, {hello_stateless_zmq_supervisor, start_link, []},
-                        transient, infinity, supervisor, [hello_stateless_zmq_supervisor]},
+    RegistrySpec    = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
+    ListenerSupSpec = {listener_sup, {hello_listener_supervisor, start_link, []}, transient, infinity, supervisor, [hello_listener_supervisor]},
 
-    Children = [RegistrySpec, StatelessZMQSpec],
+    Children = [RegistrySpec, ListenerSupSpec],
     RestartStrategy = {one_for_one, 5, 10},
     {ok, {RestartStrategy, Children}}.

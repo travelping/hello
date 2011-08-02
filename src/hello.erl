@@ -102,9 +102,9 @@ bind_stateless(URL, CallbackModule) ->
 bind_stateless_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
     hello_stateless_httpd:start("http", Host, Port, Path, Mod);
 bind_stateless_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod) ->
-    hello_stateless_zmq_supervisor:start_listener(URL#ex_uri{scheme = "tcp"}, Mod);
+    hello_stateless_zmq_server:start_supervised(URL#ex_uri{scheme = "tcp"}, Mod);
 bind_stateless_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod) ->
-    hello_stateless_zmq_supervisor:start_listener(URL#ex_uri{scheme = "ipc"}, Mod);
+    hello_stateless_zmq_server:start_supervised(URL#ex_uri{scheme = "ipc"}, Mod);
 bind_stateless_uri(_, _Mod) ->
     error(badurl).
 

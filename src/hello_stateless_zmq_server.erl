@@ -21,13 +21,19 @@
 % @private
 -module(hello_stateless_zmq_server).
 -behaviour(gen_server).
--export([start_link/2]).
+-export([start_link/2, start_supervised/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 %% --------------------------------------------------------------------------------
 %% -- API
+start_supervised(URI, Module) ->
+    case hello_listener_supervisor:start_listener(worker, transient, ?MODULE, [URI, Module]) of
+        {ok, _Pid}               -> ok;
+        {error, {Error, _Child}} -> {error, Error}
+    end.
+
 start_link(URI, Module) ->
     gen_server:start_link(?MODULE, {URI, Module}, []).
 

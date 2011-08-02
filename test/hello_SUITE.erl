@@ -7,22 +7,23 @@
 % ---------------------------------------------------------------------
 % -- test cases
 bind_stateless_http_url_ip(_Config) ->
-    meck:expect(cowboy, start_listener, fun (_, _, cowboy_tcp_transport, [{port, 5671}, {ip, {127,0,0,1}}], cowboy_http_protocol, _) ->
-                                                {ok, self()};
-                                            (_, _, _, _, _, _) ->
-                                                {error, bad_args}
-                                        end),
+    Self = self(),
+    meck:expect(hello_stateless_httpd, start_listener,
+                fun ({127,0,0,1}, 5671)  -> {ok, Self};
+                    (_, _)               -> {error, bad_args}
+                end),
 
     ok  = hello:bind_stateless("http://127.0.0.1:5671/test", hello_stateless_server_example),
 
-    [_] = meck:history(cowboy).
+    %% check that start_listener was actually called, once
+    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_httpd)].
 
 bind_stateless_http_same_listener_ip(_Config) ->
-    meck:expect(cowboy, start_listener, fun (_, _, cowboy_tcp_transport, [{port, 5672}, {ip, {127,0,0,1}}], cowboy_http_protocol, _) ->
-                                                {ok, self()};
-                                            (_, _, _, _, _, _) ->
-                                                {error, bad_args}
-                                        end),
+    Self = self(),
+    meck:expect(hello_stateless_httpd, start_listener,
+                fun ({127,0,0,1}, 5672)  -> {ok, Self};
+                    (_, _)               -> {error, bad_args}
+                end),
 
     ok = hello:bind_stateless("http://127.0.0.1:5672/test1", mod_test1),
     ok = hello:bind_stateless("http://127.0.0.1:5672/test2", mod_test2),
@@ -30,8 +31,8 @@ bind_stateless_http_same_listener_ip(_Config) ->
     mod_test1 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test1">>]),
     mod_test2 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test2">>]),
 
-    %% start_listener should only be called once
-    [_] = meck:history(cowboy).
+    %% check that start_listener was actually called, once
+    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_httpd)].
 
 bind_stateless_http_url_errors(_Config) ->
     URL = "http://127.0.0.1:5673/test",
@@ -97,8 +98,8 @@ end_per_suite(_Config) ->
     application:stop(hello).
 
 init_per_testcase(_Case, Config) ->
-    meck:new(cowboy, [passthrough]),
+    meck:new(hello_stateless_httpd, [passthrough]),
     Config.
 
 end_per_testcase(_Case, _Config) ->
-    meck:unload(cowboy).
+    meck:unload(hello_stateless_httpd).

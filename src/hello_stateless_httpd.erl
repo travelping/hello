@@ -21,7 +21,7 @@
 % @private
 -module(hello_stateless_httpd).
 -export([start/5, lookup_service/2, lookup_service/3]).
--export([unslash/1]).
+-export([start_listener/2, unslash/1]).
 
 -include("internal.hrl").
 -define(HANDLER, hello_stateless_http_server).
@@ -47,7 +47,7 @@ start_reg(Host, IP, Port, Path, CallbackModule) ->
     case hello_registry:lookup_listener(IP, Port) of
         {error, not_found} ->
             %% no server running on Host:Port, we need to start a listener
-            {ok, ListenerPid} = start_listener(IP, Port),
+            {ok, ListenerPid} = ?MODULE:start_listener(IP, Port),
             ListenerKey = hello_registry:listener_key(IP, Port),
             hello_registry:multi_register([{ListenerKey, ?MODULE}, {BindingKey, CallbackModule}], ListenerPid);
         {ok, ListenerPid, ?MODULE} ->
@@ -67,8 +67,16 @@ start_reg(Host, IP, Port, Path, CallbackModule) ->
 
 start_listener(IP, Port) ->
     Dispatch = [{'_', [{['...'], ?HANDLER, [IP]}]}],
-    cowboy:start_listener(make_ref(), 100, cowboy_tcp_transport, [{port, Port}, {ip, IP}],
-                          cowboy_http_protocol, [{dispatch, Dispatch}]).
+
+    %% Copied from cowboy.erl because it doesn't provide an API that
+    %% allows supervising the listener from the calling application yet.
+    Acceptors = 100,
+    Transport = cowboy_tcp_transport,
+    TransportOpts = [{port, Port}, {ip, IP}],
+    Protocol = cowboy_http_protocol,
+    ProtocolOpts = [{dispatch, Dispatch}],
+    Args = [Acceptors, Transport, TransportOpts, Protocol, ProtocolOpts],
+    hello_listener_supervisor:start_listener(supervisor, permanent, cowboy_listener_sup, Args).
 
 lookup_service(IP, Req) ->
     {Port, Req2}     = cowboy_http_req:port(Req),
