@@ -23,7 +23,7 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_request/2, run_stateless_binary_request/2]).
--export([bind_stateless/2, bindings/0]).
+-export([bind_stateful/3, bind_stateless/2, bindings/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -60,6 +60,23 @@ stop(_) ->
         _ ->
             ok
     end.
+
+bind_stateful(URL, CallbackModule, Args) ->
+    case (catch ex_uri:decode(URL)) of
+        {ok, Rec = #ex_uri{}, _} ->
+            bind_stateful_uri(Rec, CallbackModule, Args);
+        _Other ->
+            error(badurl)
+    end.
+
+bind_stateful_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod, _Args) ->
+    error(notsup);
+bind_stateful_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod, Args) ->
+    hello_stateful_zmq_server:start_supervised(URL#ex_uri{scheme = "tcp"}, Mod, Args);
+bind_stateful_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod, Args) ->
+    hello_stateful_zmq_server:start_supervised(URL#ex_uri{scheme = "ipc"}, Mod, Args);
+bind_stateful_uri(_, _Mod, _Args) ->
+    error(badurl).
 
 % @doc Starts a stateless RPC server on the given URL.
 %   The transport implementation that is chosen depends on

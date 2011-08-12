@@ -51,14 +51,14 @@ start_link() ->
 %% @doc Atomically register a pid under the given name
 %% @equiv multi_register([{Name, Data}], Pid)
 -spec register(name(), data(), pid()) -> ok | {already_registered, pid(), data()}.
-register(Name, Data, Pid) ->
+register(Name, Data, Pid) when is_pid(Pid) ->
     multi_register([{Name, Data}], Pid).
 
 %% @doc Atomically register a pid under multiple names
 %%   When one of the names is already registered, the function returns the pid and data
 %%   of the existing process.
 -spec multi_register(list({name(), data()}), pid()) -> ok | {already_registered, pid(), data()}.
-multi_register(RegSpecs, Pid) ->
+multi_register(RegSpecs, Pid) when is_pid(Pid) ->
     gen_server:call(?SERVER, {register, RegSpecs, Pid}).
 
 %% @doc Lookup the pid and data for a given name
