@@ -62,21 +62,7 @@ stop(_) ->
     end.
 
 bind_stateful(URL, CallbackModule, Args) ->
-    case (catch ex_uri:decode(URL)) of
-        {ok, Rec = #ex_uri{}, _} ->
-            bind_stateful_uri(Rec, CallbackModule, Args);
-        _Other ->
-            error(badurl)
-    end.
-
-bind_stateful_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod, _Args) ->
-    error(notsup);
-bind_stateful_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod, Args) ->
-    hello_stateful_zmq_server:start_supervised(URL#ex_uri{scheme = "tcp"}, Mod, Args);
-bind_stateful_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod, Args) ->
-    hello_stateful_zmq_server:start_supervised(URL#ex_uri{scheme = "ipc"}, Mod, Args);
-bind_stateful_uri(_, _Mod, _Args) ->
-    error(badurl).
+    bind_uri(stateful, URL, CallbackModule, Args).
 
 % @doc Starts a stateless RPC server on the given URL.
 %   The transport implementation that is chosen depends on
@@ -109,21 +95,30 @@ bind_stateful_uri(_, _Mod, _Args) ->
 -type url() :: string().
 -spec bind_stateless(url(), module()) -> ok | {error, already_started} | {error, occupied} | {error, {transport, term()}}.
 bind_stateless(URL, CallbackModule) ->
+    bind_uri(stateless, URL, CallbackModule, []).
+
+bind_uri(Type, URL, CallbackModule, Args) ->
     case (catch ex_uri:decode(URL)) of
-        {ok, Rec = #ex_uri{}, _} ->
-            bind_stateless_uri(Rec, CallbackModule);
+        {ok, Rec = #ex_uri{scheme = Scheme}, _} ->
+            bind_scheme(Type, Scheme, Rec, CallbackModule, Args);
         _Other ->
             error(badurl)
     end.
 
-bind_stateless_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
-    hello_stateless_httpd:start("http", Host, Port, Path, Mod);
-bind_stateless_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod) ->
-    hello_stateless_zmq_server:start_supervised(URL#ex_uri{scheme = "tcp"}, Mod);
-bind_stateless_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod) ->
-    hello_stateless_zmq_server:start_supervised(URL#ex_uri{scheme = "ipc"}, Mod);
-bind_stateless_uri(_, _Mod) ->
-    error(badurl).
+bind_scheme(stateful, "http", _URI, _Mod, _Args) ->
+    error(notsup);
+bind_scheme(stateful, "zmq-tcp", URI, Mod, Args) ->
+    hello_stateful_zmq_server:start_supervised(URI#ex_uri{scheme = "tcp"}, Mod, Args);
+bind_scheme(stateful, "zmq-ipc", URI, Mod, Args) ->
+    hello_stateful_zmq_server:start_supervised(URI#ex_uri{scheme = "ipc"}, Mod, Args);
+bind_scheme(stateless, "http", URI, Mod, _Args) ->
+    hello_stateless_http_server:start_supervised(URI, Mod);
+bind_scheme(stateless, "zmq-tcp", URI, Mod, _Args) ->
+    hello_stateless_zmq_server:start_supervised(URI#ex_uri{scheme = "tcp"}, Mod);
+bind_scheme(stateless, "zmq-ipc", URI, Mod, _Args) ->
+    hello_stateless_zmq_server:start_supervised(URI#ex_uri{scheme = "ipc"}, Mod);
+bind_scheme(_, _, _, _, _) ->
+    error(notsup).
 
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].

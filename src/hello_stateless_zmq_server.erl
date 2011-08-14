@@ -104,7 +104,7 @@ reg_details(URI = #ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = H
 reg_details(URI = #ex_uri{scheme = "ipc"}) ->
     Path = filename:absname(ipc_path(URI)),
     ListenerKey = hello_registry:listener_key({ipc, Path}, undefined),
-    BindingKey  = hello_registry:binding_key('zmq-ipc', <<>>, undefined, hello_stateless_httpd:unslash(Path)),
+    BindingKey  = hello_registry:binding_key('zmq-ipc', <<>>, undefined, hello_stateless_http_server:unslash(Path)),
 
     {URI, ListenerKey, BindingKey}.
 

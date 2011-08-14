@@ -8,7 +8,7 @@
 % -- test cases
 bind_stateless_http_url_ip(_Config) ->
     Self = self(),
-    meck:expect(hello_stateless_httpd, start_listener,
+    meck:expect(hello_stateless_http_server, start_listener,
                 fun ({127,0,0,1}, 5671)  -> {ok, Self};
                     (_, _)               -> {error, bad_args}
                 end),
@@ -16,11 +16,11 @@ bind_stateless_http_url_ip(_Config) ->
     ok  = hello:bind_stateless("http://127.0.0.1:5671/test", hello_stateless_server_example),
 
     %% check that start_listener was actually called, once
-    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_httpd)].
+    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_http_server)].
 
 bind_stateless_http_same_listener_ip(_Config) ->
     Self = self(),
-    meck:expect(hello_stateless_httpd, start_listener,
+    meck:expect(hello_stateless_http_server, start_listener,
                 fun ({127,0,0,1}, 5672)  -> {ok, Self};
                     (_, _)               -> {error, bad_args}
                 end),
@@ -28,11 +28,11 @@ bind_stateless_http_same_listener_ip(_Config) ->
     ok = hello:bind_stateless("http://127.0.0.1:5672/test1", mod_test1),
     ok = hello:bind_stateless("http://127.0.0.1:5672/test2", mod_test2),
 
-    mod_test1 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test1">>]),
-    mod_test2 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test2">>]),
+    mod_test1 = hello_stateless_http_server:lookup_service(<<"127.0.0.1">>, 5672, [<<"test1">>]),
+    mod_test2 = hello_stateless_http_server:lookup_service(<<"127.0.0.1">>, 5672, [<<"test2">>]),
 
     %% check that start_listener was actually called, once
-    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_httpd)].
+    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_http_server)].
 
 bind_stateless_http_url_errors(_Config) ->
     URL = "http://127.0.0.1:5673/test",
@@ -98,8 +98,8 @@ end_per_suite(_Config) ->
     application:stop(hello).
 
 init_per_testcase(_Case, Config) ->
-    meck:new(hello_stateless_httpd, [passthrough]),
+    meck:new(hello_stateless_http_server, [passthrough]),
     Config.
 
 end_per_testcase(_Case, _Config) ->
-    meck:unload(hello_stateless_httpd).
+    meck:unload(hello_stateless_http_server).

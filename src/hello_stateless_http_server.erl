@@ -20,17 +20,100 @@
 
 % @private
 -module(hello_stateless_http_server).
+-export([start_supervised/2, lookup_service/2, lookup_service/3,
+         start_listener/2, unslash/1]).
+
 -behaviour(cowboy_http_handler).
 -export([init/3, handle/2, terminate/2]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
+%% --------------------------------------------------------------------------------
+%% -- listener API
+start_supervised(URI = #ex_uri{scheme = "http", authority = Auth =  #ex_uri_authority{port = undefined}}, CallbackModule) ->
+    start_supervised(URI#ex_uri{authority = Auth#ex_uri_authority{port = 80}}, CallbackModule);
+start_supervised(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, CallbackModule) ->
+    case Host of
+        "*" ->
+            start_reg(<<"0.0.0.0">>, {0,0,0,0}, Port, Path, CallbackModule);
+        _ ->
+            case inet_parse:address(Host) of
+                {error, einval} ->
+                    start_reg(list_to_binary(Host), {0,0,0,0}, Port, Path, CallbackModule);
+                {ok, IPAddr} ->
+                    start_reg(list_to_binary(inet_parse:ntoa(IPAddr)), IPAddr, Port, Path, CallbackModule)
+            end
+    end.
+
+start_reg(Host, IP, Port, Path, CallbackModule) ->
+    BindingKey = hello_registry:binding_key(http, Host, Port, unslash(Path)),
+
+    case hello_registry:lookup_listener(IP, Port) of
+        {error, not_found} ->
+            %% no server running on Host:Port, we need to start a listener
+            {ok, ListenerPid} = ?MODULE:start_listener(IP, Port),
+            ListenerKey = hello_registry:listener_key(IP, Port),
+            hello_registry:multi_register([{ListenerKey, ?MODULE}, {BindingKey, CallbackModule}], ListenerPid);
+        {ok, ListenerPid, ?MODULE} ->
+            %% listener is already running
+            case hello_registry:lookup(BindingKey) of
+                {error, not_found} ->
+                    %% nobody is on that path yet, let's register the Module
+                    ok = hello_registry:register(BindingKey, CallbackModule, ListenerPid);
+                {ok, _Pid, CallbackModule} ->
+                    {error, already_started};
+                {ok, _Pid, _OtherModule} ->
+                    {error, occupied}
+            end;
+        {ok, _OtherListener, _OtherModule} ->
+            {error, occupied}
+    end.
+
+start_listener(IP, Port) ->
+    Dispatch = [{'_', [{['...'], ?MODULE, [IP]}]}],
+
+    %% Copied from cowboy.erl because it doesn't provide an API that
+    %% allows supervising the listener from the calling application yet.
+    Acceptors = 100,
+    Transport = cowboy_tcp_transport,
+    TransportOpts = [{port, Port}, {ip, IP}],
+    Protocol = cowboy_http_protocol,
+    ProtocolOpts = [{dispatch, Dispatch}],
+    Args = [Acceptors, Transport, TransportOpts, Protocol, ProtocolOpts],
+    hello_listener_supervisor:start_listener(supervisor, permanent, cowboy_listener_sup, Args).
+
+lookup_service(IP, Req) ->
+    {Port, Req2}     = cowboy_http_req:port(Req),
+    {PathList, Req3} = cowboy_http_req:path_info(Req2),
+    case lookup_service(IP, Port, PathList) of
+        undefined ->
+            {Host, Req4} = cowboy_http_req:raw_host(Req),
+            {lookup_service(Host, Port, PathList), Req4};
+        Module ->
+            {Module, Req3}
+    end.
+
+lookup_service(RegSpec, Port, PathList) ->
+    case hello_registry:lookup_binding(http, RegSpec, Port, PathList) of
+        {ok, _Pid, CallbackModule} -> CallbackModule;
+        {error, not_found}         -> undefined
+    end.
+
+unslash(Path) ->
+    case re:split(Path, "/", [{return, binary}]) of
+        []            -> [];
+        [<<>> | Rest] -> Rest;
+        List          -> List
+    end.
+
+%% --------------------------------------------------------------------------------
+%% -- request handling (callbacks for cowboy_http_handler)
 init({tcp, http}, Req, [IP]) ->
     {ok, Req, IP}.
 
 handle(Req, State = IP) ->
-    case hello_stateless_httpd:lookup_service(IP, Req) of
+    case lookup_service(IP, Req) of
         {undefined, Req1} ->
             ResponseJSON = json_error(service_not_found),
             Req2 = log_request(hello, Req1, ResponseJSON),
