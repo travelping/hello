@@ -21,7 +21,7 @@
 % @private
 -module(hello_registry).
 -behaviour(gen_server).
--export([start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
+-export([start/0,start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
 -export([lookup_listener/1, lookup_listener/2, listener_key/2]).
 -export([bindings/0, lookup_binding/4, binding_key/4]).
 %% internal
@@ -42,6 +42,11 @@
 
 -type listener_key() :: tuple().
 -type binding_key() :: tuple().
+
+%% @doc Start the registry server
+-spec start() -> {ok, pid()}.
+start() ->
+    gen_server:start({local, hello_registry}, ?MODULE, {}, []).
 
 %% @doc Start the registry server
 -spec start_link() -> {ok, pid()}.
@@ -68,7 +73,12 @@ lookup(Name) ->
         [] ->
             {error, not_found};
         [{{name, _}, Pid, Data}] ->
-            {ok, Pid, Data}
+	    case erlang:is_process_alive(Pid) of
+		true ->
+		    {ok, Pid, Data};
+		false ->
+		    {error, not_found}
+	    end
     end.
 
 -spec lookup_binding(atom(), binary(), inet:ip_port(), [binary()]) -> {ok, pid(), data()} | {error, not_found}.
@@ -99,11 +109,16 @@ lookup_listener(IP, Port) ->
 %% @doc Lookup all names for the given pid
 -spec lookup_pid(pid()) -> {ok, list(name())} | {error, not_found}.
 lookup_pid(Pid) ->
-    case lookup_pid_ms(?TABLE, Pid) of
-        [] ->
-            {error, not_found};
-        Results ->
-            {ok, Results}
+    case erlang:is_process_alive(Pid) of
+	false ->
+	    {error, not_found};
+	_ ->
+	    case lookup_pid_ms(?TABLE, Pid) of
+		[] ->
+		    {error, not_found};
+		Results ->
+		    {ok, Results}
+	    end
     end.
 
 -spec unregister(name()) -> ok.
@@ -143,18 +158,21 @@ handle_call({register, RegSpecs, Pid}, _From, Table) ->
             {reply, {error, noproc}, Table}
     end;
 handle_call({unregister, Name}, _From, Table) ->
-    ets:delete(Table, {name, Name}),
-    {reply, ok, Table};
+    case ets:lookup(Table, {name, Name}) of
+        [] ->
+            %% not registered, skip
+            {reply, ok, Table};
+        [{_NameKey, Pid, _Data}] ->
+            ets:delete(Table, {name, Name}),
+            ets:delete(Table, {pid, Pid, Name}),
+            {reply, ok, Table}
+    end;
 
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
-    DelCount = delete_pid(Table, Pid),
-    case DelCount of
-        0 -> error_logger:error_report(io_lib:format("Got down message from unregistered pid: ~p~n", [Pid]));
-        _ -> ok
-    end,
+    _DelCount = delete_pid(Table, Pid),
     {noreply, Table};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
