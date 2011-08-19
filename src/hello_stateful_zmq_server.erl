@@ -47,6 +47,7 @@ send({zmq, Socket, PeerIdentity}, Message) when is_binary(Message) ->
 -record(state, {socket, lastmsg_peer, uri, context, mod, mod_args}).
 
 init({URI = #ex_uri{}, CallbackModule, Args}) ->
+    process_flag(trap_exit, true),
     {ListenURI, ListenerKey, BindingKey} = reg_details(URI),
 
     case hello_registry:lookup_listener(ListenerKey) of

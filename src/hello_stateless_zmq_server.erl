@@ -42,6 +42,7 @@ start_link(URI, Module) ->
 -record(state, {socket, uri, context, mod}).
 
 init({URI = #ex_uri{}, CallbackModule}) ->
+    process_flag(trap_exit, true),
     {ListenURI, ListenerKey, BindingKey} = reg_details(URI),
 
     case hello_registry:lookup_listener(ListenerKey) of
