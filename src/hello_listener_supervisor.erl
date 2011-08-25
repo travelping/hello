@@ -21,7 +21,7 @@
 % @private
 -module(hello_listener_supervisor).
 -behaviour(supervisor).
--export([start_link/0, start_listener/4]).
+-export([start_link/0, start_child/1, stop_child/1]).
 -export([init/1]).
 
 -define(SERVER, hello_listener_supervisor).
@@ -29,9 +29,16 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
-start_listener(Type, RestartType, Module, InitArgs) ->
-    ChildSpec = {{listener, make_ref()}, {Module, start_link, InitArgs}, RestartType, 5000, Type, [Module]},
+start_child(ChildSpec) ->
     supervisor:start_child(?SERVER, ChildSpec).
+
+stop_child(ID) ->
+    case supervisor:terminate_child(?SERVER, ID) of
+        ok ->
+            supervisor:delete_child(?SERVER, ID);
+        {error, not_found} ->
+            {error, not_found}
+    end.
 
 init({}) ->
     Children = [],

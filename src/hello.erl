@@ -100,30 +100,26 @@ bind_stateless(URL, CallbackModule) ->
 bind_uri(Type, URL, CallbackModule, Args) ->
     case (catch ex_uri:decode(URL)) of
         {ok, Rec = #ex_uri{scheme = Scheme}, _} ->
-            bind_scheme(Type, Scheme, Rec, CallbackModule, Args);
+            ListenerMod = binding_module(Type, Scheme),
+            case hello_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Args) of
+                {ok, _Pid}     -> ok;
+                {error, Error} -> {error, Error}
+            end;
         _Other ->
             error(badurl)
     end.
 
-bind_scheme(stateful, "http", _URI, _Mod, _Args) ->
-    error(notsup);
-bind_scheme(stateful, "zmq-tcp", URI, Mod, Args) ->
-    hello_stateful_zmq_server:start_supervised(URI#ex_uri{scheme = "tcp"}, Mod, Args);
-bind_scheme(stateful, "zmq-ipc", URI, Mod, Args) ->
-    hello_stateful_zmq_server:start_supervised(URI#ex_uri{scheme = "ipc"}, Mod, Args);
-bind_scheme(stateless, "http", URI, Mod, _Args) ->
-    hello_stateless_http_server:start_supervised(URI, Mod);
-bind_scheme(stateless, "zmq-tcp", URI, Mod, _Args) ->
-    hello_stateless_zmq_server:start_supervised(URI#ex_uri{scheme = "tcp"}, Mod);
-bind_scheme(stateless, "zmq-ipc", URI, Mod, _Args) ->
-    hello_stateless_zmq_server:start_supervised(URI#ex_uri{scheme = "ipc"}, Mod);
-bind_scheme(_, _, _, _, _) ->
-    error(notsup).
+binding_module(stateful, "zmq-tcp")  -> hello_stateful_zmq_server;
+binding_module(stateful, "zmq-ipc")  -> hello_stateful_zmq_server;
+binding_module(stateless, "http")    -> hello_stateless_http_server;
+binding_module(stateless, "zmq-tcp") -> hello_stateless_zmq_server;
+binding_module(stateless, "zmq-ipc") -> hello_stateless_zmq_server;
+binding_module(_Type, _Scheme)       -> error(notsup).
 
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].
 bindings() ->
-    [{URL, Mod} || {_Protocol, URL, _Pid, Mod} <- hello_registry:bindings()].
+    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || {_Pid, Binding} <- hello_registry:bindings()].
 
 % @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
 %   This can be used for testing, but please note that the request must be
