@@ -46,8 +46,10 @@
 % -type reply() :: {ok, hello_json:value()} | {error, hello_proto:error_reply()}.
 
 -spec behaviour_info(callbacks) -> [{atom(), integer()}].
-behaviour_info(callbacks) -> [{init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
-behaviour_info(_Other)    -> undefined.
+behaviour_info(callbacks) ->
+    [{init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
+behaviour_info(_Other) ->
+    undefined.
 
 start(TransportMod, TransportState, HandlerMod, HandlerArgs) ->
     gen_server:start(?MODULE, {TransportMod, TransportState, HandlerMod, HandlerArgs}, []).
@@ -68,11 +70,11 @@ notify_np(Context, Method, Args = {_}) ->
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {transport_mod, transport_state, mod, mod_state, idle_timer, idle_timeout = infinity}).
+-record(state, {transport_mod, transport_state, mod, mod_state, idle_timer, idle_timeout_ref, idle_timeout = infinity}).
 
 init({TransportMod, Transport, HandlerModule, Args}) ->
     State0 = #state{mod = HandlerModule, transport_mod = TransportMod, transport_state = Transport},
-    State1 = refresh_idle_timeout(State0),
+    State1 = start_idle_timeout(State0),
     case HandlerModule:init(make_context(State1), Args) of
         {ok, HandlerState} ->
             {ok, State1#state{mod_state = HandlerState}};
@@ -83,17 +85,23 @@ init({TransportMod, Transport, HandlerModule, Args}) ->
     end.
 
 handle_cast({set_idle_timeout, Timeout}, State) ->
-    {noreply, refresh_idle_timeout(State#state{idle_timeout = Timeout})};
+    cancel_idle_timeout(State),
+    {noreply, start_idle_timeout(State#state{idle_timeout = Timeout})};
 
-handle_cast(idle_timeout, State) ->
+handle_cast({idle_timeout, Ref}, State = #state{idle_timeout_ref = Ref}) ->
     {stop, idle_timeout, State};
 
+handle_cast({idle_timeout, _OtherRef}, State) ->
+    %% ignore timeouts other than the current one
+    {noreply, State};
+
 handle_cast({do_binary_request, JSONRequest}, State = #state{mod = Mod, mod_state = ModState}) ->
+    cancel_idle_timeout(State),
     case hello_proto:request_json(JSONRequest) of
         {ok, Request} ->
             From = make_from_context(State, Request),
             Result = Mod:handle_request(From, Request#request.method, Request#request.params, ModState),
-            NewState = refresh_idle_timeout(State),
+            NewState = start_idle_timeout(State),
             handle_result(Result, true, From, NewState);
         {error, ErrorResponse} ->
             send_binary(make_context(State), ErrorResponse),
@@ -152,18 +160,20 @@ make_context(#state{transport_mod = TMod, transport_state = TState}) ->
 make_from_context(#state{transport_mod = TMod, transport_state = TState}, Request) ->
     #context{transport_mod = TMod, transport_state = TState, request = Request}.
 
-refresh_idle_timeout(State) ->
+cancel_idle_timeout(State) ->
     case State#state.idle_timer of
         undefined ->
             ok;
         OldTimer ->
             {ok, cancel} = timer:cancel(OldTimer)
-    end,
+    end.
 
+start_idle_timeout(State) ->
     case State#state.idle_timeout of
         infinity ->
-            State#state{idle_timer = undefined};
+            State#state{idle_timer = undefined, idle_timeout_ref = undefined};
         IdleTimeout ->
-            {ok, NewTimer} = timer:apply_after(IdleTimeout, gen_server, cast, [self(), idle_timeout]),
-            State#state{idle_timer = NewTimer}
+            IdleTimeoutRef = make_ref(),
+            {ok, NewTimer} = timer:apply_after(IdleTimeout, gen_server, cast, [self(), {idle_timeout, IdleTimeoutRef}]),
+            State#state{idle_timer = NewTimer, idle_timeout_ref = IdleTimeoutRef}
     end.
