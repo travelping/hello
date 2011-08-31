@@ -34,20 +34,22 @@
 
 -module(hello_stateful_handler).
 -export([start/4, do_binary_request/2, behaviour_info/1,
-         set_idle_timeout/1, set_idle_timeout/2, notify_np/3]).
+         set_idle_timeout/1, set_idle_timeout/2, notify_np/3, reply/2]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("internal.hrl").
+-include("hello.hrl").
 
--record(context, {transport_mod, transport_state, request}).
+-record(from_context, {from, request, context}).
+-record(context, {transport_mod, transport_state}).
 
 % -type reply() :: {ok, hello_json:value()} | {error, hello_proto:error_reply()}.
 
 -spec behaviour_info(callbacks) -> [{atom(), integer()}].
 behaviour_info(callbacks) ->
-    [{init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
+    [{method_info,1}, {param_info,2}, {init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
 behaviour_info(_Other) ->
     undefined.
 
@@ -67,6 +69,9 @@ notify_np(Context, Method, Args) when is_list(Args) ->
     notify_np(Context, Method, {Args});
 notify_np(Context, Method, Args = {_}) ->
     send_notification(Context, Method, Args).
+
+reply(#from_context{from = From, request = Req}, Result) ->
+    gen_server:reply(From, to_response_record(Result, Req)).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -95,61 +100,84 @@ handle_cast({idle_timeout, _OtherRef}, State) ->
     %% ignore timeouts other than the current one
     {noreply, State};
 
-handle_cast({do_binary_request, JSONRequest}, State = #state{mod = Mod, mod_state = ModState}) ->
+handle_cast({do_binary_request, JSONRequest}, State = #state{transport_mod = TMod, transport_state = TState}) ->
+    Server = self(),
+    spawn(fun () ->
+                  case hello_proto:request_json(JSONRequest) of
+                      {ok, Request} ->
+                          Result = gen_server:call(Server, Request, infinity);
+                      {batch, GoodReqs, InvalidReplies} ->
+                          Result = InvalidReplies ++ [gen_server:call(Server, Request, infinity) || Request <- GoodReqs];
+                      {error, ErrorReply} ->
+                          Result = ErrorReply
+                  end,
+                  case hello_proto:response_json(Result) of
+                      <<>> -> ignore;
+                      Resp -> TMod:send(TState, Resp)
+                  end
+          end),
+    {noreply, State}.
+
+handle_call(Req = #request{method = MethodName}, From, State = #state{mod_state = ModState, mod = Mod}) ->
     cancel_idle_timeout(State),
-    case hello_proto:request_json(JSONRequest) of
-        {ok, Request} ->
-            From = make_from_context(State, Request),
-            Result = Mod:handle_request(From, Request#request.method, Request#request.params, ModState),
-            NewState = start_idle_timeout(State),
-            handle_result(Result, true, From, NewState);
-        {error, ErrorResponse} ->
-            send_binary(make_context(State), ErrorResponse),
-            {stop, badrequest, State}
-    end.
+    case hello_validate:find_method(Mod:method_info(ModState), MethodName) of
+        undefined ->
+            {reply, hello_proto:std_error(Req, method_not_found), start_idle_timeout(State)};
+        ValidatedMethod ->
+            case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
+                {ok, ValidatedParams} ->
+                    Context = make_from_context(From, State, Req),
+                    Result  = Mod:handle_request(Context, ValidatedMethod#rpc_method.name, ValidatedParams, ModState),
+                    handle_reply_result(Result, Req, State);
+                {error, Msg}    ->
+                    {reply, hello_proto:std_error(Req, {invalid_params, Msg}), start_idle_timeout(State)}
+            end
+    end;
+
+handle_call(_Call, _From, State) ->
+    {reply, {error, unknown_call}, State}.
 
 handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState}) ->
     Result = Mod:handle_info(make_context(State), InfoMsg, ModState),
-    handle_result(Result, false, undefined, State).
+    handle_result(Result, State).
 
 terminate(Reason, State = #state{mod = Mod, mod_state = ModState}) ->
     Mod:terminate(make_context(State), Reason, ModState).
 
-%% unused callbacks
-handle_call(_Call, _From, State) ->
-    {reply, {error, unknown_call}, State}.
+%% TODO: code_change
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 
 %% --------------------------------------------------------------------------------
 %% -- internal functions
+handle_reply_result({reply, Reply, NewModState}, Request, State) ->
+    handle_reply_result({reply, Reply, NewModState, infinity}, Request, State);
+handle_reply_result({reply, Reply, NewModState, Timeout}, Request, State) ->
+    Response = to_response_record(Reply, Request),
+    {reply, Response, start_idle_timeout(State#state{mod_state = NewModState}), Timeout};
+handle_reply_result({stop, Reason, Reply, NewModState}, Request, State) ->
+    Response = to_response_record(Reply, Request),
+    {stop, Response, Reason, State#state{mod_state = NewModState}};
+handle_reply_result(OtherResult, _Request, State) ->
+    handle_result(OtherResult, State).
 
-handle_result({reply, Reply, NewModState}, true, From, State) ->
-    handle_result({reply, Reply, NewModState, infinity}, true, From, State);
-handle_result({reply, Reply, NewModState, Timeout}, true, From, State) ->
-    ok = send_reply(From, Reply),
-    handle_result({noreply, NewModState, Timeout}, true, From, State);
-
-handle_result({noreply, NewModState}, AllowReply, From, State) ->
-    handle_result({noreply, NewModState, infinity}, AllowReply, From, State);
-handle_result({noreply, NewModState, Timeout}, _AllowReply, _From, State) ->
+handle_result({noreply, NewModState}, State) ->
+    handle_result({noreply, NewModState, infinity}, State);
+handle_result({noreply, NewModState, Timeout}, State) ->
     {noreply, State#state{mod_state = NewModState}, Timeout};
-
-handle_result({stop, Reason, Reply, NewModState}, true, From, State) ->
-    ok = send_reply(From, Reply),
-    handle_result({stop, Reason, NewModState}, true, From, State);
-handle_result({stop, Reason, NewModState}, _AllowReply, _From, State) ->
+handle_result({stop, Reason, NewModState}, State) ->
     {stop, Reason, State#state{mod_state = NewModState}};
-
-handle_result(Result, _AllowReply, _From, _State) ->
+handle_result(Result, _State) ->
     error({bad_return, Result}).
 
-send_reply(Context = #context{request = Request}, {ok, Result}) ->
-    send_binary(Context, hello_proto:response_json(hello_proto:response(Request, Result)));
-send_reply(Context = #context{request = Request}, {error, ErrorReply}) ->
-    send_binary(Context, hello_proto:response_json(hello_proto:error_response(Request, ErrorReply))).
+to_response_record({ok, Reply}, Request) ->
+    hello_proto:response(Request, Reply);
+to_response_record({error, Error}, Request) ->
+    hello_proto:error_response(Request, Error).
 
-send_notification(Context, Method, Params) ->
+send_notification(#from_context{context = Context}, Method, Params) ->
+    send_notification(Context, Method, Params);
+send_notification(Context = #context{}, Method, Params) ->
     send_binary(Context, hello_json:encode({[{'jsonrpc', <<"2.0">>}, {'method', Method}, {'params', Params}]})).
 
 send_binary(#context{transport_mod = TMod, transport_state = TState}, Resp) when is_binary(Resp) ->
@@ -157,8 +185,8 @@ send_binary(#context{transport_mod = TMod, transport_state = TState}, Resp) when
 
 make_context(#state{transport_mod = TMod, transport_state = TState}) ->
     #context{transport_mod = TMod, transport_state = TState}.
-make_from_context(#state{transport_mod = TMod, transport_state = TState}, Request) ->
-    #context{transport_mod = TMod, transport_state = TState, request = Request}.
+make_from_context(From, State, Request) ->
+    #from_context{from = From, request = Request, context = make_context(State)}.
 
 cancel_idle_timeout(State) ->
     case State#state.idle_timer of
