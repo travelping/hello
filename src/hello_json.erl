@@ -82,6 +82,7 @@
 -export([encode/1, decode/1]).
 -export([object_to_record/5, record_to_object/4]).
 -export_type([value/0, json_string/0, json_number/0, json_boolean/0, json_array/0, json_object/0, json_null/0]).
+-compile(bin_opt_info).
 
 -type value() :: json_string() | json_number() | json_boolean() | json_array() | json_object() | json_null().
 -type json_string()  :: binary().
@@ -159,7 +160,8 @@ decode(JSON) when is_binary(JSON) ->
 decode(_) ->
     error(badarg).
 
-decode1(<<Bin/binary>>) ->
+-compile({inline, decode1/1}).
+decode1(Bin) ->
     try
         {Dec, Rest} = decode2(Bin),
         {ok, Dec, Rest}
@@ -190,11 +192,22 @@ dec_string(<<Bin/binary>>, Res) ->
     case Bin of
         <<$\\, R1/binary>> ->
             case R1 of
-                <<C, R2/binary>> when (C =:= $"); (C =:= $\\); (C =:= $n);
-                                      (C =:= $r); (C =:= $t);  (C =:= $b); (C =:= $f) ->
+                <<C, R2/binary>> when (C =:= $"); (C =:= $\\) ->
                     dec_string(R2, [C | Res]);
+                <<$n, R2/binary>> ->
+                    dec_string(R2, [$\n | Res]);
+                <<$r, R2/binary>> ->
+                    dec_string(R2, [$\r | Res]);
+                <<$t, R2/binary>> ->
+                    dec_string(R2, [$\t | Res]);
+                <<$b, R2/binary>> ->
+                    dec_string(R2, [$\b | Res]);
+                <<$f, R2/binary>> ->
+                    dec_string(R2, [$\f | Res]);
                 <<$u, A, B, C, D, R2/binary>> ->
-                    dec_string(R2, [list_to_integer([A,B,C,D], 16) | Res])
+                    dec_string(R2, [list_to_integer([A,B,C,D], 16) | Res]);
+                _ ->
+                    error(syntax_error) % bad escape seq
             end;
         <<$", R/binary>> ->
             {lists:reverse(Res), R};
