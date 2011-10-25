@@ -157,7 +157,7 @@ handle_reply_result({reply, Reply, NewModState, Timeout}, Request, State) ->
     {reply, Response, start_idle_timeout(State#state{mod_state = NewModState}), Timeout};
 handle_reply_result({stop, Reason, Reply, NewModState}, Request, State) ->
     Response = to_response_record(Reply, Request),
-    {stop, Response, Reason, State#state{mod_state = NewModState}};
+    {stop, Reason, Response, State#state{mod_state = NewModState}};
 handle_reply_result(OtherResult, _Request, State) ->
     handle_result(OtherResult, State).
 
