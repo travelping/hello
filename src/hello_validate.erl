@@ -135,11 +135,11 @@ zip([H1|R1], [H2|R2], {Result, TooMany}) ->
 validate_date(Date) when is_binary(Date) ->
     validate_date(binary_to_list(Date));
 validate_date(Date) ->
-    case validator(fun year/2, Date, year()) of
-        {ok, [Year, Month, Day, T], TimeString} when ((T == "t") or (T == "T")) ->
-            case validator(fun time_check/2, TimeString, time_check()) of
-                {ok, [Hour, Minute, Second], TimeZoneString} ->
-                    validate_datetime({Year, Month, Day}, {Hour, Minute, Second}, TimeZoneString);
+    case re:run(Date, "^([0-9]{4})(-?)([0-9]{2})(-?)([0-9]{2})([tT])(.*)$", [{capture, all_but_first, list}]) of
+        {match, [Year, Cut1, Month, Cut2, Day, T, TimeString]} when (((T == "t") or (T == "T")) and (Cut1 == Cut2)) ->
+            case re:run(TimeString, "^([0-9]{2})(:?)([0-9]{2})(:?)([0-9]{2})(.*)$", [{capture, all_but_first, list}]) of
+                {match, [Hour, Cut3, Minute, Cut4, Second, TimeZoneString]} when (Cut3 == Cut4) ->
+                    validate_datetime({s2i(Year), s2i(Month), s2i(Day)}, {s2i(Hour), s2i(Minute), s2i(Second)}, TimeZoneString);
                 _ ->
                     false
             end;
@@ -149,15 +149,17 @@ validate_date(Date) ->
 
 validate_datetime({Year, Month, Day} = DateTuple, {Hour, Minute, Second} = TimeTuple, TimeZoneString) ->
     case {calendar:valid_date(Year, Month, Day), valid_time(Hour, Minute, Second)} of
-        {true, true} -> check_time_zone(DateTuple, TimeTuple, TimeZoneString);
-        _ -> false
+        {true, true} ->
+            check_time_zone(DateTuple, TimeTuple, TimeZoneString);
+        _ ->
+            false
     end.
 
 check_time_zone(DateTuple, TimeTuple, TimeZoneString) ->
-    case validator(fun get_timezone/2, TimeZoneString, get_timezone()) of
-        {ok, "Z", _} ->
+    case re:run(TimeZoneString, "^([Z+-])([0-9]{2})?(:?)([0-9]{2})?$", [{capture, all_but_first, list}]) of
+        {match, ["Z", "", ""]} ->
             {true, {DateTuple, TimeTuple}};
-        {ok, [T | Other], _} when ((T == "+") or (T == "-")) ->
+        {match, [T | Other]} when ((T == "+") or (T == "-")) ->
             add_time({DateTuple, TimeTuple}, T, Other);
         _ ->
             false
@@ -168,36 +170,17 @@ valid_time(H, M, S) when (H >= 0) and (H =< 23) and (M >= 0) and (M =< 59) and (
 valid_time(_, _, _) ->
     false.
 
-validator(_Fun, _Date, 0) -> false;
-validator(Fun, Date, N) ->
-    case Fun(Date, N) of
-        {ok, Result, EndOfString} ->
-            {ok, Result, EndOfString};
-        _ ->
-            validator(Fun, Date, N - 1)
-    end.
-
-year() -> 2.
-year(Date, 1) -> io_lib:fread("~4d-~2d-~2d~1c", Date);
-year(Date, 2) -> io_lib:fread("~4d~2d~2d~1c", Date).
-time_check() -> 2.
-time_check(Time, 1) -> io_lib:fread("~2d:~2d:~2d", Time);
-time_check(Time, 2) -> io_lib:fread("~2d~2d~2d", Time).
-get_timezone() -> 4.
-get_timezone(TimeZone, 1) -> io_lib:fread("~1c~2d", TimeZone);
-get_timezone(TimeZone, 2) -> io_lib:fread("~1c~2d:2d", TimeZone);
-get_timezone(TimeZone, 3) -> io_lib:fread("~1c~2d~2d", TimeZone);
-get_timezone("Z", 4) -> {ok, "Z", []};
-get_timezone(_TimeZone, _N) -> false.
+s2i("") -> 0;
+s2i(Str) -> list_to_integer(Str).
 
 add_time(DateTime, T, [H | Tail]) ->
     Seconds1 = calendar:datetime_to_gregorian_seconds(DateTime),
-    Seconds2 = add(T, Seconds1, H * 3600),
+    Seconds2 = add(T, Seconds1, s2i(H) * 3600),
     Seconds3 =  case Tail of
-                    [] ->
+                    [""] ->
                         Seconds2;
-                    [Minutes] ->
-                        add(T, Seconds2, Minutes * 60)
+                    [_Cut, Minutes] ->
+                        add(T, Seconds2, s2i(Minutes) * 60)
                 end,
     {true, calendar:gregorian_seconds_to_datetime(Seconds3)}.
 
