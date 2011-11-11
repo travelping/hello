@@ -144,7 +144,6 @@ validate_date(Date) ->
         _ -> false
     end.
 
-
 validate_datetime({Year, Month, Day} = DateTuple, {Hour, Minute, Second} = TimeTuple, TimeZoneString) ->
     case {calendar:valid_date(Year, Month, Day), valid_time(Hour, Minute, Second)} of
         {true, true} ->
@@ -157,8 +156,8 @@ check_time_zone(DateTuple, TimeTuple, TimeZoneString) ->
     case re:run(TimeZoneString, "^([Z+-])([0-9]{2})?(:?)([0-9]{2})?$", [{capture, all_but_first, list}]) of
         {match, ["Z", "", ""]} ->
             {true, {DateTuple, TimeTuple}};
-        {match, [T | Other]} when ((T == "+") or (T == "-")) ->
-            add_time({DateTuple, TimeTuple}, T, Other);
+        {match, [T, Time | Other]} when ((T == "+") or (T == "-")) ->
+            add_time({DateTuple, TimeTuple}, T, s2i(Time), Other);
         _ ->
             false
     end.
@@ -171,16 +170,23 @@ valid_time(_, _, _) ->
 s2i("") -> 0;
 s2i(Str) -> list_to_integer(Str).
 
-add_time(DateTime, T, [H | Tail]) ->
+add_time(DateTime, T, Hours, PossiblyMinutes) when (Hours >= 0) and (Hours =< 23)  ->
     Seconds1 = calendar:datetime_to_gregorian_seconds(DateTime),
-    Seconds2 = add(T, Seconds1, s2i(H) * 3600),
-    Seconds3 =  case Tail of
-                    [""] ->
-                        Seconds2;
-                    [_Cut, Minutes] ->
-                        add(T, Seconds2, s2i(Minutes) * 60)
-                end,
-    {true, calendar:gregorian_seconds_to_datetime(Seconds3)}.
+    Seconds2 = add(T, Seconds1, Hours * 3600),
+    case PossiblyMinutes of
+        [""] ->
+            {true, calendar:gregorian_seconds_to_datetime(Seconds2)};
+        [_Cut, MinutesString] ->
+            Minutes = s2i(MinutesString),
+            case (Minutes >= 0) and (Minutes =< 59) of
+                true ->
+                    Seconds3 = add(T, Seconds2, Minutes * 60),
+                    {true, calendar:gregorian_seconds_to_datetime(Seconds3)};
+                false ->
+                    false
+            end
+    end;
+add_time(_DateTime, _, _, _) -> false.
 
 add("+", A, B) -> A - B;
 add("-", A, B) -> A + B.
