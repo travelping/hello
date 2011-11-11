@@ -130,8 +130,6 @@ zip(_1, [], Result) ->
 zip([H1|R1], [H2|R2], {Result, TooMany}) ->
     zip(R1, R2, {[{H1, H2}|Result], TooMany}).
 
--compile(export_all).
-
 validate_date(Date) when is_binary(Date) ->
     validate_date(binary_to_list(Date));
 validate_date(Date) ->
