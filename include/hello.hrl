@@ -13,7 +13,7 @@
 
 -record(rpc_param, {
     name               :: atom(),
-    type = any         :: hello:param_type(),
+    type = any         :: hello_validate:param_type(),
     optional = false   :: boolean(),
     default            :: term(),
     description = ""   :: string()

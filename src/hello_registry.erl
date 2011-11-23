@@ -21,27 +21,28 @@
 % @private
 -module(hello_registry).
 -behaviour(gen_server).
--export([start_link/0, register/3, multi_register/2, unregister/1, lookup/1, lookup_pid/1]).
+-export([start/0,start_link/0, register/3, multi_register/2, add_to_key/2, unregister/1, lookup/1, lookup_pid/1]).
 -export([lookup_listener/1, lookup_listener/2, listener_key/2]).
--export([bindings/0, lookup_binding/4, binding_key/4]).
+-export([bindings/0, lookup_binding/2]).
 %% internal
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-include("internal.hrl").
 -define(TABLE, hello_registry_tab).
 -define(SERVER, hello_registry).
 
--include_lib("ex_uri/include/ex_uri.hrl").
-
 %% --------------------------------------------------------------------------------
 %% -- API
--type url() :: string().
--type protocol() :: atom().
 -type name() :: term().
 -type data() :: term().
 -type address() :: inet:ip4_address() | inet:ip6_address() | {ipc, string()}.
 
 -type listener_key() :: tuple().
--type binding_key() :: tuple().
+
+%% @doc Start the registry server
+-spec start() -> {ok, pid()}.
+start() ->
+    gen_server:start({local, hello_registry}, ?MODULE, {}, []).
 
 %% @doc Start the registry server
 -spec start_link() -> {ok, pid()}.
@@ -51,15 +52,20 @@ start_link() ->
 %% @doc Atomically register a pid under the given name
 %% @equiv multi_register([{Name, Data}], Pid)
 -spec register(name(), data(), pid()) -> ok | {already_registered, pid(), data()}.
-register(Name, Data, Pid) ->
+register(Name, Data, Pid) when is_pid(Pid) ->
     multi_register([{Name, Data}], Pid).
 
 %% @doc Atomically register a pid under multiple names
 %%   When one of the names is already registered, the function returns the pid and data
 %%   of the existing process.
 -spec multi_register(list({name(), data()}), pid()) -> ok | {already_registered, pid(), data()}.
-multi_register(RegSpecs, Pid) ->
+multi_register(RegSpecs, Pid) when is_pid(Pid) ->
     gen_server:call(?SERVER, {register, RegSpecs, Pid}).
+
+%% @doc Atomically add the given number to the data associated with a key
+-spec add_to_key(name(), number()) -> {ok, pid(), data()} | {error, not_found} | {error, badarg}.
+add_to_key(Name, Number) when is_number(Number) ->
+    gen_server:call(?SERVER, {add_to_key, Name, Number}).
 
 %% @doc Lookup the pid and data for a given name
 -spec lookup(name()) -> {ok, pid(), data()} | {error, not_found}.
@@ -68,18 +74,43 @@ lookup(Name) ->
         [] ->
             {error, not_found};
         [{{name, _}, Pid, Data}] ->
-            {ok, Pid, Data}
+            case erlang:is_process_alive(Pid) of
+                true ->
+                    {ok, Pid, Data};
+                false ->
+                    {error, not_found}
+            end
     end.
 
--spec lookup_binding(atom(), binary(), inet:ip_port(), [binary()]) -> {ok, pid(), data()} | {error, not_found}.
-lookup_binding(Protocol, Host, Port, Path) ->
-    lookup(binding_key(Protocol, Host, Port, Path)).
+%% @doc Lookup all registered names for the given pid
+-spec lookup_pid(pid()) -> {ok, list(name())} | {error, not_found}.
+lookup_pid(Pid) ->
+    case erlang:is_process_alive(Pid) of
+        false ->
+            {error, not_found};
+        _ ->
+            case lookup_pid_ms(?TABLE, Pid) of
+                [] ->
+                    {error, not_found};
+                Results ->
+                    {ok, Results}
+            end
+    end.
 
--spec bindings() -> [{protocol(), url(), pid(), module()}].
-bindings() ->
-    [{Protocol, encode_binding_uri(Protocol, Host, Port, Path), Pid, Module} ||
-        {Protocol, Host, Port, Path, Pid, Module} <- lookup_bindings_ms(?TABLE)].
+%% @doc Remove a name from the registry
+-spec unregister(name()) -> ok.
+unregister(Name) ->
+    gen_server:call(?SERVER, {unregister, Name}).
 
+%% @doc Get the list of all registered bindings
+-spec bindings() -> [{BindingProcess :: pid(), #binding{}}].
+bindings() -> lookup_bindings_ms(?TABLE).
+
+-spec lookup_binding(module(), BindingKey :: term()) -> {ok, pid(), #binding{}} | {error, not_found}.
+lookup_binding(Module, BindingKey) ->
+    lookup({binding, Module, BindingKey}).
+
+%% TODO: move listener/binding related stuff out of here
 -spec lookup_listener(listener_key()) -> {ok, pid(), module()} | {error, not_found}.
 lookup_listener({listener, IP, Port}) ->
     lookup_listener(IP, Port).
@@ -96,29 +127,11 @@ lookup_listener(IP, Port) ->
             lookup(listener_key(IP, Port))
     end.
 
-%% @doc Lookup all names for the given pid
--spec lookup_pid(pid()) -> {ok, list(name())} | {error, not_found}.
-lookup_pid(Pid) ->
-    case lookup_pid_ms(?TABLE, Pid) of
-        [] ->
-            {error, not_found};
-        Results ->
-            {ok, Results}
-    end.
-
--spec unregister(name()) -> ok.
-unregister(Name) ->
-    gen_server:call(?SERVER, {unregister, Name}).
-
 -spec listener_key({ipc, filename:name()} | inet:ip4_address() | inet:ip6_address(), inet:ip_port() | undefined) -> listener_key().
 listener_key({ipc, Path}, undefined) ->
     {listener, {ipc, Path}, undefined};
 listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->
     {listener, IP, Port}.
-
--spec binding_key(protocol(), binary(), inet:ip_port(), [binary()]) -> binding_key().
-binding_key(Protocol, Host, Port, Path) when is_atom(Protocol), is_binary(Host), is_list(Path) ->
-    {binding, Protocol, Host, Port, Path}.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -143,18 +156,33 @@ handle_call({register, RegSpecs, Pid}, _From, Table) ->
             {reply, {error, noproc}, Table}
     end;
 handle_call({unregister, Name}, _From, Table) ->
-    ets:delete(Table, {name, Name}),
-    {reply, ok, Table};
+    case ets:lookup(Table, {name, Name}) of
+        [] ->
+            %% not registered, skip
+            {reply, ok, Table};
+        [{_NameKey, Pid, _Data}] ->
+            ets:delete(Table, {name, Name}),
+            ets:delete(Table, {pid, Pid, Name}),
+            {reply, ok, Table}
+    end;
+
+handle_call({add_to_key, Name, Number}, _From, Table) ->
+    case ets:lookup(Table, {name, Name}) of
+        [] ->
+            {reply, {error, not_found}, Table};
+        [{NameKey, Pid, Data}] when is_number(Data) ->
+            NewData = Data + Number,
+            ets:insert(Table, {NameKey, Pid, NewData}),
+            {reply, {ok, Pid, NewData}, Table};
+        [{_NameKey, _Pid, _Data}] ->
+            {reply, {error, badarg}, Table}
+    end;
 
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
-    DelCount = delete_pid(Table, Pid),
-    case DelCount of
-        0 -> error_logger:error_report(io_lib:format("Got down message from unregistered pid: ~p~n", [Pid]));
-        _ -> ok
-    end,
+    _DelCount = delete_pid(Table, Pid),
     {noreply, Table};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
@@ -179,17 +207,7 @@ lookup_pid_ms(Table, Pid) ->
     ets:select(Table, PidMS).
 
 lookup_bindings_ms(Table) ->
-    [{Protocol, Host, Port, Path, Pid, Data} ||
-        {{name, {binding, Protocol, Host, Port, Path}}, Pid, Data} <- ets:match_object(Table, {{name, {binding, '_', '_', '_', '_'}}, '_', '_'})].
-
-encode_binding_uri(Protocol, Host, Port, PathList) ->
-    URI = #ex_uri{scheme    = atom_to_list(Protocol),
-                  path      = encode_path(PathList),
-                  authority = #ex_uri_authority{host = Host, port = Port}},
-    binary_to_list(iolist_to_binary(ex_uri:encode(URI))).
-
-encode_path([])        -> "";
-encode_path(PathList)  -> "/" ++ string:join(lists:map(fun binary_to_list/1, PathList), "/").
+    [{Pid, Data} || {_Key, Pid, Data} <- ets:match_object(Table, {{name, {binding, '_', '_'}}, '_', '_'})].
 
 any_registered_ms(Table, Names) ->
     NamesMS = [{{{name, Name}, '$1', '$2'}, [], [{{'$1', '$2'}}]} || {Name, _} <- Names],

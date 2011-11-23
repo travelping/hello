@@ -124,11 +124,11 @@ run_maybe_notification(Mod, Req) ->
             do_single_request(Mod, Req)
     end.
 
-do_single_request(Mod, Req = #request{method = MethodName, params = Params}) ->
-    case find_method(Mod, MethodName) of
+do_single_request(Mod, Req = #request{method = MethodName}) ->
+    case hello_validate:find_method(Mod:method_info(), MethodName) of
         undefined -> hello_proto:std_error(Req, method_not_found);
-        Method    ->
-            case validate_params(Mod, Method, Params) of
+        Method ->
+            case hello_validate:request_params(Method, Mod:param_info(Method#rpc_method.name), Req) of
                 {ok, Validated} -> run_callback_module(Req, Mod, Method, Validated);
                 {error, Msg}    -> hello_proto:std_error(Req, {invalid_params, Msg})
             end
@@ -146,97 +146,9 @@ run_callback_module(Req, Mod, Method, ValidatedParams) ->
             hello_proto:std_error(Req, server_error)
     catch
          Type:Error ->
-            error_logger:error_msg("Error (~p) thrown by a JSON-RPC handler function while executing the method ~s~n"
+            Report = io_lib:format("Error (~p) thrown by JSON-RPC handler '~p' while executing the method \"~s\":~n"
                                    "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
-                                   [Type, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
+                                   [Type, Mod, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
+            error_logger:error_report(Report),
             hello_proto:std_error(Req, server_error)
     end.
-
-find_method(Mod, MethodName) when is_binary(MethodName) ->
-    find_method(Mod, binary_to_list(MethodName));
-find_method(Mod, MethodName) when is_list(MethodName) ->
-    case catch list_to_existing_atom(MethodName) of
-        {'EXIT', {badarg, _TR}} -> undefined;
-        Atom                    -> find_method(Mod, Atom)
-    end;
-find_method(Mod, MethodName) when is_atom(MethodName) ->
-    case lists:keyfind(MethodName, #rpc_method.name, Mod:method_info()) of
-        false  -> undefined;
-        Method -> Method
-    end.
-
-validate_params(Mod, #rpc_method{name = Method, params_as = WantParamEncoding}, ParamsIn) ->
-    PInfo = Mod:param_info(Method),
-    try
-        Params = params_to_proplist(PInfo, ParamsIn),
-        Validated = lists:map(fun (OneParamInfo) -> validate_field(OneParamInfo, Params) end, PInfo),
-        case WantParamEncoding of
-            proplist -> {ok, Validated};
-            list     -> {ok, lists:map(fun ({_K, V}) -> V end, Validated)}
-        end
-    catch
-        throw:{invalid, Msg} -> {error, Msg}
-    end.
-
-validate_field(Info = #rpc_param{name = PNameAtom}, Param) ->
-    PName = atom_to_binary(PNameAtom, utf8),
-    Value = case proplists:get_value(PName, Param) of
-                Undef when (Undef =:= undefined) or (Undef =:= null) ->
-                    if Info#rpc_param.optional -> Info#rpc_param.default;
-                       true -> throw({invalid, ["required parameter '", PName, "' is missing"]})
-                    end;
-                GivenValue ->
-                    validate_type(PName, Info, GivenValue)
-            end,
-    {PNameAtom, Value}.
-
-validate_type(PName, #rpc_param{type = PType}, GivenValue) ->
-    case PType of
-        {enum, Elems} ->
-            atom_from_enum(PName, Elems, GivenValue);
-        _T ->
-            case has_type(PType, GivenValue) of
-                true -> GivenValue;
-                false -> throw({invalid, ["invalid parameter type for param '", PName, "': expected ", atom_to_list(PType)]})
-            end
-    end.
-
-atom_from_enum(Param, Enum, Input) ->
-    try
-        A = erlang:binary_to_existing_atom(Input, utf8),
-        case lists:member(A, Enum) of
-            true -> A;
-            false -> erlang:error(badarg)
-        end
-    catch
-        error:badarg ->
-            Choices = string:join(lists:map(fun (P) -> ["\"", atom_to_list(P), "\""] end, Enum), ", "),
-            throw({invalid, ["parameter '", Param, "' must be one of: ", Choices]})
-    end.
-
-has_type(boolean, Val) when (Val == true) or (Val == false) -> true;
-has_type(object, {_}) -> true;
-has_type(integer, Val) when is_integer(Val) -> true;
-has_type(float, Val) when is_float(Val) -> true;
-has_type(number, Val) when is_number(Val) -> true;
-has_type(string, Val) when is_binary(Val) -> true;
-has_type(list, Val) when is_list(Val) -> true;
-has_type(array, Val) when is_list(Val) -> true;
-has_type(any, _Val) -> true;
-has_type(_T, _Val) -> false.
-
-params_to_proplist(_PInfo, {Props}) -> Props;
-params_to_proplist(PInfo,  Params) when is_list(Params) ->
-    Names = lists:map(fun (P) -> atom_to_binary(P#rpc_param.name, utf8) end, PInfo),
-    {Proplist, TooMany} = zip(Names, Params, {[], false}),
-    TooMany andalso throw({invalid, "superfluous parameters"}),
-    lists:reverse(Proplist).
-
-zip([], [], Result) ->
-    Result;
-zip([], _2, {Result, _TM}) ->
-    zip([], [], {Result, true});
-zip(_1, [], Result) ->
-    zip([], [], Result);
-zip([H1|R1], [H2|R2], {Result, TooMany}) ->
-    zip(R1, R2, {[{H1, H2}|Result], TooMany}).

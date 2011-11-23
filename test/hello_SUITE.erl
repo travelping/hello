@@ -6,34 +6,6 @@
 
 % ---------------------------------------------------------------------
 % -- test cases
-bind_stateless_http_url_ip(_Config) ->
-    Self = self(),
-    meck:expect(hello_stateless_httpd, start_listener,
-                fun ({127,0,0,1}, 5671)  -> {ok, Self};
-                    (_, _)               -> {error, bad_args}
-                end),
-
-    ok  = hello:bind_stateless("http://127.0.0.1:5671/test", hello_stateless_server_example),
-
-    %% check that start_listener was actually called, once
-    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_httpd)].
-
-bind_stateless_http_same_listener_ip(_Config) ->
-    Self = self(),
-    meck:expect(hello_stateless_httpd, start_listener,
-                fun ({127,0,0,1}, 5672)  -> {ok, Self};
-                    (_, _)               -> {error, bad_args}
-                end),
-
-    ok = hello:bind_stateless("http://127.0.0.1:5672/test1", mod_test1),
-    ok = hello:bind_stateless("http://127.0.0.1:5672/test2", mod_test2),
-
-    mod_test1 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test1">>]),
-    mod_test2 = hello_stateless_httpd:lookup_service(<<"127.0.0.1">>, 5672, [<<"test2">>]),
-
-    %% check that start_listener was actually called, once
-    [{ok, Self}] = [Result || {{_Mod, start_listener, _Args}, Result} <- meck:history(hello_stateless_httpd)].
-
 bind_stateless_http_url_errors(_Config) ->
     URL = "http://127.0.0.1:5673/test",
     ok = hello:bind_stateless(URL, hello_stateless_server_example),
@@ -65,7 +37,7 @@ bind_stateless_cross_protocol_checking(_Config) ->
     {error, occupied} = hello:bind_stateless("http://127.0.0.1:6009", test_2).
 
 bindings(_Config) ->
-    [{_StatusIPC, hello_status}] = OrigBindings = hello:bindings(),
+    OrigBindings = lists:sort(hello:bindings()),
 
     IPCPath = filename:absname("bindings_test.ipc"),
 
@@ -75,18 +47,16 @@ bindings(_Config) ->
                 {"zmq-tcp://127.0.0.1:6004", test_4}],
 
     lists:foreach(fun ({URL, Module}) ->
-                          io:format("~p~n", [URL]),
                           ok = hello:bind_stateless(URL, Module)
                   end, Bindings),
 
-    Bindings = hello:bindings() -- OrigBindings.
+    Bindings = lists:sort(hello:bindings() -- OrigBindings).
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
     [bindings,
-     bind_stateless_http_url_ip, bind_stateless_http_url_errors,
-     bind_stateless_http_same_listener_ip,
+     bind_stateless_http_url_errors,
      bind_stateless_zmq_url, bind_stateless_zmq_url_errors,
      bind_stateless_cross_protocol_checking].
 
@@ -96,10 +66,3 @@ init_per_suite(Config) ->
 
 end_per_suite(_Config) ->
     application:stop(hello).
-
-init_per_testcase(_Case, Config) ->
-    meck:new(hello_stateless_httpd, [passthrough]),
-    Config.
-
-end_per_testcase(_Case, _Config) ->
-    meck:unload(hello_stateless_httpd).

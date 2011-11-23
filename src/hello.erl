@@ -23,7 +23,7 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_request/2, run_stateless_binary_request/2]).
--export([bind_stateless/2, bindings/0]).
+-export([bind_stateful/3, bind_stateless/2, bindings/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -61,6 +61,9 @@ stop(_) ->
             ok
     end.
 
+bind_stateful(URL, CallbackModule, Args) ->
+    bind_uri(stateful, URL, CallbackModule, Args).
+
 % @doc Starts a stateless RPC server on the given URL.
 %   The transport implementation that is chosen depends on
 %   the protocol field of the URL. The available transports are documented
@@ -92,26 +95,31 @@ stop(_) ->
 -type url() :: string().
 -spec bind_stateless(url(), module()) -> ok | {error, already_started} | {error, occupied} | {error, {transport, term()}}.
 bind_stateless(URL, CallbackModule) ->
+    bind_uri(stateless, URL, CallbackModule, []).
+
+bind_uri(Type, URL, CallbackModule, Args) ->
     case (catch ex_uri:decode(URL)) of
-        {ok, Rec = #ex_uri{}, _} ->
-            bind_stateless_uri(Rec, CallbackModule);
+        {ok, Rec = #ex_uri{scheme = Scheme}, _} ->
+            ListenerMod = binding_module(Type, Scheme),
+            case hello_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Args) of
+                {ok, _Pid}     -> ok;
+                {error, Error} -> {error, Error}
+            end;
         _Other ->
             error(badurl)
     end.
 
-bind_stateless_uri(#ex_uri{scheme = "http", path = Path, authority = #ex_uri_authority{host = Host, port = Port}}, Mod) ->
-    hello_stateless_httpd:start("http", Host, Port, Path, Mod);
-bind_stateless_uri(URL = #ex_uri{scheme = "zmq-tcp"}, Mod) ->
-    hello_stateless_zmq_server:start_supervised(URL#ex_uri{scheme = "tcp"}, Mod);
-bind_stateless_uri(URL = #ex_uri{scheme = "zmq-ipc"}, Mod) ->
-    hello_stateless_zmq_server:start_supervised(URL#ex_uri{scheme = "ipc"}, Mod);
-bind_stateless_uri(_, _Mod) ->
-    error(badurl).
+binding_module(stateful, "zmq-tcp")  -> hello_stateful_zmq_server;
+binding_module(stateful, "zmq-ipc")  -> hello_stateful_zmq_server;
+binding_module(stateless, "http")    -> hello_stateless_http_server;
+binding_module(stateless, "zmq-tcp") -> hello_stateless_zmq_server;
+binding_module(stateless, "zmq-ipc") -> hello_stateless_zmq_server;
+binding_module(_Type, _Scheme)       -> error(notsup).
 
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].
 bindings() ->
-    [{URL, Mod} || {_Protocol, URL, _Pid, Mod} <- hello_registry:bindings()].
+    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || {_Pid, Binding} <- hello_registry:bindings()].
 
 % @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
 %   This can be used for testing, but please note that the request must be

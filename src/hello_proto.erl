@@ -20,14 +20,30 @@
 
 % @private
 -module(hello_proto).
--export([request/1, request_json/1, response/2, error_response/3, error_response/4,
+-export([request/1, request_json/1, response/2,
+         error_response/2, error_response/3, error_response/4,
          response_json/1, std_error/1, std_error/2]).
+
+-export_type([error_reply/0]).
+
 -include("internal.hrl").
 
 %% ----------------------------------------------------------------------
 %% -- Responses
 
 %% @type response()
+
+-type error_message() :: term().
+-type error_code() :: integer().
+-type error_data() :: hello_json:value().
+-type error_reply() :: error_code() | {error_code(), error_message()} | {error_code(), error_message(), error_data()}.
+
+error_response(Req, ErrorCode) when is_integer(ErrorCode) ->
+    error_response(Req, ErrorCode, <<>>);
+error_response(Req, {ErrorCode, ErrorMsg}) when is_integer(ErrorCode) ->
+    error_response(Req, ErrorCode, ErrorMsg);
+error_response(Req, {ErrorCode, ErrorMsg, ErrorData}) when is_integer(ErrorCode) ->
+    error_response(Req, ErrorCode, ErrorMsg, ErrorData).
 
 %% @equiv error_response(Req, Code, Msg, undefined)
 error_response(Req, Code, Msg) ->

@@ -19,23 +19,20 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_supervisor).
+-module(hello_binding_supervisor).
 -behaviour(supervisor).
--export([start_link/0]).
+-export([start_link/0, start_binding/4]).
 -export([init/1]).
 
--define(SERVER, hello_supervisor).
+-define(SERVER, hello_binding_supervisor).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
-init({}) ->
-    RegistrySpec    = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
-    ListenerSupSpec = {listener_sup, {hello_listener_supervisor, start_link, []},
-                                     transient, infinity, supervisor, [hello_listener_supervisor]},
-    BindingSupSpec  = {binding_sup, {hello_binding_supervisor, start_link, []},
-                                    transient, infinity, supervisor, [hello_binding_supervisor]},
+start_binding(ListenerMod, URL, CallbackMod, CallbackArgs) ->
+    supervisor:start_child(?SERVER, [ListenerMod, URL, CallbackMod, CallbackArgs]).
 
-    Children = [RegistrySpec, ListenerSupSpec, BindingSupSpec],
-    RestartStrategy = {one_for_one, 5, 10},
-    {ok, {RestartStrategy, Children}}.
+init({}) ->
+    ChildSpec = {binding, {hello_binding, start_link, []}, transient, 10000, worker, [hello_binding]},
+    RestartStrategy = {simple_one_for_one, 5, 10},
+    {ok, {RestartStrategy, [ChildSpec]}}.

@@ -20,54 +20,56 @@
 
 % @private
 -module(hello_stateless_zmq_server).
+-export([start_link/2, url_for_log/1, url_for_zmq/1]).
+
+-behaviour(hello_binding).
+-export([listener_childspec/2, listener_key/1, binding_key/1]).
+
 -behaviour(gen_server).
--export([start_link/2, start_supervised/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
+
+-define(SHUTDOWN_TIMEOUT, 500).
 
 %% --------------------------------------------------------------------------------
 %% -- API
-start_supervised(URI, Module) ->
-    case hello_listener_supervisor:start_listener(worker, transient, ?MODULE, [URI, Module]) of
-        {ok, _Pid}               -> ok;
-        {error, {Error, _Child}} -> {error, Error}
-    end.
-
 start_link(URI, Module) ->
     gen_server:start_link(?MODULE, {URI, Module}, []).
+
+%% --------------------------------------------------------------------------------
+%% -- hello_binding callbacks
+listener_childspec(ListenerID, #binding{url = URL, callback_mod = CallbackModule}) ->
+    {ListenerID, {?MODULE, start_link, [URL, CallbackModule]}, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]}.
+
+listener_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
+    hello_registry:listener_key(IP, Port);
+listener_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, path = Path}) ->
+    hello_registry:listener_key({ipc, ipc_path(Host, Path)}, undefined).
+
+binding_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
+    {IP, Port};
+binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port}) ->
+    ipc_path(Host, Port).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(state, {socket, uri, context, mod}).
 
 init({URI = #ex_uri{}, CallbackModule}) ->
-    {ListenURI, ListenerKey, BindingKey} = reg_details(URI),
+    process_flag(trap_exit, true),
 
-    case hello_registry:lookup_listener(ListenerKey) of
-        {ok, _Pid, CallbackModule} -> {stop, already_started};
-        {ok, _Pid, _OtherModule}   -> {stop, occupied};
-        {error, not_found}         -> start_reg(ListenURI, ListenerKey, BindingKey, CallbackModule)
-    end.
-
-start_reg(URI, ListenerKey, BindingKey, CallbackModule) ->
-    case hello_registry:multi_register([{ListenerKey, CallbackModule}, {BindingKey, CallbackModule}], self()) of
+    Endpoint = url_for_zmq(URI),
+    {ok, Context} = erlzmq:context(),
+    {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
+    case erlzmq:bind(Socket, Endpoint) of
         ok ->
-            Endpoint = ex_uri:encode(URI),
-            {ok, Context} = erlzmq:context(),
-            {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
-            case erlzmq:bind(Socket, Endpoint) of
-                ok ->
-                    {ok, _Log} = hello_request_log:open(CallbackModule, self()),
-                    EncURI     = list_to_binary(ex_uri:encode(uri_for_log(URI))),
-                    {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
-                {error, Error} ->
-                    {stop, {transport, Error}}
-            end;
-        {already_registered, _Pid, CallbackModule} ->
-            {stop, already_started};
-        {already_registered, _Pid, _OtherModule} ->
-            {stop, occupied}
+            {ok, _Log} = hello_request_log:open(CallbackModule, self()),
+            EncURI     = url_for_log(URI),
+            {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
+        {error, Error} ->
+            {stop, Error}
     end.
 
 handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, uri = URI, mod = Mod}) ->
@@ -93,36 +95,17 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-reg_details(URI = #ex_uri{scheme = "tcp", authority = #ex_uri_authority{host = Host, port = Port}}) ->
-    IP = ensure_ip(Host),
-    StringIP = inet_parse:ntoa(IP),
-    ListenURI = URI#ex_uri{authority = #ex_uri_authority{host = StringIP, port = Port}},
-    ListenerKey = hello_registry:listener_key(IP, Port),
-    BindingKey  = hello_registry:binding_key('zmq-tcp', list_to_binary(StringIP), Port, []),
-    {ListenURI, ListenerKey, BindingKey};
+url_for_zmq(URI = #ex_uri{scheme = "zmq-tcp"}) -> ex_uri:encode(URI#ex_uri{scheme = "tcp"});
+url_for_zmq(URI = #ex_uri{scheme = "zmq-ipc"}) -> ex_uri:encode(URI#ex_uri{scheme = "ipc"}).
 
-reg_details(URI = #ex_uri{scheme = "ipc"}) ->
-    Path = filename:absname(ipc_path(URI)),
-    ListenerKey = hello_registry:listener_key({ipc, Path}, undefined),
-    BindingKey  = hello_registry:binding_key('zmq-ipc', <<>>, undefined, hello_stateless_httpd:unslash(Path)),
+url_for_log(URI = #ex_uri{scheme = "zmq-ipc", authority = #ex_uri_authority{host = Host}, path = Path}) ->
+    WithFullPath = URI#ex_uri{path = ipc_path(Host, Path), authority = #ex_uri_authority{host = ""}},
+    list_to_binary(ex_uri:encode(WithFullPath));
+url_for_log(URI) ->
+    list_to_binary(ex_uri:encode(URI)).
 
-    {URI, ListenerKey, BindingKey}.
-
-uri_for_log(URI = #ex_uri{scheme = "tcp"}) ->
-    URI#ex_uri{scheme = "tcp"};
-uri_for_log(URI = #ex_uri{scheme = "ipc"}) ->
-    URI#ex_uri{scheme = "zmq-ipc", path = filename:absname(ipc_path(URI)), authority = #ex_uri_authority{host = ""}}.
-
-ipc_path(#ex_uri{path = Path, authority = #ex_uri_authority{host = Host}}) ->
+ipc_path(Host, Path) ->
     case Host of
         undefined -> Path;
-        _         -> filename:join(Host, Path)
-    end.
-
-ensure_ip("*")  ->
-    {0,0,0,0};
-ensure_ip(Host) ->
-    case inet_parse:address(Host) of
-        {ok, Addr}      -> Addr;
-        {error, einval} -> error({transport, badaddress})
+        _         -> filename:absname(filename:join(Host, Path))
     end.
