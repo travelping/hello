@@ -26,7 +26,7 @@
 -include("hello.hrl").
 -include("internal.hrl").
 
--type json_type()  :: 'boolean' | 'object' | 'integer' | 'float' | 'number' | 'string' | 'list' | 'array' | 'any'.
+-type json_type()  :: 'boolean' | 'object' | 'integer' | 'float' | 'number' | 'string' | 'list' | 'array' | 'any' | 'iso_date'.
 -type param_type() :: json_type() | {enum, [atom()]}.
 
 %% --------------------------------------------------------------------------------
