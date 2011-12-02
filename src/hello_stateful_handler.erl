@@ -124,7 +124,7 @@ handle_call(Req = #request{method = MethodName}, From, State = #state{mod_state 
         undefined ->
             {reply, hello_proto:std_error(Req, method_not_found), start_idle_timeout(State)};
         ValidatedMethod ->
-            case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
+            case hello_validate:request_params(ValidatedMethod, Mod:param_info(ValidatedMethod, ModState), Req) of
                 {ok, ValidatedParams} ->
                     Context = make_from_context(From, State, Req),
                     Result  = Mod:handle_request(Context, ValidatedMethod#rpc_method.name, ValidatedParams, ModState),
