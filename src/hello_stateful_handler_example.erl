@@ -13,7 +13,7 @@ method_info(_State) ->
     [#rpc_method{name = subscribe},
      #rpc_method{name = ping}].
 
-param_info(_State, _) ->
+param_info(_, _State) ->
     [].
 
 init(_Context, []) ->
