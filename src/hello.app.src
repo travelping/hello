@@ -4,6 +4,5 @@
    {applications, [kernel, stdlib, inets, cowboy, ex_uri, erlzmq]},
    {registered, [hello_supervisor, hello_stateless_zmq_supervisor]},
    {mod, {hello, []}},
-   {env, [{status_ipc,      "status.ipc"},
-          {request_log_dir, "request-logs"}]}
+   {env, [{request_log_dir, "request-logs"}]}
 ]}.

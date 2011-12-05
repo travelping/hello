@@ -27,6 +27,7 @@
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
+-type url() :: string().
 
 % @doc Starts the application and all dependencies.
 % This is useful for debugging purposes.
@@ -41,18 +42,9 @@ start() ->
 
 start(_Type, _StartArgs) ->
     %% create the log dir
-    {ok, LogDir} = application:get_env(hello, request_log_dir),
-    ok           = filelib:ensure_dir(filename:join(LogDir, ".")),
-
+    {ok, LogDir}     = application:get_env(hello, request_log_dir),
+    ok               = filelib:ensure_dir(filename:join(LogDir, ".")),
     {ok, Supervisor} = hello_supervisor:start_link(),
-
-    case application:get_env(hello, status_ipc) of
-        {ok, StatusIPC} when is_list(StatusIPC) ->
-            ok = bind_stateless("zmq-ipc://" ++ StatusIPC, hello_status);
-        _ ->
-            error({option_value, status_ipc})
-    end,
-
     {ok, Supervisor, undefined}.
 
 stop(_) ->
@@ -94,7 +86,6 @@ bind_stateful(URL, CallbackModule, Args) ->
 %     <li>with reason ``badurl'' when the URL is malformed</li>
 %     <li>with reason ``badprotocol'' when the URL uses an unknown scheme</li>
 %   </ul>
--type url() :: string().
 -spec bind_stateless(url(), module()) -> ok | {error, already_started} | {error, occupied} | {error, {transport, term()}}.
 bind_stateless(URL, CallbackModule) ->
     bind_uri(stateless, URL, CallbackModule, []).
