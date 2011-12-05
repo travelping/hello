@@ -135,12 +135,12 @@ escape(Bin) ->
 -compile({inline, esc_chr/1}).
 esc_chr($")                -> <<"\\\"">>;
 esc_chr($\\)               -> <<"\\\\">>;
+esc_chr($\n)               -> <<"\\n">>;
+esc_chr($\r)               -> <<"\\r">>;
+esc_chr($\t)               -> <<"\\t">>;
+esc_chr($\b)               -> <<"\\b">>;
+esc_chr($\f)               -> <<"\\f">>;
 esc_chr(Chr) when Chr > 31 -> <<Chr/utf8>>;
-esc_chr($\n)               -> <<"\\\n">>;
-esc_chr($\r)               -> <<"\\\r">>;
-esc_chr($\t)               -> <<"\\\t">>;
-esc_chr($\b)               -> <<"\\\b">>;
-esc_chr($\f)               -> <<"\\\f">>;
 esc_chr(Chr)               -> <<"\\u", (pad4(list_to_binary(integer_to_list(Chr, 16))))/binary>>.
 
 -compile({inline, pad4/1}).
