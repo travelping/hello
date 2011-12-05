@@ -72,8 +72,8 @@ handle(Req, State = IP) ->
                 true ->
                     {Body, Req3} = get_body(Req2),
                     ResponseJSON = hello:run_stateless_binary_request(Module, Body),
-                    Req4 = log_request(Module, Req3, ResponseJSON),
-                    {ok, ReturnReq} = json_response(Req4, 200, ResponseJSON);
+                    log_request(Module, Req2, ResponseJSON),
+                    {ok, ReturnReq} = json_response(Req3, 200, ResponseJSON);
                 false ->
                     ResponseJSON = json_error(bad_http_method),
                     Req2 = log_request(Module, Req2, ResponseJSON),
@@ -126,7 +126,8 @@ log_request(CallbackModule, Request, ResponseJSON) ->
         hello_request_log:request(CallbackModule, URIBinary, Body, ResponseJSON),
         Req4
     after
-        hello_request_log:close(CallbackModule)
+        hello_request_log:close(CallbackModule),
+        Request
     end.
 
 get_body(Req) ->
