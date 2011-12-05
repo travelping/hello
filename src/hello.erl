@@ -31,9 +31,11 @@
 % @doc Starts the application and all dependencies.
 % This is useful for debugging purposes.
 start() ->
+    application:start(sasl),
     application:start(cowboy),
     application:start(inets),
     application:start(ex_uri),
+    application:start(ibrowse),
     application:start(erlzmq),
     application:start(hello).
 

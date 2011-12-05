@@ -30,12 +30,36 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
 init({}) ->
-    RegistrySpec    = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
-    ListenerSupSpec = {listener_sup, {hello_listener_supervisor, start_link, []},
-                                     transient, infinity, supervisor, [hello_listener_supervisor]},
-    BindingSupSpec  = {binding_sup, {hello_binding_supervisor, start_link, []},
-                                    transient, infinity, supervisor, [hello_binding_supervisor]},
-
-    Children = [RegistrySpec, ListenerSupSpec, BindingSupSpec],
+    Roles = case application:get_env(role) of
+		{ok, client} -> [client];
+		{ok, server} -> [server];
+		{ok, Role} when is_list(Role) ->
+		    Exess = lists:subtract(Role, [client, server]),
+		    if
+			length(Exess) > 0 -> error_logger:warning_report([{roles, ignored}, Exess]);
+			true -> ok
+		    end,
+		    lists:subtract(Role, Exess);
+		{ok, Role} ->
+		    error_logger:warning_report([{roles, invalid}, Role]),
+		    [client, server];
+		undefined -> [client, server]
+	    end,
+    Children0 = case proplists:get_bool(client, Roles) of
+		    true -> [{client_sup, {hello_client_sup, start_link, []},
+			      transient, infinity, supervisor, [hello_client_sup]}];
+		    _ -> []
+		end,
+    Children1 = case proplists:get_bool(server, Roles) of
+		    true ->
+			RegistrySpec    = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
+			ListenerSupSpec = {listener_sup, {hello_listener_supervisor, start_link, []},
+					   transient, infinity, supervisor, [hello_listener_supervisor]},
+			BindingSupSpec  = {binding_sup, {hello_binding_supervisor, start_link, []},
+					   transient, infinity, supervisor, [hello_binding_supervisor]},
+			[RegistrySpec, ListenerSupSpec, BindingSupSpec|Children0];
+		    _ ->
+			Children0
+		end,
     RestartStrategy = {one_for_one, 5, 10},
-    {ok, {RestartStrategy, Children}}.
+    {ok, {RestartStrategy, Children1}}.
