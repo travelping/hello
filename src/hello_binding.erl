@@ -41,12 +41,17 @@ start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackArgs) ->
                        listener_mod = ListenerModule,
                        callback_mod = CallbackModule,
                        callback_args = CallbackArgs},
-    case gen_server:start(?MODULE, Binding, []) of
+    StarterRef = make_ref(),
+    case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of
         {ok, Pid} ->
-            link(Pid),
-            {ok, Pid};
+            link(Pid), {ok, Pid};
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason};
+        ignore ->
+            receive
+                {error, StarterRef, Error} ->
+                    {error, Error}
+            end
     end.
 
 stop(BindingServer) ->
@@ -66,7 +71,7 @@ behaviour_info(_) ->
 -define(REFC(ID), {listener_refc, ID}).
 -record(state, {binding, listener_pid, listener_id, listener_mref}).
 
-init(Binding) ->
+init({StarterPid, StarterRef, Binding}) ->
     process_flag(trap_exit, true),
 
     case start_listener(Binding) of
@@ -77,7 +82,8 @@ init(Binding) ->
                            listener_mref = ListenerMonitor},
             {ok, State, hibernate};
         {error, Error} ->
-            {stop, Error}
+            StarterPid ! {error, StarterRef, Error},
+            ignore
     end.
 
 handle_call({stop, Reason}, _From, State) ->
