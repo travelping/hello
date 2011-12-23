@@ -30,36 +30,36 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
 init({}) ->
-    Roles = case application:get_env(role) of
-		{ok, client} -> [client];
-		{ok, server} -> [server];
-		{ok, Role} when is_list(Role) ->
-		    Exess = lists:subtract(Role, [client, server]),
-		    if
-			length(Exess) > 0 -> error_logger:warning_report([{roles, ignored}, Exess]);
-			true -> ok
-		    end,
-		    lists:subtract(Role, Exess);
-		{ok, Role} ->
-		    error_logger:warning_report([{roles, invalid}, Role]),
-		    [client, server];
-		undefined -> [client, server]
-	    end,
-    Children0 = case proplists:get_bool(client, Roles) of
-		    true -> [{client_sup, {hello_client_sup, start_link, []},
-			      transient, infinity, supervisor, [hello_client_sup]}];
-		    _ -> []
-		end,
-    Children1 = case proplists:get_bool(server, Roles) of
-		    true ->
-			RegistrySpec    = {registry, {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
-			ListenerSupSpec = {listener_sup, {hello_listener_supervisor, start_link, []},
-					   transient, infinity, supervisor, [hello_listener_supervisor]},
-			BindingSupSpec  = {binding_sup, {hello_binding_supervisor, start_link, []},
-					   transient, infinity, supervisor, [hello_binding_supervisor]},
-			[RegistrySpec, ListenerSupSpec, BindingSupSpec|Children0];
-		    _ ->
-			Children0
-		end,
+    Children = lists:flatmap(fun role_children/1, get_roles()),
     RestartStrategy = {one_for_one, 5, 10},
-    {ok, {RestartStrategy, Children1}}.
+    {ok, {RestartStrategy, Children}}.
+
+get_roles() ->
+    case application:get_env(role) of
+        {ok, client} ->
+            [client];
+        {ok, server} ->
+            [server];
+        {ok, Role} when is_list(Role) ->
+            Exess = lists:subtract(Role, [client, server]),
+            if
+                length(Exess) > 0 -> error_logger:warning_report([{roles, ignored}, Exess]);
+                true              -> ok
+            end,
+            lists:subtract(Role, Exess);
+        {ok, Role} ->
+            error_logger:warning_report([{application, hello}, {roles, invalid}, Role]),
+            [client, server];
+        undefined ->
+            [client, server]
+    end.
+
+role_children(client) ->
+    [{client_sup,   {hello_client_sup, start_link, []}, transient, infinity, supervisor, [hello_client_sup]},
+     {client_conf,  {hello_client_conf, start_link, []}, transient, 300, worker, [hello_client_conf]}];
+role_children(server) ->
+    [{registry,     {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
+     {listener_sup, {hello_listener_supervisor, start_link, []}, transient, infinity, supervisor, [hello_listener_supervisor]},
+     {binding_sup,  {hello_binding_supervisor, start_link, []}, transient, infinity, supervisor, [hello_binding_supervisor]}];
+role_children(_) ->
+    [].

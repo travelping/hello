@@ -83,7 +83,7 @@ start_connection(Name, URI, Method, Opts) ->
 
 %% @doc destroy a supervised named connection context
 stop_connection(Name) ->
-	hello_client_sup:start_connection(Name).
+	hello_client_sup:stop_connection(Name).
 
 %% @doc Perform a JSON-RPC method call.
 -spec call(context(), string(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
@@ -99,7 +99,7 @@ call_np(Ctx, Method, ArgProps) when is_list(ArgProps) ->
 -spec notification(context(), string(), [hello_json:value()]) -> ok | {error, rpc_error()}.
 notification(Ctx, Method, ArgList) ->
 	gen_server:call(Ctx, {notification, Method, ArgList}).
- 
+
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(hello_client_ctx, {
@@ -191,7 +191,7 @@ validate_method(zmq, Method, Opts)
 	validate_opts(zmq, Method, Opts);
 validate_method(_, _, _) ->
 	invalid_method.
-	
+
 validate_opts(http, Method, Opts) ->
 	Permited = [max_sessions, ssl_options, proxy_host, proxy_port, proxy_user, proxy_password,
 				use_absolute_uri, basic_auth, cookie, http_vsn, inactivity_timeout, connect_timeout],
@@ -290,7 +290,7 @@ rpc_request(Request = #request{id = ReqId}, From, Ctx = #hello_client_ctx{protoc
 							  {error, {http, empty}} -> gen_server:reply(From, ok);
 							  {error, _}             -> gen_server:reply(From, Resp)
 						  end;
-					  _         -> 
+					  _         ->
 						  Master ! {http, ReqId, Resp}
 				  end
 		  end),
@@ -335,7 +335,7 @@ http_reply(Body, Ctx) ->
 			reply_pending_req(ReqId, {error, Reason}, Ctx);
 		_ -> Ctx
 	end.
-	
+
 add_pending_req(ReqId, From, Ctx = #hello_client_ctx{pending = Pending}) ->
 	Ctx#hello_client_ctx{pending = gb_trees:enter(ReqId, From, Pending)}.
 
@@ -348,7 +348,7 @@ reply_pending_req(ReqId0, Resp, Ctx = #hello_client_ctx{pending = Pending}) ->
 			gen_server:reply(From, Resp),
 			Ctx#hello_client_ctx{pending = gb_trees:delete(ReqId, Pending)}
 	end.
-			
+
 decode_json(Body) ->
 	case hello_json:decode(Body) of
 		{error, Reason} -> {error, Reason};

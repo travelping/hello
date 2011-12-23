@@ -10,7 +10,7 @@
 
 %% @doc create and link a connection context
 start_link() ->
-    gen_server:start_link(?MODULE, ?MODULE, [], []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 reconfigure() ->
 	gen_server:call(?MODULE, reconfigure).
@@ -45,13 +45,13 @@ code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 
 get_config() ->
-	case application:gen_env(clients) of
+	case application:get_env(hello, clients) of
 		{ok, Clients} ->
 			validate_clients(Clients, Clients);
 		_ ->
 			[]
 	end.
-				
+
 validate_clients([], Ret) ->
 	Ret;
 validate_clients([ClntSpec = {Name, URI, Method, Opts}|Clients], Ret) when is_atom(Name) ->
