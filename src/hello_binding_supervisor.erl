@@ -21,7 +21,7 @@
 % @private
 -module(hello_binding_supervisor).
 -behaviour(supervisor).
--export([start_link/0, start_binding/4]).
+-export([start_link/0, start_binding/5]).
 -export([init/1]).
 
 -define(SERVER, hello_binding_supervisor).
@@ -29,8 +29,8 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
-start_binding(ListenerMod, URL, CallbackMod, CallbackArgs) ->
-    supervisor:start_child(?SERVER, [ListenerMod, URL, CallbackMod, CallbackArgs]).
+start_binding(ListenerMod, URL, CallbackMod, CallbackType, CallbackArgs) ->
+    supervisor:start_child(?SERVER, [ListenerMod, URL, CallbackMod, CallbackType, CallbackArgs]).
 
 init({}) ->
     ChildSpec = {binding, {hello_binding, start_link, []}, transient, 10000, worker, [hello_binding]},

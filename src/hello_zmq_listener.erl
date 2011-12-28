@@ -1,4 +1,4 @@
-% Copyright (c) 2010-2011 by Travelping GmbH <info@travelping.com>
+% Copyright (c) 2011 by Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -19,8 +19,8 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_stateless_zmq_server).
--export([start_link/2, url_for_log/1, url_for_zmq/1]).
+-module(hello_zmq_listener).
+-export([start_link/1]).
 
 -behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1]).
@@ -28,20 +28,18 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
-
+-include("internal.hrl").
 -define(SHUTDOWN_TIMEOUT, 500).
 
-%% --------------------------------------------------------------------------------
-%% -- API
-start_link(URI, Module) ->
-    gen_server:start_link(?MODULE, {URI, Module}, []).
+start_link(Binding) ->
+    gen_server:start_link(?MODULE, Binding, []).
 
 %% --------------------------------------------------------------------------------
-%% -- hello_binding callbacks
-listener_childspec(ListenerID, #binding{url = URL, callback_mod = CallbackModule}) ->
-    {ListenerID, {?MODULE, start_link, [URL, CallbackModule]}, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]}.
+%% -- hello_binding
+listener_childspec(ListenerID, Binding) ->
+    StartFun = {?MODULE, start_link, [Binding]},
+    {ListenerID, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]}.
 
 listener_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
     hello_registry:listener_key(IP, Port);
@@ -55,33 +53,53 @@ binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {socket, uri, context, mod}).
+-record(state, {binding_key, socket, lastmsg_peer, uri, context, mod, mod_args}).
 
-init({URI = #ex_uri{}, CallbackModule}) ->
+init(Binding = #binding{url = URL, callback_mod = CBModule, callback_args = CBArgs}) ->
     process_flag(trap_exit, true),
-
-    Endpoint = url_for_zmq(URI),
+    Endpoint      = url_for_zmq(URL),
     {ok, Context} = erlzmq:context(),
-    {ok, Socket} = erlzmq:socket(Context, [rep, {active, true}]),
+    {ok, Socket}  = erlzmq:socket(Context, [router, {active, true}]),
     case erlzmq:bind(Socket, Endpoint) of
         ok ->
-            {ok, _Log} = hello_request_log:open(CallbackModule, self()),
-            EncURI     = url_for_log(URI),
-            {ok, #state{socket = Socket, uri = EncURI, context = Context, mod = CallbackModule}};
+            State  = #state{binding_key = binding_key(Binding),
+                            socket = Socket,
+                            uri = url_for_log(URL),
+                            context = Context,
+                            mod = CBModule,
+                            mod_args = CBArgs},
+            {ok, State};
         {error, Error} ->
             {stop, Error}
     end.
 
-handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, uri = URI, mod = Mod}) ->
-    spawn(fun () ->
-                  JSONReply = hello:run_stateless_binary_request(Mod, Message),
-                  ok = hello_request_log:request(Mod, URI, Message, JSONReply),
-                  ok = erlzmq:send(Socket, JSONReply)
-          end),
+handle_info({zmq, Socket, Message, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = undefined}) ->
+    %% first message part is peer identity
+    {noreply, State#state{lastmsg_peer = Message}};
+handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = Peer}) when is_binary(Peer) ->
+    %% empty message part separates envelope from data
+    {noreply, State};
+handle_info({zmq, Socket, Message, []}, State = #state{binding_key = Key, socket = Socket, lastmsg_peer = Peer}) ->
+    %% second message part is the actual request
+    case hello_binding:lookup_handler(Peer) of
+        {error, not_found} ->
+            HandlerPid = hello_binding:start_register_handler(?MODULE, Key, Peer),
+            hello_binding:incoming_message(HandlerPid, Message);
+        {ok, HandlerPid, _Data} ->
+            hello_binding:incoming_message(HandlerPid, Message)
+    end,
+    {noreply, State#state{lastmsg_peer = undefined}};
+
+handle_info({hello_msg, _HandlerPid, Peer, Message}, State = #state{socket = Socket}) ->
+    ok = erlzmq:send(Socket, Peer, [sndmore]),
+    ok = erlzmq:send(Socket, <<>>, [sndmore]),
+    ok = erlzmq:send(Socket, Message),
+    {noreply, State};
+
+handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
-    hello_request_log:close(State#state.mod),
     erlzmq:close(State#state.socket),
     erlzmq:term(State#state.context).
 

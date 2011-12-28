@@ -33,7 +33,7 @@
 % -callback terminate(context(), Reason :: term(), State :: term()) -> term().
 
 -module(hello_stateful_handler).
--export([start/4, do_binary_request/2, behaviour_info/1,
+-export([start_link/4, do_binary_request/2, behaviour_info/1,
          set_idle_timeout/1, set_idle_timeout/2, notify_np/3, reply/2]).
 
 -behaviour(gen_server).
@@ -43,7 +43,7 @@
 -include("hello.hrl").
 
 -record(from_context, {from, request, context}).
--record(context, {transport_mod, transport_state}).
+-record(context, {transport_pid, peer}).
 
 % -type reply() :: {ok, hello_json:value()} | {error, hello_proto:error_reply()}.
 
@@ -53,8 +53,8 @@ behaviour_info(callbacks) ->
 behaviour_info(_Other) ->
     undefined.
 
-start(TransportMod, TransportState, HandlerMod, HandlerArgs) ->
-    gen_server:start(?MODULE, {TransportMod, TransportState, HandlerMod, HandlerArgs}, []).
+start_link(TransportPid, Peer, HandlerMod, HandlerArgs) ->
+    gen_server:start_link(?MODULE, {TransportPid, Peer, HandlerMod, HandlerArgs}, []).
 
 do_binary_request(HandlerPid, Request) ->
     gen_server:cast(HandlerPid, {do_binary_request, Request}).
@@ -75,12 +75,13 @@ reply(#from_context{from = From, request = Req}, Result) ->
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {transport_mod, transport_state, mod, mod_state, idle_timer, idle_timeout_ref, idle_timeout = infinity}).
+-record(state, {context, mod, mod_state, idle_timer, idle_timeout_ref, idle_timeout = infinity}).
 
-init({TransportMod, Transport, HandlerModule, Args}) ->
-    State0 = #state{mod = HandlerModule, transport_mod = TransportMod, transport_state = Transport},
+init({TransportPid, Peer, HandlerModule, Args}) ->
+    Context = #context{transport_pid = TransportPid, peer = Peer},
+    State0 = #state{mod = HandlerModule, context = Context},
     State1 = start_idle_timeout(State0),
-    case HandlerModule:init(make_context(State1), Args) of
+    case HandlerModule:init(Context, Args) of
         {ok, HandlerState} ->
             {ok, State1#state{mod_state = HandlerState}};
         {ok, HandlerState, Timeout} ->
@@ -100,7 +101,7 @@ handle_cast({idle_timeout, _OtherRef}, State) ->
     %% ignore timeouts other than the current one
     {noreply, State};
 
-handle_cast({do_binary_request, JSONRequest}, State = #state{transport_mod = TMod, transport_state = TState}) ->
+handle_cast({do_binary_request, JSONRequest}, State = #state{context = Context}) ->
     Server = self(),
     spawn(fun () ->
                   case hello_proto:request_json(JSONRequest) of
@@ -113,7 +114,7 @@ handle_cast({do_binary_request, JSONRequest}, State = #state{transport_mod = TMo
                   end,
                   case hello_proto:response_json(Result) of
                       <<>> -> ignore;
-                      Resp -> TMod:send(TState, Resp)
+                      Resp -> send_binary(Context, Resp)
                   end
           end),
     {noreply, State}.
@@ -137,12 +138,13 @@ handle_call(Req = #request{method = MethodName}, From, State = #state{mod_state 
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
-handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState}) ->
-    Result = Mod:handle_info(make_context(State), InfoMsg, ModState),
+handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
+    Result = Mod:handle_info(Context, InfoMsg, ModState),
     handle_result(Result, State).
 
-terminate(Reason, State = #state{mod = Mod, mod_state = ModState}) ->
-    Mod:terminate(make_context(State), Reason, ModState).
+terminate(Reason, #state{mod = Mod, mod_state = ModState, context = Context}) ->
+    Mod:terminate(Context, Reason, ModState),
+    send_closed(Context).
 
 %% TODO: code_change
 code_change(_FromVsn, _ToVsn, State) ->
@@ -180,13 +182,14 @@ send_notification(#from_context{context = Context}, Method, Params) ->
 send_notification(Context = #context{}, Method, Params) ->
     send_binary(Context, hello_json:encode({[{'jsonrpc', <<"2.0">>}, {'method', Method}, {'params', Params}]})).
 
-send_binary(#context{transport_mod = TMod, transport_state = TState}, Resp) when is_binary(Resp) ->
-    TMod:send(TState, Resp).
+send_binary(#context{transport_pid = TMod, peer = Peer}, Message) when is_binary(Message) ->
+    TMod ! {hello_msg, self(), Peer, Message}.
 
-make_context(#state{transport_mod = TMod, transport_state = TState}) ->
-    #context{transport_mod = TMod, transport_state = TState}.
+send_closed(#context{transport_pid = TMod, peer = Peer}) ->
+    TMod ! {hello_closed, self(), Peer}.
+
 make_from_context(From, State, Request) ->
-    #from_context{from = From, request = Request, context = make_context(State)}.
+    #from_context{from = From, request = Request, context = State#state.context}.
 
 cancel_idle_timeout(State) ->
     case State#state.idle_timer of

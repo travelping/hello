@@ -1,6 +1,6 @@
 -module(jsonrpc_1_compliance_SUITE).
 
--behaviour(hello_stateless_server).
+-behaviour(hello_stateless_handler).
 -export([method_info/0, param_info/1, handle_request/2]).
 -compile(export_all).
 

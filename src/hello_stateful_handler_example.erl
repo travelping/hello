@@ -23,6 +23,7 @@ init(_Context, []) ->
 handle_request(_From, subscribe, _Args, State) ->
     timer:send_interval(1000, {event, timer}),
     {reply, {ok, <<"ok">>}, State};
+
 handle_request(From, ping, _Args, State) ->
     timer:send_after(1000, {event, ping, From}),
     {noreply, State}.

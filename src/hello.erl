@@ -93,8 +93,8 @@ bind_stateless(URL, CallbackModule) ->
 bind_uri(Type, URL, CallbackModule, Args) ->
     case (catch ex_uri:decode(URL)) of
         {ok, Rec = #ex_uri{scheme = Scheme}, _} ->
-            ListenerMod = binding_module(Type, Scheme),
-            case hello_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Args) of
+            ListenerMod = binding_module(Scheme),
+            case hello_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Type, Args) of
                 {ok, _Pid}     -> ok;
                 {error, Error} -> {error, Error}
             end;
@@ -102,12 +102,10 @@ bind_uri(Type, URL, CallbackModule, Args) ->
             error(badurl)
     end.
 
-binding_module(stateful, "zmq-tcp")  -> hello_stateful_zmq_server;
-binding_module(stateful, "zmq-ipc")  -> hello_stateful_zmq_server;
-binding_module(stateless, "http")    -> hello_stateless_http_server;
-binding_module(stateless, "zmq-tcp") -> hello_stateless_zmq_server;
-binding_module(stateless, "zmq-ipc") -> hello_stateless_zmq_server;
-binding_module(_Type, _Scheme)       -> error(notsup).
+binding_module("zmq-tcp")   -> hello_zmq_listener;
+binding_module("zmq-ipc")   -> hello_zmq_listener;
+binding_module("http")      -> hello_http_listener;
+binding_module(_Scheme)     -> error(notsup).
 
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].
@@ -115,17 +113,16 @@ bindings() ->
     [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || {_Pid, Binding} <- hello_registry:bindings()].
 
 % @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
-%   This can be used for testing, but please note that the request must be
-%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for testing.
+%   This can be used for testing, but please note that the request must be%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for testing.
 %
 %   The request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary()) -> binary().
 run_stateless_binary_request(CallbackModule, JSON) ->
     case hello_proto:request_json(JSON) of
         {ok, RequestRec} ->
-            Response = hello_stateless_server:run_request(CallbackModule, RequestRec);
+            Response = hello_stateless_handler:run_request(CallbackModule, RequestRec);
         {batch, Valid, Invalid} ->
-            HandledResps = hello_stateless_server:run_request(CallbackModule, Valid),
+            HandledResps = hello_stateless_handler:run_request(CallbackModule, Valid),
             Response = Invalid ++ HandledResps;
         {error, Error} ->
             Response = Error
@@ -142,9 +139,9 @@ run_stateless_binary_request(CallbackModule, JSON) ->
 run_stateless_request(CallbackModule, Request) ->
     case hello_proto:request(Request) of
         {ok, RequestRec} ->
-            hello_stateless_server:run_request(CallbackModule, RequestRec);
+            hello_stateless_handler:run_request(CallbackModule, RequestRec);
         {batch, Valid, Invalid} ->
-            Resps = hello_stateless_server:run_request(CallbackModule, Valid),
+            Resps = hello_stateless_handler:run_request(CallbackModule, Valid),
             Invalid ++ Resps;
         {error, Error} ->
             Error

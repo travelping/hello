@@ -103,7 +103,7 @@ init_per_group(GroupName, Config) ->
 	%%TODO: apply server method restriction
 	case SrvMethod of
 		none -> ok;
-		_    -> ok = hello:bind_stateless(URI, hello_stateless_server_example)
+		_    -> ok = hello:bind_stateless(URI, hello_stateless_handler_example)
 	end,
 	ct:sleep(500),
 	{ok, Clnt} = hello_client:start(URI, ClntMethod, []),
