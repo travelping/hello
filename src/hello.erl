@@ -121,16 +121,16 @@ bindings() ->
 %   The request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary()) -> binary().
 run_stateless_binary_request(CallbackModule, JSON) ->
-    case hello_proto:request_json(JSON) of
-        {ok, RequestRec} ->
-            Response = hello_stateless_server:run_request(CallbackModule, RequestRec);
+    case hello_proto:decode(hello_proto_jsonrpc, JSON) of
+        Req = #request{} ->
+            Response = hello_stateless_server:run_request(CallbackModule, Req);
         {batch, Valid, Invalid} ->
             HandledResps = hello_stateless_server:run_request(CallbackModule, Valid),
             Response = Invalid ++ HandledResps;
         {error, Error} ->
-            Response = Error
+            Response = hello_proto_jsonrpc:std_error_to_error_resp(Error)
     end,
-    hello_proto:response_json(Response).
+    hello_proto:encode(Response).
 
 % @doc Run a single JSON-RPC request against the given callback module.
 %   This function allows you to test your stateless servers without binding

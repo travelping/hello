@@ -116,7 +116,7 @@ run_request(CallbackModule, Req) ->
     run_maybe_notification(CallbackModule, Req).
 
 run_maybe_notification(Mod, Req) ->
-    case Req#request.id of
+    case Req#request.reqid of
         undefined ->
             do_single_request(Mod, Req),
             empty_response;

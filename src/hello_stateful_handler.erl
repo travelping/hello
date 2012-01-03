@@ -94,7 +94,7 @@ handle_cast({set_idle_timeout, Timeout}, State) ->
     {noreply, start_idle_timeout(State#state{idle_timeout = Timeout})};
 
 handle_cast({idle_timeout, Ref}, State = #state{idle_timeout_ref = Ref}) ->
-    {stop, idle_timeout, State};
+    {stop, normal, State};
 
 handle_cast({idle_timeout, _OtherRef}, State) ->
     %% ignore timeouts other than the current one

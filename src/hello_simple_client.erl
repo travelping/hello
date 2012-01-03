@@ -37,42 +37,44 @@
                      | {error, invalid_request} | {error, method_not_found} | {error, invalid_params}
                      | {error, internal_error} | {error, internal_error} | {error, integer()}.
 
-%% @doc Perform a JSON-RPC method call.
+%% @doc Perform a JSON-RPC call.
 -spec call(url(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call(Server, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
-    Request = #request{id = 1, method = Method, params = ArgList},
+call(Server, Method, ArgList) ->
+    call(hello_proto_jsonrpc, Server, Method, ArgList).
+
+%% @doc Perform an RPC method call.
+-spec call(module(), url(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+call(Protocol, Server, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
+    Request = hello_proto:request(Protocol, into_bin(Method), ArgList),
     case rpc_request(Server, Request) of
-        {error, Error} -> {error, Error};
+        {error, Error} ->
+            {error, Error};
         {ok, Body} ->
-            case hello_json:decode(Body) of
-               {error, syntax_error} -> {error, syntax_error};
-               {ok, {Props}, _Rest} ->
-                   case proplists:get_value(<<"error">>, Props, null) of
-                       null ->
-                           Result = proplists:get_value(<<"result">>, Props),
-                           {ok, Result};
-                       {ErrorObject} ->
-                           case proplists:get_value(<<"code">>, ErrorObject) of
-                               -32600 -> {error, invalid_request};
-                               -32601 -> {error, method_not_found};
-                               -32602 -> {error, invalid_params};
-                               -32603 -> {error, internal_error};
-                               Code when (Code >= -32099) and (Code =< -32000) -> {error, server_error};
-                               Code -> {error, {Code, proplists:get_value(<<"message">>, ErrorObject)}}
-                           end
-                   end
+            case hello_proto:decode(Request, Body) of
+                #response{result = Result} ->
+                    {ok, Result};
+                Error = #error{} ->
+                    {error, hello_proto:error_desc(Error)}
             end
     end.
 
 %% @doc Performs a JSON-RPC method call with named parameters (property list).
 -spec call_np(url(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call_np(Server, Method, ArgProps) when is_list(ArgProps) ->
-    call(Server, Method, {ArgProps}).
+    call_np(hello_proto_jsonrpc, Server, Method, ArgProps).
 
-%% @doc Special form of a JSON-RPC method call that returns no result.
+-spec call_np(module(), url(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+call_np(Protocol, Server, Method, ArgProps) when is_list(ArgProps) ->
+    call(Protocol, Server, Method, {ArgProps}).
+
+%% @doc Special form of an RPC call that returns no result.
 -spec notification(url(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
 notification(Server, Method, ArgList) ->
-    case rpc_request(Server, #request{method=Method, params=ArgList}) of
+    notification(hello_proto_jsonrpc, Server, Method, ArgList).
+
+-spec notification(module(), url(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
+notification(Protocol, Server, Method, ArgList) ->
+    case rpc_request(Server, hello_proto:notification(Protocol, Method, ArgList)) of
         {error, Reason} -> {error, Reason};
         {ok, _Body}     -> ok
     end.
@@ -96,43 +98,37 @@ rpc_request_scheme(URI = #ex_uri{scheme = "zmq-tcp"}, Request) ->
 rpc_request_scheme(URI = #ex_uri{scheme = "zmq-ipc"}, Request) ->
     rpc_request_zmq(URI#ex_uri{scheme = "ipc"}, Request).
 
-rpc_request_zmq(URI, Request = #request{id = ReqID}) ->
-    RequestJSON = encode_request(Request),
+rpc_request_zmq(URI, Request) ->
+    EncRequest = hello_proto:encode(Request),
     {ok, Context} = erlzmq:context(),
     {ok, Socket} = erlzmq:socket(Context, req),
     ok = erlzmq:connect(Socket, ex_uri:encode(URI)),
-    erlzmq:send(Socket, RequestJSON),
-    case ReqID of
-        undefined -> Resp = {ok, undefined};
-        _         -> Resp = erlzmq:recv(Socket)
+    erlzmq:send(Socket, EncRequest),
+    case hello_proto:is_notification(Request) of
+        true  -> Resp = {ok, undefined};
+        false -> Resp = erlzmq:recv(Socket)
     end,
     erlzmq:close(Socket),
     erlzmq:term(Context),
     Resp.
 
 rpc_request_http(URI, Request) ->
-    HostURL     = ex_uri:encode(URI),
-    RequestJSON = encode_request(Request),
+    HostURL = ex_uri:encode(URI),
+    EncRequest = hello_proto:encode(Request),
     {ok, Hostname, _Path} = split_url(HostURL),
-    {ok, Vsn}   = application:get_key(hello, vsn),
-    Headers     = [{"Host", Hostname}, {"Connection", "keep-alive"},
-                   {"Content-Length", integer_to_list(iolist_size(RequestJSON))},
-                   {"Content-Type", "application/json"},
-                   {"Accept", "application/json"},
-                   {"User-Agent", "hello/" ++ Vsn}],
-    HTTPRequest = {HostURL, Headers, "application/json", RequestJSON},
+    {ok, Vsn} = application:get_key(hello, vsn),
+    MimeType = hello_proto:mime_type(Request),
+    Headers = [{"Host", Hostname},
+               {"Connection", "close"},
+               {"Content-Length", integer_to_list(iolist_size(EncRequest))},
+               {"Content-Type", MimeType},
+               {"Accept", MimeType},
+               {"User-Agent", "hello/" ++ Vsn}],
+    HTTPRequest = {HostURL, Headers, MimeType, EncRequest},
     case httpc:request(post, HTTPRequest, [?TIMEOUT], [{headers_as_is, true}, {full_result, false}]) of
        {ok, {_Code, Body}} -> {ok, Body};
        {error, Reason}     -> {error, {http, Reason}}
     end.
-
-encode_request(#request{id = Id, method = Method, params = ArgList}) ->
-    Methodto    = into_bin(Method),
-    IDField     = case Id of
-                      undefined -> [];
-                      _         -> [{"id", Id}]
-                  end,
-    hello_json:encode({IDField ++ [{"jsonrpc", <<"2.0">>}, {"method", Methodto}, {"params", ArgList}]}).
 
 into_bin(Bin) when is_list(Bin) -> list_to_binary(Bin);
 into_bin(Bin)                   -> Bin.
