@@ -22,7 +22,7 @@
 -module(hello_http_listener).
 -behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1]).
--export([unslash/1]).
+-export([lookup_binding/4, unslash/1, default_port/1, server_header/0]).
 
 -behaviour(cowboy_http_handler).
 -export([init/3, handle/2, terminate/2]).
@@ -51,9 +51,6 @@ listener_key(#binding{ip = IP, port = Port}) ->
 binding_key(#binding{host = Host, port = Port, path = Path}) ->
     {list_to_binary(Host), default_port(Port), unslash(Path)}.
 
-default_port(undefined) -> 80;
-default_port(Port)      -> Port.
-
 %% --------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
 init({tcp, http}, Req, _) ->
@@ -63,46 +60,54 @@ handle(Req, _State) ->
     {Method, Req1} = cowboy_http_req:method(Req),
     case lists:member(Method, ['PUT', 'POST']) of
         true ->
-            {BindingKey, Req2} = get_binding_key(Req1),
-            {Peer, Req3} = cowboy_http_req:peer(Req2),
-            HandlerPid = hello_binding:start_handler(?MODULE, BindingKey, Peer),
-            {Body, Req4} = get_body(Req3),
-            hello_binding:incoming_message(HandlerPid, Body),
-            Req5 = cowboy_http_req:compact(Req4),
-            {ok, Req6} = cowboy_http_req:chunked_reply(200, get_headers(), Req5),
-            http_chunked_loop(HandlerPid, Req6);
+            {Peer, Req2} = cowboy_http_req:peer(Req1),
+            {Port, Req3} = cowboy_http_req:port(Req2),
+            {PathList, Req4} = cowboy_http_req:path_info(Req3),
+            {Host, Req5} = cowboy_http_req:raw_host(Req4),
+            case lookup_binding(?MODULE, Host, Port, PathList) of
+                {ok, Binding} ->
+                    Handler = hello_binding:start_handler(Binding, Peer, self()),
+                    {ok, Body, Req6} = cowboy_http_req:body(Req5),
+                    hello_binding:incoming_message(Handler, Body),
+                    Req7 = cowboy_http_req:compact(Req6),
+                    {ok, Req8} = cowboy_http_req:chunked_reply(200, json_headers(), Req7),
+                    http_chunked_loop(Handler, Req8);
+                {error, not_found} ->
+                    {ok, Req6} = cowboy_http_req:reply(404, server_header(), Req5),
+                    {ok, Req6, undefined}
+            end;
         false ->
-            {ok, Req2} = cowboy_http_req:reply(405, Req1),
+            {ok, Req2} = cowboy_http_req:reply(405, server_header(), Req1),
             {ok, Req2, undefined}
     end.
 
 terminate(_Req, _State) ->
     ok.
 
-http_chunked_loop(HandlerPid, Request) ->
+http_chunked_loop(Handler, Request) ->
     receive
-        {hello_closed, HandlerPid, _Peer} ->
+        {hello_closed, Handler, _Peer} ->
             {ok, Request, undefined};
-        {hello_msg, HandlerPid, _, Message} ->
+        {hello_msg, Handler, _, Message} ->
             cowboy_http_req:chunk(Message, Request),
-            http_chunked_loop(HandlerPid, Request)
+            http_chunked_loop(Handler, Request)
     end.
 
-get_headers() ->
+json_headers() ->
     {ok, Vsn} = application:get_key(hello, vsn),
     [{'Content-Type', <<"application/json">>},
      {'Server', erlang:list_to_binary("hello/" ++ Vsn)}].
 
-get_binding_key(Req) ->
-    {Port, Req2} = cowboy_http_req:port(Req),
-    {PathList, Req3} = cowboy_http_req:path_info(Req2),
-    {Host, Req4} = cowboy_http_req:raw_host(Req3),
-    {{Host, Port, PathList}, Req4}.
+server_header() ->
+    {ok, Vsn} = application:get_key(hello, vsn),
+    [{'Server', erlang:list_to_binary("hello/" ++ Vsn)}].
 
-get_body(Req) ->
-    case cowboy_http_req:body(Req) of
-        {ok, Body, Req2} -> {Body, Req2};
-        {error, badarg}  -> {<<>>, Req}
+lookup_binding(Module, Host, Port, PathList) ->
+    case hello_registry:lookup_binding(Module, {Host, Port, PathList}) of
+        {error, not_found} ->
+            hello_registry:lookup_binding(Module, {<<"0.0.0.0">>, Port, PathList});
+        Result ->
+            Result
     end.
 
 unslash(Path) ->
@@ -111,3 +116,6 @@ unslash(Path) ->
         [<<>> | Rest] -> Rest;
         List          -> List
     end.
+
+default_port(undefined) -> 80;
+default_port(Port)      -> Port.

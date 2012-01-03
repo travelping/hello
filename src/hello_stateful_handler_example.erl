@@ -17,7 +17,7 @@ param_info(_, _State) ->
     [].
 
 init(_Context, []) ->
-    hello_stateful_handler:set_idle_timeout(5000),
+    hello_stateful_handler:set_idle_timeout(35000),
     {ok, undefined}.
 
 handle_request(_From, subscribe, _Args, State) ->

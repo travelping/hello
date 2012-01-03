@@ -53,21 +53,16 @@ binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {binding_key, socket, lastmsg_peer, uri, context, mod, mod_args}).
+-record(state, {binding, socket, lastmsg_peer, uri, context}).
 
-init(Binding = #binding{url = URL, callback_mod = CBModule, callback_args = CBArgs}) ->
+init(Binding = #binding{url = URL}) ->
     process_flag(trap_exit, true),
     Endpoint      = url_for_zmq(URL),
     {ok, Context} = erlzmq:context(),
     {ok, Socket}  = erlzmq:socket(Context, [router, {active, true}]),
     case erlzmq:bind(Socket, Endpoint) of
         ok ->
-            State  = #state{binding_key = binding_key(Binding),
-                            socket = Socket,
-                            uri = url_for_log(URL),
-                            context = Context,
-                            mod = CBModule,
-                            mod_args = CBArgs},
+            State = #state{binding = Binding, socket = Socket, uri = url_for_log(URL), context = Context},
             {ok, State};
         {error, Error} ->
             {stop, Error}
@@ -79,18 +74,18 @@ handle_info({zmq, Socket, Message, [rcvmore]}, State = #state{socket = Socket, l
 handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = Peer}) when is_binary(Peer) ->
     %% empty message part separates envelope from data
     {noreply, State};
-handle_info({zmq, Socket, Message, []}, State = #state{binding_key = Key, socket = Socket, lastmsg_peer = Peer}) ->
+handle_info({zmq, Socket, Message, []}, State = #state{binding = Binding, socket = Socket, lastmsg_peer = Peer}) ->
     %% second message part is the actual request
-    case hello_binding:lookup_handler(Peer) of
+    case hello_binding:lookup_handler(Binding, Peer) of
         {error, not_found} ->
-            HandlerPid = hello_binding:start_register_handler(?MODULE, Key, Peer),
+            HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self()),
             hello_binding:incoming_message(HandlerPid, Message);
         {ok, HandlerPid, _Data} ->
             hello_binding:incoming_message(HandlerPid, Message)
     end,
     {noreply, State#state{lastmsg_peer = undefined}};
 
-handle_info({hello_msg, _HandlerPid, Peer, Message}, State = #state{socket = Socket}) ->
+handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
     ok = erlzmq:send(Socket, Peer, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
     ok = erlzmq:send(Socket, Message),

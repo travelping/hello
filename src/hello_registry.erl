@@ -103,12 +103,18 @@ unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
 
 %% @doc Get the list of all registered bindings
--spec bindings() -> [{BindingProcess :: pid(), #binding{}}].
+-spec bindings() -> [#binding{}].
 bindings() -> lookup_bindings_ms(?TABLE).
 
--spec lookup_binding(module(), BindingKey :: term()) -> {ok, pid(), #binding{}} | {error, not_found}.
+-spec lookup_binding(module(), BindingKey :: term()) -> {ok, #binding{}} | {error, not_found}.
 lookup_binding(Module, BindingKey) ->
-    lookup({binding, Module, BindingKey}).
+    case lookup({binding, Module, BindingKey}) of
+        {ok, _BindingPid, BindingRec} ->
+            %% pid is contained in the binding record
+            {ok, BindingRec};
+        Error ->
+            Error
+    end.
 
 %% TODO: move listener/binding related stuff out of here
 -spec lookup_listener(listener_key()) -> {ok, pid(), module()} | {error, not_found}.
@@ -207,7 +213,7 @@ lookup_pid_ms(Table, Pid) ->
     ets:select(Table, PidMS).
 
 lookup_bindings_ms(Table) ->
-    [{Pid, Data} || {_Key, Pid, Data} <- ets:match_object(Table, {{name, {binding, '_', '_'}}, '_', '_'})].
+    [Data || {_Key, _Pid, Data} <- ets:match_object(Table, {{name, {binding, '_', '_'}}, '_', '_'})].
 
 any_registered_ms(Table, Names) ->
     NamesMS = [{{{name, Name}, '$1', '$2'}, [], [{{'$1', '$2'}}]} || {Name, _} <- Names],

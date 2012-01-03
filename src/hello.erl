@@ -102,15 +102,16 @@ bind_uri(Type, URL, CallbackModule, Args) ->
             error(badurl)
     end.
 
-binding_module("zmq-tcp")   -> hello_zmq_listener;
-binding_module("zmq-ipc")   -> hello_zmq_listener;
-binding_module("http")      -> hello_http_listener;
-binding_module(_Scheme)     -> error(notsup).
+binding_module("zmq-tcp") -> hello_zmq_listener;
+binding_module("zmq-ipc") -> hello_zmq_listener;
+binding_module("http")    -> hello_http_listener;
+binding_module("sockjs")  -> hello_sockjs_listener;
+binding_module(_Scheme)   -> error(notsup).
 
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].
 bindings() ->
-    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || {_Pid, Binding} <- hello_registry:bindings()].
+    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello_registry:bindings()].
 
 % @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
 %   This can be used for testing, but please note that the request must be%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for testing.
