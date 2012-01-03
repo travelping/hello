@@ -42,7 +42,7 @@ all() ->
 
 init_per_suite(Config) ->
     hello:start(),
-    ok = hello:bind_stateless(?HOST, hello_stateless_server_example),
+    ok = hello:bind_stateless(?HOST, hello_stateless_handler_example),
     Config.
 
 end_per_suite(_Config) ->

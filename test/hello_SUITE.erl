@@ -8,23 +8,23 @@
 % -- test cases
 bind_stateless_http_url_errors(_Config) ->
     URL = "http://127.0.0.1:5673/test",
-    ok = hello:bind_stateless(URL, hello_stateless_server_example),
+    ok = hello:bind_stateless(URL, hello_stateless_handler_example),
 
     %% binding the same module returns already_started
-    {error, already_started} = hello:bind_stateless(URL, hello_stateless_server_example),
+    {error, already_started} = hello:bind_stateless(URL, hello_stateless_handler_example),
 
     %% binding a different one returns occupied
     {error, occupied} = hello:bind_stateless(URL, ?MODULE).
 
 bind_stateless_zmq_url(_Config) ->
-    ok = hello:bind_stateless("zmq-tcp://127.0.0.1:6001", hello_stateless_server_example).
+    ok = hello:bind_stateless("zmq-tcp://127.0.0.1:6001", hello_stateless_handler_example).
 
 bind_stateless_zmq_url_errors(_Config) ->
     URL = "zmq-tcp://127.0.0.1:6002",
-    ok = hello:bind_stateless(URL, hello_stateless_server_example),
+    ok = hello:bind_stateless(URL, hello_stateless_handler_example),
 
     %% binding the same module returns already_started
-    {error, already_started} = hello:bind_stateless(URL, hello_stateless_server_example),
+    {error, already_started} = hello:bind_stateless(URL, hello_stateless_handler_example),
 
     %% binding a different one returns occupied
     {error, occupied} = hello:bind_stateless(URL, ?MODULE).

@@ -21,25 +21,100 @@
 % @private
 -module(hello_binding).
 -behaviour(gen_server).
-
--export([start_link/4, stop/1, stop/2, behaviour_info/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+% Binding process
+-export([start_link/5, stop/1, stop/2, behaviour_info/1]).
+% API for listeners
+-export([start_registered_handler/3, start_handler/3, flush_queue/1, incoming_message/2, lookup_handler/2]).
+% Super Secret Internal API
+-export([stateless_request/4]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("internal.hrl").
 
-start_link(ListenerModule, URL, CallbackModule, CallbackArgs) when is_list(URL) ->
+-record(stateless, {
+    handler_mod :: module(),
+    peer        :: term()
+}).
+
+-opaque handler() :: pid() | #stateless{}.
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- API for listeners
+-spec start_registered_handler(#binding{}, term(), hello_stateful_handler:transport()) -> term().
+start_registered_handler(Binding, Peer, Transport) ->
+    case lookup_handler(Binding, Peer) of
+        {error, not_found} ->
+            Handler = start_handler(Binding, Peer, Transport),
+            register_handler(Binding#binding.pid, Handler, Peer),
+            Handler;
+        {ok, Handler} ->
+            Handler
+    end.
+
+-spec start_handler(#binding{}, term(), pid()) -> handler().
+start_handler(Binding, Peer, Transport) ->
+    case Binding#binding.callback_type of
+        stateful ->
+            {ok, Pid} = hello_stateful_handler:start_link(Binding, Peer, Transport),
+            Pid;
+        stateless ->
+            #stateless{handler_mod = Binding#binding.callback_mod, peer = Peer}
+    end.
+
+-spec incoming_message(handler(), binary()) -> any().
+incoming_message(#stateless{handler_mod = Mod, peer = Peer}, Message) ->
+    spawn(?MODULE, stateless_request, [self(), Peer, Mod, Message]);
+incoming_message(Pid, Message) ->
+    hello_stateful_handler:do_binary_request(Pid, Message).
+
+-spec flush_queue(handler()) -> {ok, list(binary())} | {error, active}.
+flush_queue(Stateful) when is_pid(Stateful) ->
+    hello_stateful_handler:flush_queue(Stateful);
+flush_queue(_) ->
+    {ok, []}.
+
+-spec stateless_request(pid(), term(), module(), binary()) -> any().
+stateless_request(Pid, Peer, CallbackModule, Message) ->
+    Response = hello:run_stateless_binary_request(CallbackModule, Message),
+    Handler = #stateless{handler_mod = CallbackModule, peer = Peer},
+    Pid ! {hello_msg, Handler, Peer, Response},
+    Pid ! {hello_closed, Handler, Peer}.
+
+-spec lookup_handler(pid(), term()) -> {ok, handler()} | {error, not_found}.
+lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
+    case hello_registry:lookup({listener_peer, Binding#binding.pid, Peer}) of
+        {ok, Pid, _Data} ->
+            {ok, Pid};
+        Error ->
+            Error
+    end;
+lookup_handler(#binding{callback_mod = CallbackMod}, Peer) ->
+    {ok, #stateless{handler_mod = CallbackMod, peer = Peer}}.
+
+-spec register_handler(pid(), handler(), term()) -> ok | {error, already_registered}.
+register_handler(BindingPid, Pid, Peer) when is_pid(Pid) ->
+    hello_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid);
+register_handler(_BindingPid, _Handler, _Peer) ->
+    ok.
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- Binding process
+start_link(ListenerModule, URL, CallbackModule, CallbackType, CallbackArgs) when is_list(URL) ->
     {ok, DecURL, _} = ex_uri:decode(URL),
-    start_link(ListenerModule, DecURL, CallbackModule, CallbackArgs);
-start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackArgs) ->
+    start_link(ListenerModule, DecURL, CallbackModule, CallbackType, CallbackArgs);
+start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, CallbackArgs) ->
     {IP, Host} = extract_ip_and_host(URL),
-    Binding = #binding{url = URL,
+    Binding = #binding{pid = self(),
+                       url = URL,
                        ip = IP,
                        host = Host,
                        port = (URL#ex_uri.authority)#ex_uri_authority.port,
                        path = URL#ex_uri.path,
                        listener_mod = ListenerModule,
                        callback_mod = CallbackModule,
+                       callback_type = CallbackType,
                        callback_args = CallbackArgs},
     StarterRef = make_ref(),
     case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of

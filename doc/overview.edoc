@@ -8,7 +8,7 @@ The hello application provides an API to expose functionality through
 JSON-RPC protocol over various transports (such as HTTP and ZeroMQ).
 
 In order to build a server with hello, the first step would be to implement
-a callback module with the {@link hello_stateless_server} behaviour.
+a callback module with the {@link hello_stateless_handler} behaviour.
 The callback module is made available on the network by <em>binding</em> it
 ({@link hello:bind_stateless/2}) to a particular URL:
 

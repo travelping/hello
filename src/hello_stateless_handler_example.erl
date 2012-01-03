@@ -19,8 +19,8 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @hidden
--module(hello_stateless_server_example).
--behaviour(hello_stateless_server).
+-module(hello_stateless_handler_example).
+-behaviour(hello_stateless_handler).
 
 -export([register_yourself/0]).
 -export([handle_request/2, param_info/1, method_info/0]).
