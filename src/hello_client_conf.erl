@@ -19,7 +19,7 @@ reconfigure() ->
 %% -- gen_server callbacks
 init([]) ->
 	Clients = get_config(),
-	lists:foreach(fun({Name, URI, Method, Opts}) -> hello_client:start_connection(Name, URI, Method, Opts) end, Clients),
+	lists:foreach(fun({Name, URI, Opts}) -> hello_client:start_connection(Name, URI, Opts) end, Clients),
 	{ok, Clients}.
 
 handle_call(reconfigure, _From, OldClients) ->
@@ -28,7 +28,7 @@ handle_call(reconfigure, _From, OldClients) ->
 			ToStart = lists:subtract(NewClients, OldClients),
 			ToStop  = lists:subtract(OldClients, NewClients),
 			lists:foreach(fun({Name, _, _, _}) -> hello_client:stop_connection(Name) end, ToStop),
-			lists:foreach(fun({Name, URI, Method, Opts}) -> hello_client:start_connection(Name, URI, Method, Opts) end, ToStart),
+			lists:foreach(fun({Name, URI, Opts}) -> hello_client:start_connection(Name, URI, Opts) end, ToStart),
 			{reply, ok, NewClients};
 		_ ->
 			{reply, ok, OldClients}
@@ -54,8 +54,8 @@ get_config() ->
 
 validate_clients([], Ret) ->
 	Ret;
-validate_clients([ClntSpec = {Name, URI, Method, Opts}|Clients], Ret) when is_atom(Name) ->
-	case hello_client:validate_ctx(URI, Method, Opts) of
+validate_clients([ClntSpec = {Name, URI, Opts}|Clients], Ret) when is_atom(Name) ->
+	case hello_client:validate_options(URI, Opts) of
 		ok ->
 			validate_clients(Clients, Ret);
 		Error ->

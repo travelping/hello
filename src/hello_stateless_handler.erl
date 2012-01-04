@@ -1,4 +1,4 @@
-% Copyright (c) 2010-2011 by Travelping GmbH <info@travelping.com>
+% Copyright (c) 2010-2012 by Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -97,7 +97,7 @@
 
 -module(hello_stateless_handler).
 -export([behaviour_info/1]).
--export([run_request/2]).
+-export([run_binary_request/3]).
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
@@ -108,47 +108,48 @@
 behaviour_info(callbacks) -> [{handle_request,2}, {method_info,0}, {param_info,1}];
 behaviour_info(_Other)    -> undefined.
 
-% @private
--spec run_request(module(), hello:request() | [hello:request()]) -> hello:response() | [hello:response()].
-run_request(CallbackModule, BatchReq) when is_list(BatchReq) ->
-    lists:map(fun (Req) -> run_maybe_notification(CallbackModule, Req) end, BatchReq);
-run_request(CallbackModule, Req) ->
-    run_maybe_notification(CallbackModule, Req).
-
-run_maybe_notification(Mod, Req) ->
-    case Req#request.id of
-        undefined ->
-            do_single_request(Mod, Req),
-            empty_response;
-        _ID ->
-            do_single_request(Mod, Req)
+%% @private
+-spec run_binary_request(module(), module(), binary()) -> binary().
+run_binary_request(Protocol, CallbackModule, Message) ->
+    case hello_proto:decode(Protocol, Message) of
+        Req = #request{} ->
+            hello_proto:encode(do_single_request(CallbackModule, Req));
+        Req = #batch_request{requests = GoodReqs} ->
+            hello_proto:encode(hello_proto:batch_response(Req, [do_single_request(CallbackModule, R) || R <- GoodReqs]));
+        _ ->
+            hello_proto:encode(hello_proto:error_response(Protocol, invalid_request))
     end.
 
 do_single_request(Mod, Req = #request{method = MethodName}) ->
-    case hello_validate:find_method(Mod:method_info(), MethodName) of
-        undefined -> hello_proto:std_error(Req, method_not_found);
-        Method ->
-            case hello_validate:request_params(Method, Mod:param_info(Method#rpc_method.name), Req) of
-                {ok, Validated} -> run_callback_module(Req, Mod, Method, Validated);
-                {error, Msg}    -> hello_proto:std_error(Req, {invalid_params, Msg})
-            end
+    try
+        case hello_validate:find_method(Mod:method_info(), MethodName) of
+            undefined ->
+                hello_proto:error_response(Req, method_not_found);
+            Method ->
+                case hello_validate:request_params(Method, Mod:param_info(Method#rpc_method.name), Req) of
+                    {ok, Validated} -> run_callback_module(Req, Mod, Method, Validated);
+                    {error, Msg}    -> hello_proto:error_response(Req, invalid_params, Msg)
+                end
+        end
+    catch
+        Type:Error ->
+            Report = io_lib:format("Error (~p) thrown by RPC handler '~p' while executing the method \"~s\":~n"
+                                   "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
+                                   [Type, Mod, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
+            error_logger:error_report(Report),
+            hello_proto:error_response(Req, server_error)
     end.
 
 run_callback_module(Req, Mod, Method, ValidatedParams) ->
-    try Mod:handle_request(Method#rpc_method.name, ValidatedParams) of
+    case Mod:handle_request(Method#rpc_method.name, ValidatedParams) of
         {ok, Result} ->
-            hello_proto:response(Req, Result);
+            hello_proto:success_response(Req, Result);
         {error, Message} ->
             hello_proto:error_response(Req, 0, Message);
         {error, Code, Message} ->
             hello_proto:error_response(Req, Code, Message);
-        _ ->
-            hello_proto:std_error(Req, server_error)
-    catch
-         Type:Error ->
-            Report = io_lib:format("Error (~p) thrown by JSON-RPC handler '~p' while executing the method \"~s\":~n"
-                                   "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
-                                   [Type, Mod, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
-            error_logger:error_report(Report),
-            hello_proto:std_error(Req, server_error)
+        {error, Code, Message, Data} ->
+            hello_proto:error_response(Req, Code, Message, Data);
+        Ret ->
+            error({bad_return_value, Ret})
     end.

@@ -1,4 +1,4 @@
-% Copyright 2010-2011, Travelping GmbH <info@travelping.com>
+% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -20,13 +20,13 @@
 
 %% @doc This module contains a simple JSON-RPC client.
 -module(hello_client).
--export([start/2, start_link/2, start/3, start_link/3, stop/1]).
+-export([start/2, start_link/2, start/3, start_link/3, stop/1, validate_options/2]).
 -export([start_connection/2, start_connection/3, stop_connection/1]).
--export([call/3, notification/3, call_np/3]).
+-export([call/3, notification/3, call_np/3, batch_call/2]).
 
 -export([behaviour_info/1]).
 
--export_type([url/0, rpc_error/0]).
+-export_type([rpc_error/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -35,8 +35,8 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--type context() :: pid() | atom().
--type url() :: string().
+-opaque context() :: pid() | atom().
+-type method() :: atom() | string() | binary().
 -type rpc_error() :: {error, {http, term()}} | {error, syntax_error}
                      | {error, invalid_request} | {error, method_not_found} | {error, invalid_params}
                      | {error, internal_error} | {error, internal_error} | {error, integer()}.
@@ -50,19 +50,19 @@ behaviour_info(_) ->
 %% -- Client API
 %% @doc create and link a connection context
 start_link(URI, Opts) ->
-    gen_server:start_link(?MODULE, {URI, Opts}, []).
+    gen_server:start_link(?MODULE, {hello_proto_jsonrpc, URI, Opts}, []).
 
 %% @doc create a connection context
 start(URI, Opts) ->
-    gen_server:start(?MODULE, {URI, Opts}, []).
+    gen_server:start(?MODULE, {hello_proto_jsonrpc, URI, Opts}, [{debug, [trace]}]).
 
 %% @doc create and link a named connection context
 start_link(Name, URI, Opts) ->
-    gen_server:start_link(Name, ?MODULE, {URI, Opts}, []).
+    gen_server:start_link(Name, ?MODULE, {hello_proto_jsonrpc, URI, Opts}, []).
 
 %% @doc create a named connection context
 start(Name, URI, Opts) ->
-    gen_server:start(Name, ?MODULE, {URI, Opts}, []).
+    gen_server:start(Name, ?MODULE, {hello_proto_jsonrpc, URI, Opts}, []).
 
 stop(Name) when is_atom(Name); is_pid(Name) ->
     gen_server:call(Name, terminate).
@@ -88,29 +88,54 @@ stop_connection(Name) ->
     hello_client_sup:stop_connection(Name).
 
 %% @doc Perform a JSON-RPC method call.
--spec call(context(), string(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+-spec call(context(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call(Ctx, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
     gen_server:call(Ctx, {call, Method, ArgList}).
 
 %% @doc Performs a JSON-RPC method call with named parameters (property list).
--spec call_np(context(), string(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+-spec call_np(context(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call_np(Ctx, Method, ArgProps) when is_list(ArgProps) ->
     gen_server:call(Ctx, {call, Method, {ArgProps}}).
 
 %% @doc Special form of a JSON-RPC method call that returns no result.
--spec notification(context(), string(), [hello_json:value()]) -> ok | {error, rpc_error()}.
+-spec notification(context(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
 notification(Ctx, Method, ArgList) ->
     gen_server:call(Ctx, {notification, Method, ArgList}).
+
+-spec batch_call(context(), [{method(), hello_json:json_array() | hello_json:json_object()}]) ->
+    [{ok, hello_json:value()} | {error, rpc_error()}].
+batch_call(Ctx, Batch) ->
+    gen_server:call(Ctx, {batch_call, Batch}).
+
+-spec validate_options(string(), list()) -> ok | {error, string()}.
+validate_options(URI, Options) ->
+    case (catch ex_uri:decode(URI)) of
+        {ok, URIRec = #ex_uri{}, _} ->
+            case uri_client_module(URIRec) of
+                {_NewURIRec, Module} ->
+                    case Module:validate_options(Options) of
+                        {ok, _OptionData} ->
+                            ok;
+                        {error, Error} ->
+                            {error, Error}
+                    end;
+                badscheme ->
+                    {error, "unknown URL scheme"}
+            end;
+        _Other ->
+            {error, "malformed URL"}
+    end.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(client_state, {
+    proto :: module(),
     mod :: module(),
     mod_state :: term(),
     next_reqid = 0 :: pos_integer()
 }).
 
-init({URI, Opts}) ->
+init({ProtocolMod, URI, Opts}) ->
     case (catch ex_uri:decode(URI)) of
         {ok, URIRec = #ex_uri{}, _} ->
             case uri_client_module(URIRec) of
@@ -118,7 +143,7 @@ init({URI, Opts}) ->
                     case Module:validate_options(Opts) of
                         {ok, OptionData} ->
                             {ok, InitialModState} = Module:init(NewURIRec, OptionData),
-                            State = #client_state{mod = Module, mod_state = InitialModState},
+                            State = #client_state{proto = ProtocolMod, mod = Module, mod_state = InitialModState},
                             {ok, State};
                         {error, Error} ->
                             {stop, {invalid_options, Error}}
@@ -130,12 +155,23 @@ init({URI, Opts}) ->
             {stop, badurl}
     end.
 
-handle_call({call, Method, ArgList}, From, State = #client_state{next_reqid = ReqId, mod = Module, mod_state = ModState}) ->
-    Request = hello_proto:new_request(hello_proto_jsonrpc, ReqId, Method, ArgList),
-    handle_reply_result(ReqId + 1, State, Module:send_request(Request, From, ModState));
-handle_call({notification, Method, ArgList}, From, State = #client_state{next_reqid = ReqId, mod = Module, mod_state = ModState}) ->
-    Request = hello_proto:new_request(hello_proto_jsonrpc, undefined, Method, ArgList),
-    handle_reply_result(ReqId, State, Module:send_request(Request, From, ModState));
+handle_call({call, Method, ArgList}, From, State = #client_state{proto = ProtoMod, next_reqid = ReqId}) ->
+    Request   = hello_proto:new_request(ProtoMod, ReqId, Method, ArgList),
+    SendReply = (State#client_state.mod):send_request(Request, From, State#client_state.mod_state),
+    handle_reply_result(ReqId + 1, State, SendReply);
+handle_call({notification, Method, ArgList}, From, State = #client_state{proto = ProtoMod, next_reqid = ReqId}) ->
+    Request = hello_proto:new_request(ProtoMod, undefined, Method, ArgList),
+    SendReply = (State#client_state.mod):send_request(Request, From, State#client_state.mod_state),
+    handle_reply_result(ReqId, State, SendReply);
+handle_call({batch_call, Batch}, From, State = #client_state{proto = ProtoMod, next_reqid = ReqId}) ->
+    {Reqs, NewReqId} = lists:mapfoldl(fun ({Method, Args}, ReqIdAcc) ->
+                                              Req = hello_proto:new_request(ProtoMod, ReqIdAcc, Method, Args),
+                                              {Req, ReqIdAcc + 1}
+                                      end, ReqId, Batch),
+    Request = hello_proto:new_batch_request(ProtoMod, Reqs),
+    SendReply = (State#client_state.mod):send_request(Request, From, State#client_state.mod_state),
+    handle_reply_result(NewReqId, State, SendReply);
+
 handle_call(terminate, _From, State) ->
     {stop, normal, ok, State}.
 

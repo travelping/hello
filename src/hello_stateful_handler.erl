@@ -1,4 +1,4 @@
-% Copyright (c) 2011 by Travelping GmbH <info@travelping.com>
+% Copyright (c) 2011-2012 by Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -33,8 +33,8 @@
 % -callback terminate(context(), Reason :: term(), State :: term()) -> term().
 
 -module(hello_stateful_handler).
--export([start_link/3, do_binary_request/2, behaviour_info/1,
-         set_idle_timeout/1, set_idle_timeout/2, notify_np/3, reply/2]).
+-export([behaviour_info/1, incoming_message/2]).
+-export([start_link/3, set_idle_timeout/1, set_idle_timeout/2, notify/3, notify_np/3, reply/2]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -48,9 +48,10 @@
 }).
 
 -record(from_context, {
-    from      :: {reference(), pid()},
-    request   :: #request{},
-    context   :: #context{}
+    handler_pid :: pid(),
+    req_ref     :: reference() | notification,
+    reqid       :: any(),
+    context     :: #context{}
 }).
 
 -spec behaviour_info(callbacks) -> [{atom(), integer()}].
@@ -61,10 +62,12 @@ behaviour_info(_Other) ->
 
 -spec start_link(#binding{}, term(), pid()) -> {ok, pid()}.
 start_link(#binding{callback_mod = Mod, callback_args = Args}, Peer, Transport) ->
-    gen_server:start_link(?MODULE, {Transport, Peer, Mod, Args}, []).
+    gen_server:start_link(?MODULE, {Transport, Peer, Mod, Args}, [{debug, [trace]}]).
 
-do_binary_request(HandlerPid, Request) ->
-    gen_server:cast(HandlerPid, {do_binary_request, Request}).
+%% @private
+-spec incoming_message(pid(), binary()) -> ok.
+incoming_message(HandlerPid, Message) ->
+    gen_server:cast(HandlerPid, {incoming_message, Message}).
 
 set_idle_timeout(Timeout) ->
     set_idle_timeout(self(), Timeout).
@@ -72,13 +75,18 @@ set_idle_timeout(Timeout) ->
 set_idle_timeout(HandlerPid, Timeout) ->
     gen_server:cast(HandlerPid, {set_idle_timeout, Timeout}).
 
+notify(Context, Method, Args) when is_list(Args) ->
+    send_notification(Context, Method, Args).
+
 notify_np(Context, Method, Args) when is_list(Args) ->
     notify_np(Context, Method, {Args});
 notify_np(Context, Method, Args = {_}) ->
     send_notification(Context, Method, Args).
 
-reply(#from_context{from = From, request = Req}, Result) ->
-    gen_server:reply(From, to_response_record(Result, Req)).
+reply(#from_context{reqid = undefined}, _Result) ->
+    ok;
+reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result) ->
+    gen_server:cast(Pid, {async_reply, ReqRef, ReqId, Result}).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -86,6 +94,7 @@ reply(#from_context{from = From, request = Req}, Result) ->
     context                 :: #context{},
     mod                     :: module(),
     mod_state               :: term(),
+    async_reply_map         :: gb_tree(),
     idle_timer              :: term(), %% the current timer
     idle_timeout_ref        :: reference(),
     idle_timeout = infinity :: timeout()
@@ -94,20 +103,14 @@ reply(#from_context{from = From, request = Req}, Result) ->
 init({TransportPid, Peer, HandlerModule, Args}) ->
     link(TransportPid),
     Context = #context{transport = TransportPid, peer = Peer},
-    State0 = #state{mod = HandlerModule, context = Context},
-    State1 = start_idle_timeout(State0),
+    State = start_idle_timeout(#state{mod = HandlerModule, context = Context, async_reply_map = gb_trees:empty()}),
     case HandlerModule:init(Context, Args) of
         {ok, HandlerState} ->
-            {ok, State1#state{mod_state = HandlerState}};
-        {ok, HandlerState, Timeout} ->
-            {ok, State1#state{mod_state = HandlerState}, Timeout};
-        {error, ErrorReply} ->
-            {stop, {error_reply, ErrorReply}}
+            {ok, State#state{mod_state = HandlerState}}
     end.
 
 handle_cast({set_idle_timeout, Timeout}, State) ->
-    cancel_idle_timeout(State),
-    {noreply, start_idle_timeout(State#state{idle_timeout = Timeout})};
+    {noreply, reset_idle_timeout(State#state{idle_timeout = Timeout})};
 
 handle_cast({idle_timeout, Ref}, State = #state{idle_timeout_ref = Ref}) ->
     {stop, normal, State};
@@ -116,30 +119,55 @@ handle_cast({idle_timeout, _OtherRef}, State) ->
     %% ignore timeouts other than the current one
     {noreply, State};
 
-handle_cast({do_binary_request, JSONRequest}, State) ->
-    cancel_idle_timeout(State),
-    case hello_proto:request_json(JSONRequest) of
-        {ok, Request} ->
-            {Result, NewState} = handle_request(Request, State);
-        {batch, GoodReqs, InvalidReplies} ->
-            {GoodRes, NewState} = lists:foldl(fun (Request, {ResultAcc, StateAcc}) ->
-                                                      {Res, NewStateAcc} = handle_request(Request, StateAcc),
-                                                      {[Res | ResultAcc], NewStateAcc}
-                                              end, {[], State}, GoodReqs),
-            Result = InvalidReplies ++ GoodRes;
-        {error, ErrorReply} ->
-            Result = ErrorReply,
-            NewState = State
-    end,
-    {noreply, start_idle_timeout(send_result(Result, NewState))}.
+handle_cast({incoming_message, Message}, State0) ->
+    State = reset_idle_timeout(State0),
+    case hello_proto:decode(hello_proto_jsonrpc, Message) of
+        Req = #request{} ->
+            do_single_request(Req, State);
+        Req = #batch_request{} ->
+            do_batch(Req, State);
+        #error{} ->
+            {noreply, State};
+        #response{} ->
+            {noreply, State};
+        {proto_reply, Response} ->
+            proto_send(Response, State),
+            {noreply, State}
+    end;
+
+handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map = ARMap}) ->
+    case gb_trees:lookup(ReqRef, ARMap) of
+        {value, {incomplete_request, Req}} ->
+            proto_send(to_response_record(Result, Req), State),
+            {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, ARMap)}};
+        {value, {incomplete_batch, BatchReq = #batch_request{requests = Reqs}, Responses}} ->
+            case lists:partition(fun (#request{reqid = Id}) -> Id == ReqId end, Reqs) of
+                {[LastReq], []} ->
+                    BatchResp = hello_proto:batch_response(BatchReq, [to_response_record(Result, LastReq) | Responses]),
+                    proto_send(BatchResp, State),
+                    {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, ARMap)}};
+                {[Req], StillWaiting} ->
+                    NewBatchReq = BatchReq#batch_request{requests = StillWaiting},
+                    NewIncompleteBatch = {incomplete_batch, NewBatchReq, [to_response_record(Result, Req) | Responses]},
+                    NewARMap = gb_trees:enter(ReqRef, NewIncompleteBatch, ARMap),
+                    {noreply, State#state{async_reply_map = NewARMap}}
+            end;
+        error ->
+            error_logger:warning_report([{hello_stateful_handler, State#state.mod},
+                                         {unknown_reply, ReqRef, ReqId, Result}]),
+            {noreply, State}
+    end.
 
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
-    Result = Mod:handle_info(Context, InfoMsg, ModState),
-    {_, NewState} = handle_result(Result, State),
-    {noreply, NewState}.
+    case Mod:handle_info(Context, InfoMsg, ModState) of
+        {noreply, NewModState} ->
+            {noreply, State#state{mod_state = NewModState}};
+        {stop, Reason, NewModState} ->
+            {stop, Reason, State#state{mod_state = NewModState}}
+    end.
 
 terminate(Reason, #state{mod = Mod, mod_state = ModState, context = Context}) ->
     Mod:terminate(Context, Reason, ModState),
@@ -151,50 +179,123 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- internal functions
-handle_request(Req = #request{method = MethodName}, State = #state{mod_state = ModState, mod = Mod}) ->
-    case hello_validate:find_method(Mod:method_info(ModState), MethodName) of
+do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
+    case hello_validate:find_method(Mod:method_info(ModState), Req#request.method) of
         undefined ->
-            {hello_proto:std_error(Req, method_not_found), State};
-        ValidatedMethod ->
-            case hello_validate:request_params(ValidatedMethod, Mod:param_info(ValidatedMethod, ModState), Req) of
-                {ok, ValidatedParams} ->
-                    Context = State#state.context,
-                    Result  = Mod:handle_request(Context, ValidatedMethod#rpc_method.name, ValidatedParams, ModState),
-                    handle_reply_result(Result, Req, State);
+            proto_send(hello_proto:error_response(Req, method_not_found), State),
+            {noreply, State};
+        ValidatedMethod = #rpc_method{name = MethodName} ->
+            case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
                 {error, Msg} ->
-                    {hello_proto:std_error(Req, {invalid_params, Msg}), State}
+                    proto_send(hello_proto:error_response(Req, invalid_params, Msg), State),
+                    {noreply, State};
+                {ok, ValidatedParams} ->
+                    ReqRef  = make_ref(),
+                    Context = make_from_context(ReqRef, Req, State),
+                    case Mod:handle_request(Context, MethodName, ValidatedParams, ModState) of
+                        %% with reply
+                        {reply, Reply, NewModState} ->
+                            proto_send(to_response_record(Reply, Req), State),
+                            {noreply, State#state{mod_state = NewModState}};
+                        {stop, Reason, Reply, NewModState} ->
+                            proto_send(to_response_record(Reply, Req), State),
+                            {stop, Reason, State#state{mod_state = NewModState}};
+                        %% without reply
+                        {noreply, NewModState} ->
+                            case Req#request.reqid of
+                                undefined ->
+                                    % no need to wait for an async reply if request is a notification
+                                    {noreply, State#state{mod_state = NewModState}};
+                                _ ->
+                                    NewARMap = gb_trees:enter(ReqRef, {incomplete_request, Req}, State#state.async_reply_map),
+                                    {noreply, State#state{mod_state = NewModState, async_reply_map = NewARMap}}
+                            end;
+                        {stop, Reason, NewModState} ->
+                            {stop, Reason, State#state{mod_state = NewModState}}
+                    end
             end
     end.
 
-handle_reply_result({reply, Reply, NewModState}, Request, State) ->
-    Response = to_response_record(Reply, Request),
-    {Response, State#state{mod_state = NewModState}};
-handle_reply_result({stop, Reason, Reply, NewModState}, Request, State) ->
-    send_result(State#state.context, to_response_record(Reply, Request)),
-    exit(Reason);
-handle_reply_result(OtherResult, _Request, State) ->
-    handle_result(OtherResult, State).
+do_batch(BatchReq = #batch_request{requests = Requests}, State = #state{async_reply_map = ReplyMap}) ->
+    BatchRef = make_ref(),
+    case do_batch_requests(Requests, BatchRef, State, [], []) of
+        {stop, Reason, Responses, NewState} ->
+            proto_send(hello_proto:batch_response(BatchReq, Responses), NewState),
+            {stop, Reason, NewState};
+        {reply, Responses, [], NewState} ->
+            proto_send(hello_proto:batch_response(BatchReq, Responses), NewState),
+            {noreply, NewState};
+        {reply, Responses, AsyncReplies, NewState} ->
+            StoredReq = BatchReq#batch_request{requests = AsyncReplies},
+            NewARMap = gb_trees:enter(BatchRef, {incomplete_batch, StoredReq, Responses}, ReplyMap),
+            {noreply, NewState#state{async_reply_map = NewARMap}}
+    end.
 
-handle_result({noreply, NewModState}, State) ->
-    {empty_response, State#state{mod_state = NewModState}};
-handle_result({stop, Reason, NewModState}, State) ->
-    exit(Reason);
-handle_result(Result, _State) ->
-    error({bad_return, Result}).
+do_batch_requests([], _BR, State, Responses, NeedAsyncReply) ->
+    {reply, Responses, NeedAsyncReply, State};
+do_batch_requests([Req = #request{} | Rest], BatchRef, State = #state{mod = Mod}, Responses, AsyncReplies) ->
+    ModState = State#state.mod_state,
+    case hello_validate:find_method(Mod:method_info(ModState), Req#request.method) of
+        undefined ->
+            ErrorResp = hello_proto:error_response(Req, method_not_found),
+            do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
+        ValidatedMethod = #rpc_method{name = MethodName} ->
+            case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
+                {error, Msg} ->
+                    ErrorResp = hello_proto:error_response(Req, invalid_params, Msg),
+                    do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
+                {ok, ValidatedParams} ->
+                    Context = make_from_context(BatchRef, Req, State),
+                    case Mod:handle_request(Context, MethodName, ValidatedParams, ModState) of
+                        %% with reply
+                        {reply, Reply, NewModState} ->
+                            NewResps = [to_response_record(Reply, Req) | Responses],
+                            do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
+                                              NewResps, AsyncReplies);
+                        {stop, Reason, Reply, NewModState} ->
+                            NewResps = [to_response_record(Reply, Req) | Responses],
+                            stop_in_batch(Reason, State#state{mod_state = NewModState},
+                                          NewResps, AsyncReplies);
+                        %% without reply
+                        {noreply, NewModState} ->
+                            case Req#request.reqid of
+                                undefined ->
+                                    do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
+                                                      Responses, AsyncReplies);
+                                _Id ->
+                                    NewAsyncReplies = [Req | AsyncReplies],
+                                    do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
+                                                      Responses, NewAsyncReplies)
+                            end;
+                        {stop, Reason, NewModState} ->
+                            case Req#request.reqid of
+                                undefined ->
+                                    stop_in_batch(Reason, State#state{mod_state = NewModState},
+                                                  Responses, AsyncReplies);
+                                _Id ->
+                                    NewAsyncReplies = [Req | AsyncReplies],
+                                    stop_in_batch(Reason, State#state{mod_state = NewModState},
+                                                  Responses, NewAsyncReplies)
+                            end
+                    end
+            end
+    end.
+
+stop_in_batch(Reason, State, Responses, []) ->
+    {stop, Reason, Responses, State};
+stop_in_batch(Reason, State, Responses, [LeftoverReq | Rest]) ->
+    ErrorResp = hello_proto:error_response(LeftoverReq, server_error, <<"handler stopped">>),
+    stop_in_batch(Reason, State, [ErrorResp | Responses], Rest).
 
 to_response_record({ok, Reply}, Request) ->
-    hello_proto:response(Request, Reply);
+    hello_proto:success_response(Request, Reply);
 to_response_record({error, Error}, Request) ->
     hello_proto:error_response(Request, Error).
 
-send_result(Result, State = #state{context = Context}) ->
-    case hello_proto:response_json(Result) of
-        <<>> ->
-            State;
-        BinResp ->
-            send_binary(Context, BinResp),
-            State
-    end.
+proto_send(ignore, _State) ->
+    ok;
+proto_send(Result, #state{context = Context}) ->
+    send_binary(Context, hello_proto:encode(Result)).
 
 send_notification(#from_context{context = Context}, Method, Params) ->
     send_notification(Context, Method, Params);
@@ -207,15 +308,19 @@ send_binary(#context{transport = TPid, peer = Peer}, Message) when is_binary(Mes
 send_closed(#context{transport = TPid, peer = Peer}) ->
     TPid ! {hello_closed, self(), Peer}.
 
-make_from_context(From, State, Request) ->
-    #from_context{from = From, request = Request, context = State#state.context}.
+-spec make_from_context(reference(), #request{}, #state{}) -> #from_context{}.
+make_from_context(_ReqRef, #request{reqid = undefined}, State) ->
+    #from_context{reqid = undefined, context = State#state.context};
+make_from_context(ReqRef, #request{reqid = ReqId}, State) ->
+    #from_context{handler_pid = self(), req_ref = ReqRef, reqid = ReqId, context = State#state.context}.
 
-cancel_idle_timeout(State) ->
+reset_idle_timeout(State) ->
     case State#state.idle_timer of
         undefined ->
-            ok;
+            State;
         OldTimer ->
-            {ok, cancel} = timer:cancel(OldTimer)
+            {ok, cancel} = timer:cancel(OldTimer),
+            start_idle_timeout(State)
     end.
 
 start_idle_timeout(State) ->

@@ -1,3 +1,24 @@
+% Copyright 2012, Travelping GmbH <info@travelping.com>
+
+% Permission is hereby granted, free of charge, to any person obtaining a
+% copy of this software and associated documentation files (the "Software"),
+% to deal in the Software without restriction, including without limitation
+% the rights to use, copy, modify, merge, publish, distribute, sublicense,
+% and/or sell copies of the Software, and to permit persons to whom the
+% Software is furnished to do so, subject to the following conditions:
+
+% The above copyright notice and this permission notice shall be included in
+% all copies or substantial portions of the Software.
+
+% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+% LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+% DEALINGS IN THE SOFTWARE.
+
+% @private
 -module(hello_http_client).
 -behaviour(hello_client).
 -export([validate_options/1, init/2, send_request/3, handle_info/2, terminate/2]).
@@ -48,13 +69,14 @@ terminate(_Reason, _State) ->
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Helpers
-http_send(Request = #request{reqid = ReqId}, From, URL, #http_options{method = Method, ib_opts = Opts}) ->
-    RequestJSON = hello_proto:encode(Request),
+http_send(Request, From, URL, #http_options{method = Method, ib_opts = Opts}) ->
+    EncRequest = hello_proto:encode(Request),
     {ok, Vsn} = application:get_key(hello, vsn),
-    Headers = [{"Content-Type", "application/json"},
-               {"Accept", "application/json"},
+    MimeType = hello_proto:mime_type(Request),
+    Headers = [{"Content-Type", MimeType},
+               {"Accept", MimeType},
                {"User-Agent", "hello/" ++ Vsn}],
-    Resp = case ibrowse:send_req(URL, Headers, Method, RequestJSON, Opts) of
+    Resp = case ibrowse:send_req(URL, Headers, Method, EncRequest, Opts) of
                {error, Reason} ->
                    {error, {http, Reason}};
                {ok, "200", _, []} ->
@@ -64,22 +86,38 @@ http_send(Request = #request{reqid = ReqId}, From, URL, #http_options{method = M
                {ok, HttpCode, _, _} ->
                    {error, {http, list_to_integer(HttpCode)}}
            end,
-    case ReqId of
-        undefined ->
+    case Request of
+        #request{reqid = undefined} ->
             case Resp of
                 {ok, _}                -> gen_server:reply(From, ok);
                 {error, {http, empty}} -> gen_server:reply(From, ok);
                 {error, Ibrowse}       -> gen_server:reply(From, {error, Ibrowse})
             end;
-        _ ->
+        #request{} ->
             case Resp of
                 {ok, Body} ->
                     case hello_proto:decode(Request, Body) of
                         #response{result = Result} ->
                             gen_server:reply(From, {ok, Result});
-                        ResponseRec = #error{} -> gen_server:reply(From, {error, hello_proto:error_resp_to_error_reply(ResponseRec)});
-                        {error, Error} ->
-                            gen_server:reply(From, {error, Error})
+                        Error = #error{} ->
+                            gen_server:reply(From, {error, hello_proto:error_resp_to_error_reply(Error)});
+                        _ ->
+                            gen_server:reply(From, {error, bad_response})
+                    end;
+                {error, Ibrowse} ->
+                    gen_server:reply(From, {error, Ibrowse})
+            end;
+        #batch_request{} ->
+            case Resp of
+                {ok, Body} ->
+                    case hello_proto:decode(Request, Body) of
+                        #batch_response{responses = BatchResps} ->
+                            Reply = lists:map(fun (#response{result = Result}) -> {ok, Result};
+                                                  (Error = #error{}) -> {error, hello_proto:error_resp_to_error_reply(Error)}
+                                              end, BatchResps),
+                            gen_server:reply(From, Reply);
+                        _ ->
+                            gen_server:reply(From, {error, bad_response})
                     end;
                 {error, Ibrowse} ->
                     gen_server:reply(From, {error, Ibrowse})

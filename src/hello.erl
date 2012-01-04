@@ -1,4 +1,4 @@
-% Copyright 2010-2011, Travelping GmbH <info@travelping.com>
+% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -22,8 +22,12 @@
 -module(hello).
 -behaviour(application).
 -export([start/2, stop/1]).
--export([start/0, run_stateless_request/2, run_stateless_binary_request/2]).
+-export([start/0, run_stateless_binary_request/2, run_stateless_binary_request/3]).
 -export([bind_stateful/3, bind_stateless/2, bindings/0]).
+-export_type([url/0]).
+
+%% deprecated
+-export([run_stateless_request/2]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -34,7 +38,6 @@
 start() ->
     application:start(sasl),
     application:start(cowboy),
-    application:start(inets),
     application:start(ex_uri),
     application:start(ibrowse),
     application:start(erlzmq),
@@ -113,37 +116,17 @@ binding_module(_Scheme)   -> error(notsup).
 bindings() ->
     [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello_registry:bindings()].
 
-% @doc Run a single not-yet-decoded JSON-RPC request against the given callback module.
+% @doc Run a single not-yet-decoded RPC request against the given callback module.
 %   This can be used for testing, but please note that the request must be%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for testing.
 %
 %   The request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary()) -> binary().
-run_stateless_binary_request(CallbackModule, JSON) ->
-    case hello_proto:decode(hello_proto_jsonrpc, JSON) of
-        Req = #request{} ->
-            Response = hello_stateless_server:run_request(CallbackModule, Req);
-        {batch, Valid, Invalid} ->
-            HandledResps = hello_stateless_handler:run_request(CallbackModule, Valid),
-            Response = Invalid ++ HandledResps;
-        {error, Error} ->
-            Response = hello_proto_jsonrpc:std_error_to_error_resp(Error)
-    end,
-    hello_proto:encode(Response).
+run_stateless_binary_request(CallbackModule, Message) ->
+    hello_stateless_handler:run_binary_request(hello_proto_jsonrpc, CallbackModule, Message).
 
-% @doc Run a single JSON-RPC request against the given callback module.
-%   This function allows you to test your stateless servers without binding
-%   to any URL. The request argument should be a complete JSON-RPC request in
-%   Erlang data form.
-%
-%   The request is <b>not</b> logged.
--spec run_stateless_request(module(), hello_json:value()) -> hello_json:value().
-run_stateless_request(CallbackModule, Request) ->
-    case hello_proto:request(Request) of
-        {ok, RequestRec} ->
-            hello_stateless_handler:run_request(CallbackModule, RequestRec);
-        {batch, Valid, Invalid} ->
-            Resps = hello_stateless_handler:run_request(CallbackModule, Valid),
-            Invalid ++ Resps;
-        {error, Error} ->
-            Error
-    end.
+run_stateless_binary_request(Protocol, CallbackModule, Message) ->
+    hello_stateless_handler:run_binary_request(Protocol, CallbackModule, Message).
+
+% @deprecated
+run_stateless_request(CallbackModule, JSON) ->
+    run_stateless_binary_request(CallbackModule, hello_json:encode(JSON)).

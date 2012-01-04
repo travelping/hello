@@ -23,6 +23,17 @@
     proto_data :: term()
 }).
 
+-record(batch_request, {
+    proto_mod  :: module(),
+    errors     :: list(#error{}), %% hack?
+    requests   :: list(#request{})
+}).
+
+-record(batch_response, {
+    proto_mod  :: module(),
+    responses  :: list(#request{})
+}).
+
 -record(binding, {
     pid           :: pid(),
     url           :: ex_uri:uri(),

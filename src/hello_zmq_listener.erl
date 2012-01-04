@@ -80,7 +80,7 @@ handle_info({zmq, Socket, Message, []}, State = #state{binding = Binding, socket
         {error, not_found} ->
             HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self()),
             hello_binding:incoming_message(HandlerPid, Message);
-        {ok, HandlerPid, _Data} ->
+        {ok, HandlerPid} ->
             hello_binding:incoming_message(HandlerPid, Message)
     end,
     {noreply, State#state{lastmsg_peer = undefined}};
@@ -92,6 +92,9 @@ handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket
     {noreply, State};
 
 handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
+    {noreply, State};
+
+handle_info({'EXIT', _HandlerPid, _Reason}, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->

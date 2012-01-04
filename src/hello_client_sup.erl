@@ -25,7 +25,7 @@
 
 %% API
 -export([start_link/0]).
--export([connections/0, start_connection/3, start_connection/4, stop_connection/1]).
+-export([connections/0, start_connection/2, start_connection/3, stop_connection/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -38,12 +38,12 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc start a connection
-start_connection(URI, Method, Opts) ->
-	supervisor:start_child(?MODULE, [URI, Method, Opts]).
+start_connection(URI, Opts) ->
+	supervisor:start_child(?MODULE, [URI, Opts]).
 
 %% @doc start a connection and register a name for it
-start_connection(Name, URI, Method, Opts) ->
-	supervisor:start_child(?MODULE, [Name, URI, Method, Opts]).
+start_connection(Name, URI, Opts) ->
+	supervisor:start_child(?MODULE, [Name, URI, Opts]).
 
 %% @doc stop a connection
 stop_connection(Name) when is_atom(Name) ->

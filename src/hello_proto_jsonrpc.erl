@@ -1,4 +1,4 @@
-% Copyright (c) 2010-2011 by Travelping GmbH <info@travelping.com>
+% Copyright (c) 2010-2012 by Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -22,41 +22,65 @@
 -module(hello_proto_jsonrpc).
 
 %% new interface
--export([defaults/0, new_request/4, std_error_to_error_resp/1, error_resp_to_error_reply/1, encode/1, decode/1]).
+-export([mime_type/0, defaults/0, new_request/3, error_response/5, error_resp_to_error_reply/1, encode/1, decode/1]).
 
 -include("internal.hrl").
 -record(jsonrpc, {
     version = 2 :: 1..2
 }).
 
--spec std_error_to_error_resp(Error::hello_proto:standard_error()) -> hello_proto:response().
--spec decode(binary()) -> #request{} | #response{} | #error{}.
--spec encode(hello_proto:request() | hello_proto:response()) -> binary().
+mime_type() ->
+    <<"application/json">>.
 
 defaults() ->
     #jsonrpc{}.
 
-new_request(ReqId, Method, Args, JSONRPC) when is_list(Args) orelse (is_tuple(Args) and tuple_size(Args) == 1 and is_list(element(1, Args))) ->
-    #request{reqid = ReqId, method = Method, params = Args, proto_data = JSONRPC, proto_mod = ?MODULE}.
+new_request(ReqId, Method, Args) when is_list(Args) orelse (is_tuple(Args) and (tuple_size(Args) == 1) and is_list(element(1, Args))) ->
+    #request{reqid = ReqId, method = Method, params = Args, proto_data = defaults(), proto_mod = ?MODULE}.
 
 %% @doc Create a response object representing a JSON-RPC standard error.
-std_error_to_error_resp(Error) ->
-    {Code, Msg} = case Error of
-                      parse_error         -> {-32700, "Parse error"};
-                      invalid_request     -> {-32600, "Invalid Request"};
-                      method_not_found    -> {-32601, "Method not found"};
-                      invalid_params      -> {-32602, "Invalid params"};
-                      {invalid_params, M} -> {-32602, "Invalid params: " ++ M};
-                      internal_error      -> {-32603, "Internal Error"};
-                      server_error        -> {-32099, "Server Error"};
-                      {E, _}              -> {-32099, io_lib:format("Server Error: ~p", [E])};
-                      E                   -> {-32099, io_lib:format("Server Error: ~p", [E])}
-                  end,
-    Data = case Error of
-              {server_error, Term} -> list_to_binary(io_lib:format("~p", [Term]));
-              _                    -> undefined
-           end,
-    #error{code = Code, message = Msg, data = Data}.
+error_response(ProtoData, ReqId, Code, Message, Data) ->
+    case Code of
+        parse_error ->
+            NumCode = -32700, MsgPrefix = <<"Parse error">>;
+        invalid_request ->
+            NumCode = -32600, MsgPrefix = <<"Invalid Request">>;
+        method_not_found ->
+            NumCode = -32601, MsgPrefix = <<"Method not found">>;
+        invalid_params ->
+            NumCode = -32602, MsgPrefix = <<"Invalid params">>;
+        internal_error ->
+            NumCode = -32603, MsgPrefix = <<"Internal Error">>;
+        server_error ->
+            NumCode = -32099, MsgPrefix = <<"Server Error">>;
+        _ when is_integer(Code) ->
+            NumCode = Code, MsgPrefix = undefined
+    end,
+    case Message of
+        undefined ->
+            BinMessage = MsgPrefix;
+        _ when MsgPrefix == undefined ->
+            BinMessage = to_binary(Message);
+        _ ->
+            BinMessage = <<MsgPrefix/binary, ": ", (to_binary(Message))/bytes>>
+    end,
+    case Data of
+        undefined ->
+            JSONData = undefined;
+        null ->
+            JSONData = null;
+        _ when is_number(Data) ->
+            JSONData = Data;
+        _ ->
+            JSONData = list_to_binary(io_lib:format("~p", [Data]))
+    end,
+    #error{proto_mod = ?MODULE, proto_data = ProtoData, reqid = ReqId, code = NumCode, message = BinMessage, data = JSONData}.
+
+to_binary(Str) when is_atom(Str)   -> atom_to_binary(Str, utf8);
+to_binary(Str) when is_list(Str)   -> unicode:characters_to_binary(Str);
+to_binary(Str) when is_binary(Str) -> Str;
+to_binary(Term) ->
+    unicode:characters_to_binary(io_lib:format("~p", [Term])).
 
 error_resp_to_error_reply(#error{code = Code, message = Msg}) ->
     case Code of
@@ -71,82 +95,104 @@ error_resp_to_error_reply(#error{code = Code, message = Msg}) ->
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding
-encode(empty_response) ->
-    <<>>;
-encode(Resps) when is_list(Resps) ->
-    Conc = lists:foldl(fun (Resp, Bin) ->
-                               case Resp of
-                                   empty_response -> Bin;
-                                   _              -> <<Bin/binary, ",", (encode(Resp))/binary>>
-                               end
-                       end, <<>>, Resps),
-    case Conc of
-        <<>>               -> <<>>;
-        <<",",Res/binary>> -> <<"[", Res/binary, "]">>
-    end;
-encode(R = #response{reqid = ID, proto_data = #jsonrpc{version = 1}}) ->
-    hello_json:encode({[{<<"error">>, null}, {<<"result">>, R#response.result}, {<<"id">>, ID}]});
-encode(R = #response{reqid = ID, proto_data = #jsonrpc{version = 2}}) ->
-    hello_json:encode({[{<<"result">>, R#response.result}, {<<"id">>, ID}, {<<"jsonrpc">>, <<"2.0">>}]});
-encode(R = #error{proto_data = #jsonrpc{version = 1}}) ->
-    case R#error.data of
-        undefined ->
-            ErrorObj = {[{<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]};
-        Data ->
-            ErrorObj = {[{<<"data">>, Data}, {<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]}
-    end,
-    hello_json:encode({[{<<"result">>, null}, {<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}]});
-encode(R = #error{proto_data = #jsonrpc{version = 2}}) ->
-    case R#error.data of
-        undefined ->
-            ErrorObj = {[{<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]};
-        Data ->
-            ErrorObj = {[{<<"data">>, Data}, {<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]}
-    end,
-    hello_json:encode({[{<<"result">>, null}, {<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}, {<<"jsonrpc">>, <<"2.0">>}]});
+-spec encode(hello_proto:request() | hello_proto:response()) -> binary().
+encode(Thing) ->
+    hello_json:encode(encode_json(Thing)).
 
-encode(R = #request{reqid = undefined, proto_data = #jsonrpc{version = 1}}) ->
-    hello_json:encode({[{<<"id">>, null}, {<<"params">>, R#request.params}, {<<"method">>, R#request.method}]});
-encode(R = #request{reqid = undefined, proto_data = #jsonrpc{version = 2}}) ->
-    hello_json:encode({[{<<"params">>, R#request.params}, {<<"method">>, R#request.method}, {<<"jsonrpc">>, <<"2.0">>}]});
-encode(R = #request{reqid = Id, proto_data = #jsonrpc{version = 1}}) ->
-    hello_json:encode({[{<<"id">>, Id}, {<<"params">>, R#request.params}, {<<"method">>, R#request.method}]});
-encode(R = #request{reqid = Id, proto_data = #jsonrpc{version = 2}}) ->
-    hello_json:encode({[{<<"id">>, Id}, {<<"params">>, R#request.params}, {<<"method">>, R#request.method}, {<<"jsonrpc">>, <<"2.0">>}]}).
+encode_json(R = #response{reqid = ID, proto_data = #jsonrpc{version = 1}}) ->
+    {[{<<"error">>, null}, {<<"result">>, R#response.result}, {<<"id">>, ID}]};
+encode_json(R = #response{reqid = ID, proto_data = #jsonrpc{version = 2}}) ->
+    {[{<<"result">>, R#response.result}, {<<"id">>, ID}, {<<"jsonrpc">>, <<"2.0">>}]};
+encode_json(R = #error{proto_data = #jsonrpc{version = 1}}) ->
+    case R#error.data of
+        undefined ->
+            ErrorObj = {[{<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]};
+        Data ->
+            ErrorObj = {[{<<"data">>, Data}, {<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]}
+    end,
+    {[{<<"result">>, null}, {<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}]};
+encode_json(R = #error{proto_data = #jsonrpc{version = 2}}) ->
+    case R#error.data of
+        undefined ->
+            ErrorObj = {[{<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]};
+        Data ->
+            ErrorObj = {[{<<"data">>, Data}, {<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]}
+    end,
+    {[{<<"result">>, null}, {<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}, {<<"jsonrpc">>, <<"2.0">>}]};
+encode_json(#batch_response{responses = Resps}) ->
+    [encode_json(R) || R <- Resps];
+
+encode_json(R = #request{reqid = undefined, proto_data = #jsonrpc{version = 1}}) ->
+    {[{<<"id">>, null}, {<<"params">>, R#request.params}, {<<"method">>, R#request.method}]};
+encode_json(R = #request{reqid = undefined, proto_data = #jsonrpc{version = 2}}) ->
+    {[{<<"params">>, R#request.params}, {<<"method">>, R#request.method}, {<<"jsonrpc">>, <<"2.0">>}]};
+encode_json(R = #request{reqid = Id, proto_data = #jsonrpc{version = 1}}) ->
+    {[{<<"id">>, Id}, {<<"params">>, R#request.params}, {<<"method">>, R#request.method}]};
+encode_json(R = #request{reqid = Id, proto_data = #jsonrpc{version = 2}}) ->
+    {[{<<"id">>, Id}, {<<"params">>, R#request.params}, {<<"method">>, R#request.method}, {<<"jsonrpc">>, <<"2.0">>}]};
+encode_json(#batch_request{requests = Reqs}) ->
+    [encode_json(R) || R <- Reqs].
 
 %% ----------------------------------------------------------------------
 %% -- Decoding
+-spec decode(binary()) -> hello_proto:request() | hello_proto:response() | {proto_reply, hello_proto:response()}.
 decode(Binary) ->
     case hello_json:decode(Binary) of
         {error, _Error} ->
-            {error, parse_error};
+            {proto_reply, error_response(defaults(), undefined, parse_error, undefined, undefined)};
         {ok, Request, _Rest} ->
             decode_json(Request)
     end.
 
--spec decode_json(hello_json:json_value()) -> hello_proto:request() | hello_proto:response() | {error, hello_proto:std_error()} | {batch, Valid, Invalid} when
-    Valid   :: [hello_proto:request()],
-    Invalid :: [hello_proto:response()].
-%% @doc Create a request object from parsed request structure
-%%      A request or response is returned if the given request/response is valid.<br/>
-%%      `{error, StdError}' is returned if the given request is not valid.<br/>
-%%      `{batch, Valid, Invalid}' is returned for batch requests. `Valid' contains
-%%      all valid requests in the batch, `Invalid' is a list of error responses for the ones that were invalid.
+-spec decode_json(hello_json:json_value()) -> hello_proto:request() | hello_proto:response() | {proto_reply, hello_proto:response()}.
 decode_json(Obj) ->
     case Obj of
         [] ->
-            {error, std_error_to_error_resp(invalid_request)};
+            {proto_reply, error_response(defaults(), undefined, invalid_request, <<"empty batch">>, undefined)};
         Lis when is_list(Lis) ->
-            {Valid, Invalid} = lists:foldl(
-                    fun (ReqObj, {Va, Iva}) ->
-                            case single_request(ReqObj) of
-                                {ok, Req}     -> {[Req | Va], Iva};
-                                {error, Resp} -> {Va, [Resp | Iva]}
-                            end
-                    end, {[], []}, Lis),
-            {batch, Valid, Invalid};
+            decode_batch(Lis);
         _ ->
             single_request(Obj)
+    end.
+
+decode_batch([First | Rest]) ->
+    case single_request(First) of
+        Req = #request{} ->
+            decode_batch_request(Rest, [Req], []);
+        {proto_reply, Error} ->
+            decode_batch_request(Rest, [], [Error]);
+        Resp = #response{} ->
+            decode_batch_response(Rest, [Resp]);
+        Resp = #error{} ->
+            decode_batch_response(Rest, [Resp])
+    end.
+
+decode_batch_request([], ReqAcc, ErrorAcc) ->
+    #batch_request{proto_mod = ?MODULE, requests = ReqAcc, errors = ErrorAcc};
+decode_batch_request([Obj | Rest], ReqAcc, ErrorAcc) ->
+    case single_request(Obj) of
+        #error{reqid = Id, proto_data = Data} ->
+            Error = error_response(Id, Data, invalid_request, <<"response object">>, undefined),
+            decode_batch_request(Rest, ReqAcc, [Error | ErrorAcc]);
+        #response{reqid = Id, proto_data = Data} ->
+            Error = error_response(Id, Data, invalid_request, <<"response object">>, undefined),
+            decode_batch_request(Rest, ReqAcc, [Error | ErrorAcc]);
+        {proto_reply, Error} ->
+            decode_batch_request(Rest, ReqAcc, [Error | ErrorAcc]);
+        Request ->
+            decode_batch_request(Rest, [Request | ReqAcc], ErrorAcc)
+    end.
+
+decode_batch_response([], RespAcc) ->
+    #batch_response{proto_mod = ?MODULE, responses = RespAcc};
+decode_batch_response([Obj | Rest], RespAcc) ->
+    case single_request(Obj) of
+        Resp = #error{} ->
+            decode_batch_response(Rest, [Resp | RespAcc]);
+        Resp = #response{} ->
+            decode_batch_response(Rest, [Resp | RespAcc]);
+        _ ->
+            decode_batch_response(Rest, RespAcc)
     end.
 
 single_request({Props}) ->
@@ -155,7 +201,7 @@ single_request({Props}) ->
         ID      = case Version of
                       2 -> proplists:get_value(<<"id">>, Props);
                       1 -> case proplists:get_value(<<"id">>, Props) of
-                              undefined -> throw(invalid);
+                              undefined -> throw({invalid_req, undefined, <<"JSON-RPC 1.0 requires \"id\"">>});
                               null      -> undefined;
                               Value     -> Value
                           end
@@ -165,7 +211,7 @@ single_request({Props}) ->
                 Params = case property(Props, <<"params">>, []) of
                              List when is_list(List)    -> List;
                              Obj = {_} when Version > 1 -> Obj;
-                             _                          -> throw(invalid)
+                             _                          -> throw({invalid_req, ID, <<"\"params\" must be array or object">>})
                          end,
                 #request{reqid = ID,
                          method = Method,
@@ -175,20 +221,28 @@ single_request({Props}) ->
             undefined ->
                 single_response(Version, ID, Props);
             _ ->
-                throw(invalid)
+                throw({invalid_req, ID, <<"\"method\" must be a string">>})
         end
     catch
-        throw:invalid -> {error, invalid_request}
+        throw:{invalid_req, ReqId, Reason} ->
+            {proto_reply, error_response(defaults(), ReqId, invalid_request, Reason, undefined)};
+        throw:{invalid_resp, ReqId, Reason} ->
+            %% decode invalid responses as 'internal_error' to satisfy waiting clients
+            #error{reqid = ReqId,
+                   code = -32603,
+                   message = <<"invalid JSON-RPC response: ", Reason/binary>>,
+                   proto_mod = ?MODULE,
+                   proto_data = defaults()}
     end;
 single_request(_Other) ->
-    {error, invalid_request}.
+    {proto_reply, error_response(defaults(), undefined, invalid_request, <<"non-object">>, undefined)}.
 
 single_response(Version, ID, Props) ->
     case proplists:get_value(<<"error">>, Props) of
         undefined ->
             case proplists:get_value(<<"result">>, Props) of
                 undefined ->
-                    throw(invalid);
+                    throw({invalid_resp, ID, <<"neither \"error\" nor \"result\"">>});
                 Result ->
                     #response{reqid = ID,
                               result = Result,
@@ -209,7 +263,7 @@ single_response(Version, ID, Props) ->
                    proto_mod = ?MODULE,
                    proto_data = #jsonrpc{version = Version}};
         _ ->
-            throw(invalid)
+            throw({invalid_resp, ID, <<"JSON-RPC 2.0 requires \"error\" to be an object">>})
     end.
 
 req_version(Props) ->
@@ -218,7 +272,14 @@ req_version(Props) ->
         <<"1.2">> -> 2;
         <<"1.0">> -> 1;
         undefined -> 1;
-        _Other    -> throw(invalid)
+        _Other    ->
+            %% probably a 1.1 request, could also be a future version
+            case proplists:get_value(<<"result">>, Props, proplists:get_value(<<"error">>, Props)) of
+                undefined ->
+                    throw({invalid_req, proplists:get_value(<<"id">>, Props), <<"unknown JSON-RPC protocol version">>});
+                _ ->
+                    throw({invalid_resp, proplists:get_value(<<"id">>, Props), <<"unknown JSON-RPC protocol version">>})
+            end
     end.
 
 property(Plist, Key) ->

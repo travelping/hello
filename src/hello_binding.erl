@@ -26,7 +26,7 @@
 % Binding process
 -export([start_link/5, stop/1, stop/2, behaviour_info/1]).
 % API for listeners
--export([start_registered_handler/3, start_handler/3, flush_queue/1, incoming_message/2, lookup_handler/2]).
+-export([start_registered_handler/3, start_handler/3, incoming_message/2, lookup_handler/2]).
 % Super Secret Internal API
 -export([stateless_request/4]).
 
@@ -67,13 +67,7 @@ start_handler(Binding, Peer, Transport) ->
 incoming_message(#stateless{handler_mod = Mod, peer = Peer}, Message) ->
     spawn(?MODULE, stateless_request, [self(), Peer, Mod, Message]);
 incoming_message(Pid, Message) ->
-    hello_stateful_handler:do_binary_request(Pid, Message).
-
--spec flush_queue(handler()) -> {ok, list(binary())} | {error, active}.
-flush_queue(Stateful) when is_pid(Stateful) ->
-    hello_stateful_handler:flush_queue(Stateful);
-flush_queue(_) ->
-    {ok, []}.
+    hello_stateful_handler:incoming_message(Pid, Message).
 
 -spec stateless_request(pid(), term(), module(), binary()) -> any().
 stateless_request(Pid, Peer, CallbackModule, Message) ->
