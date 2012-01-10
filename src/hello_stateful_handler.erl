@@ -62,7 +62,7 @@ behaviour_info(_Other) ->
 
 -spec start_link(#binding{}, term(), pid()) -> {ok, pid()}.
 start_link(#binding{callback_mod = Mod, callback_args = Args}, Peer, Transport) ->
-    gen_server:start_link(?MODULE, {Transport, Peer, Mod, Args}, [{debug, [trace]}]).
+    gen_server:start_link(?MODULE, {Transport, Peer, Mod, Args}, []).
 
 %% @private
 -spec incoming_message(pid(), binary()) -> ok.
@@ -90,6 +90,7 @@ reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result)
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
+-define(IDLE_TIMEOUT_MSG, '$hello_idle_timeout').
 -record(state, {
     context                 :: #context{},
     mod                     :: module(),
@@ -97,7 +98,8 @@ reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result)
     async_reply_map         :: gb_tree(),
     idle_timer              :: term(), %% the current timer
     idle_timeout_ref        :: reference(),
-    idle_timeout = infinity :: timeout()
+    idle_timeout = infinity :: timeout(),
+    stopped_because_idle = false :: boolean()
 }).
 
 init({TransportPid, Peer, HandlerModule, Args}) ->
@@ -111,14 +113,6 @@ init({TransportPid, Peer, HandlerModule, Args}) ->
 
 handle_cast({set_idle_timeout, Timeout}, State) ->
     {noreply, reset_idle_timeout(State#state{idle_timeout = Timeout})};
-
-handle_cast({idle_timeout, Ref}, State = #state{idle_timeout_ref = Ref}) ->
-    {stop, normal, State};
-
-handle_cast({idle_timeout, _OtherRef}, State) ->
-    %% ignore timeouts other than the current one
-    {noreply, State};
-
 handle_cast({incoming_message, Message}, State0) ->
     State = reset_idle_timeout(State0),
     case hello_proto:decode(hello_proto_jsonrpc, Message) of
@@ -134,7 +128,6 @@ handle_cast({incoming_message, Message}, State0) ->
             proto_send(Response, State),
             {noreply, State}
     end;
-
 handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map = ARMap}) ->
     case gb_trees:lookup(ReqRef, ARMap) of
         {value, {incomplete_request, Req}} ->
@@ -161,6 +154,12 @@ handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
+handle_info({?IDLE_TIMEOUT_MSG, Ref}, State = #state{idle_timeout_ref = Ref}) ->
+    {stop, normal, State#state{stopped_because_idle = true}};
+handle_info({?IDLE_TIMEOUT_MSG, _OtherRef}, State) ->
+    %% ignore timeouts other than the current one
+    {noreply, State};
+
 handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
     case Mod:handle_info(Context, InfoMsg, ModState) of
         {noreply, NewModState} ->
@@ -169,8 +168,14 @@ handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = C
             {stop, Reason, State#state{mod_state = NewModState}}
     end.
 
-terminate(Reason, #state{mod = Mod, mod_state = ModState, context = Context}) ->
-    Mod:terminate(Context, Reason, ModState),
+terminate(Reason, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
+    %% there is a nasty error report if we exit with reason /= normal, that's why we fake the reason for idle_timeout
+    case {Reason, State#state.stopped_because_idle} of
+        {normal, true} ->
+            Mod:terminate(Context, idle_timeout, ModState);
+        {_, _} ->
+            Mod:terminate(Context, Reason, ModState)
+    end,
     send_closed(Context).
 
 %% TODO: code_change
@@ -317,9 +322,9 @@ make_from_context(ReqRef, #request{reqid = ReqId}, State) ->
 reset_idle_timeout(State) ->
     case State#state.idle_timer of
         undefined ->
-            State;
+            start_idle_timeout(State);
         OldTimer ->
-            {ok, cancel} = timer:cancel(OldTimer),
+            _ = erlang:cancel_timer(OldTimer),
             start_idle_timeout(State)
     end.
 
@@ -329,6 +334,6 @@ start_idle_timeout(State) ->
             State#state{idle_timer = undefined, idle_timeout_ref = undefined};
         IdleTimeout ->
             IdleTimeoutRef = make_ref(),
-            {ok, NewTimer} = timer:apply_after(IdleTimeout, gen_server, cast, [self(), {idle_timeout, IdleTimeoutRef}]),
+            NewTimer = erlang:send_after(IdleTimeout, self(), {?IDLE_TIMEOUT_MSG, IdleTimeoutRef}),
             State#state{idle_timer = NewTimer, idle_timeout_ref = IdleTimeoutRef}
     end.

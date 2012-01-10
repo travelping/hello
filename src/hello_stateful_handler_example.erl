@@ -18,6 +18,7 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
+%% @private
 -module(hello_stateful_handler_example).
 -export([bind/0]).
 
@@ -40,7 +41,7 @@ param_info(_, _State) ->
     [].
 
 init(_Context, []) ->
-    hello_stateful_handler:set_idle_timeout(35000),
+    hello_stateful_handler:set_idle_timeout(5000),
     {ok, undefined}.
 
 handle_request(_From, echo, [Text], State) ->
@@ -53,12 +54,13 @@ handle_request(From, ping, _Args, State) ->
     {noreply, State}.
 
 handle_info(Context, {event, timer}, State) ->
-    hello_stateful_handler:notify_np(Context, event, [{'type', timer}]),
+    Stamp = calendar:datetime_to_gregorian_seconds(calendar:now_to_datetime(os:timestamp())),
+    hello_stateful_handler:notify_np(Context, event, [{'type', timer}, {'stamp', Stamp}]),
     {noreply, State};
 
 handle_info(_Context, {event, ping, From}, State) ->
     hello_stateful_handler:reply(From, {ok, <<"ok">>}),
     {noreply, State}.
 
-terminate(_Context, _Reason, _State) ->
-    ok.
+terminate(Context, _Reason, _State) ->
+    hello_stateful_handler:notify_np(Context, event, [{'type', 'quit'}]).
