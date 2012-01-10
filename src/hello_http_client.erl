@@ -21,7 +21,7 @@
 % @private
 -module(hello_http_client).
 -behaviour(hello_client).
--export([validate_options/1, init/2, send_request/3, handle_info/2, terminate/2]).
+-export([validate_options/1, init/2, send_request/3, handle_info/3, terminate/3]).
 
 %% internal
 -export([http_send/4]).
@@ -57,69 +57,59 @@ validate_options([], Opts) ->
 init(URL, Options) ->
     {ok, #http_state{url = ex_uri:encode(URL), options = Options}}.
 
-send_request(Request, From, State = #http_state{url = URL, options = Options}) ->
-    spawn(?MODULE, http_send, [Request, From, URL, Options]),
+send_request(ClientCtx, Request, State = #http_state{url = URL, options = Options}) ->
+    spawn(?MODULE, http_send, [ClientCtx, Request, URL, Options]),
     {noreply, State}.
 
-handle_info(_Info, State) ->
+handle_info(_ClientCtx, _Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_ClientCtx, _Reason, _State) ->
     ok.
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Helpers
-http_send(Request, From, URL, #http_options{method = Method, ib_opts = Opts}) ->
+http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts}) ->
     EncRequest = hello_proto:encode(Request),
     {ok, Vsn} = application:get_key(hello, vsn),
     MimeType = hello_proto:mime_type(Request),
     Headers = [{"Content-Type", MimeType},
                {"Accept", MimeType},
                {"User-Agent", "hello/" ++ Vsn}],
-    Resp = case ibrowse:send_req(URL, Headers, Method, EncRequest, Opts) of
-               {error, Reason} ->
-                   {error, {http, Reason}};
-               {ok, "200", _, []} ->
-                   {error, {http, empty}};
-               {ok, "200", _, ResponseBody} ->
-                   {ok, ResponseBody};
-               {ok, HttpCode, _, _} ->
-                   {error, {http, list_to_integer(HttpCode)}}
-           end,
-    case Request of
-        #request{reqid = undefined} ->
-            case Resp of
-                {ok, _}                -> gen_server:reply(From, ok);
-                {error, {http, empty}} -> gen_server:reply(From, ok);
-                {error, Ibrowse}       -> gen_server:reply(From, {error, Ibrowse})
-            end;
-        #request{} ->
-            case Resp of
-                {ok, Body} ->
-                    case hello_proto:decode(Request, Body) of
-                        #response{result = Result} ->
-                            gen_server:reply(From, {ok, Result});
-                        Error = #error{} ->
-                            gen_server:reply(From, {error, hello_proto:error_resp_to_error_reply(Error)});
-                        _ ->
-                            gen_server:reply(From, {error, bad_response})
-                    end;
-                {error, Ibrowse} ->
-                    gen_server:reply(From, {error, Ibrowse})
-            end;
-        #batch_request{} ->
-            case Resp of
-                {ok, Body} ->
-                    case hello_proto:decode(Request, Body) of
-                        #batch_response{responses = BatchResps} ->
-                            Reply = lists:map(fun (#response{result = Result}) -> {ok, Result};
-                                                  (Error = #error{}) -> {error, hello_proto:error_resp_to_error_reply(Error)}
-                                              end, BatchResps),
-                            gen_server:reply(From, Reply);
-                        _ ->
-                            gen_server:reply(From, {error, bad_response})
-                    end;
-                {error, Ibrowse} ->
-                    gen_server:reply(From, {error, Ibrowse})
-            end
-    end.
+    ResponseBody =
+        case ibrowse:send_req(URL, Headers, Method, EncRequest, Opts) of
+            {ok, "200", _, Body} ->
+                Body;
+
+            %% gotcha, those clauses don't return
+            {ok, HttpCode, _, _} ->
+                hello_client:client_ctx_reply(ClientCtx, {error, {http, list_to_integer(HttpCode)}}),
+                exit(normal);
+            {error, Reason} ->
+                hello_client:client_ctx_reply(ClientCtx, {error, {http, Reason}}),
+                exit(normal)
+        end,
+    ClientReply =
+        case Request of
+            #request{reqid = undefined} ->
+                ok;
+            #request{} ->
+                case hello_proto:decode(Request, ResponseBody) of
+                    #response{result = Result} ->
+                        {ok, Result};
+                    Error = #error{} ->
+                        {error, hello_proto:error_resp_to_error_reply(Error)};
+                    _ ->
+                        {error, bad_response}
+                end;
+            #batch_request{} ->
+                case hello_proto:decode(Request, ResponseBody) of
+                    #batch_response{responses = BatchResps} ->
+                        lists:map(fun (#response{result = Result}) -> {ok, Result};
+                                      (Error = #error{}) -> {error, hello_proto:error_resp_to_error_reply(Error)}
+                                  end, BatchResps);
+                    _ ->
+                        {error, {http, bad_response}}
+                end
+        end,
+    hello_client:client_ctx_reply(ClientCtx, ClientReply).

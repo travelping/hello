@@ -20,47 +20,42 @@
 
 % @private
 -module(hello_client_sup).
-
--behaviour(supervisor).
-
 %% API
 -export([start_link/0]).
--export([connections/0, start_connection/2, start_connection/3, stop_connection/1]).
+-export([clients/0, start_client/2, start_named_client/3, stop_client/1]).
 
-%% Supervisor callbacks
+-behaviour(supervisor).
 -export([init/1]).
 
-%% ===================================================================
-%% API functions
-%% ===================================================================
-
+%% ----------------------------------------------------------------------------------------------------
+%% -- Public API
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @doc start a connection
-start_connection(URI, Opts) ->
-	supervisor:start_child(?MODULE, [URI, Opts]).
+%% @doc start a client process
+start_client(URI, Opts) ->
+    supervisor:start_child(?MODULE, [URI, Opts]).
 
-%% @doc start a connection and register a name for it
-start_connection(Name, URI, Opts) ->
-	supervisor:start_child(?MODULE, [Name, URI, Opts]).
+%% @doc start a client process and register a name for it
+start_named_client(Name, URI, Opts) ->
+    supervisor:start_child(?MODULE, [Name, URI, Opts]).
 
-%% @doc stop a connection
-stop_connection(Name) when is_atom(Name) ->
-	case whereis(Name) of
-		Pid when is_pid(Pid) -> supervisor:terminate_child(?MODULE, Pid);
-		_ -> {error, undefined}
-	end.
+%% @doc stop a client process
+stop_client(Name) when is_atom(Name) ->
+    case whereis(Name) of
+        Pid when is_pid(Pid) -> supervisor:terminate_child(?MODULE, Pid);
+        _                    -> ok
+    end;
+stop_client(Pid) ->
+    supervisor:terminate_child(?MODULE, Pid).
 
 %% @doc return a list of running connections
-connections() ->
-	lists:map(fun({_, Child, _, _}) -> Child end, supervisor:which_children(?MODULE)).
+clients() ->
+    [Child || {_, Child, _, _} <- supervisor:which_children(?MODULE)].
 
-%% ===================================================================
-%% Supervisor callbacks
-%% ===================================================================
-
+%% ----------------------------------------------------------------------------------------------------
+%% -- supervisor callbacks
 init([]) ->
-	{ok, {{simple_one_for_one, 0, 1},
+    {ok, {{simple_one_for_one, 0, 1},
           [{hello_client, {hello_client, start_link, []},
-            temporary, brutal_kill, worker, [hello_client]}]}}.
+            temporary, 500, worker, [hello_client]}]}}.

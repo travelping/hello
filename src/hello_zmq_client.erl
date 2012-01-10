@@ -21,7 +21,7 @@
 % @private
 -module(hello_zmq_client).
 -behaviour(hello_client).
--export([validate_options/1, init/2, send_request/3, handle_info/2, terminate/2]).
+-export([validate_options/1, init/2, send_request/3, handle_info/3, terminate/3]).
 
 -include("internal.hrl").
 
@@ -45,21 +45,21 @@ init(URLRec, Options) ->
     ok = erlzmq:connect(Socket, URL),
     {ok, #zmq_state{pending = gb_trees:empty(), context = Context, socket = Socket}}.
 
-send_request(Request, From, State = #zmq_state{socket = Socket, pending = Pending}) ->
+send_request(ClientCtx, Request, State = #zmq_state{socket = Socket, pending = Pending}) ->
     erlzmq:send(Socket, <<>>, [sndmore]),
     erlzmq:send(Socket, hello_proto:encode(Request)),
     case Request of
         #request{reqid = undefined} ->
             {reply, ok, State};
         #request{reqid = ReqId} ->
-            {noreply, State#zmq_state{pending = gb_trees:enter(ReqId, From, Pending)}};
+            {noreply, State#zmq_state{pending = gb_trees:enter(ReqId, ClientCtx, Pending)}};
         #batch_request{requests = [FirstReq | _R]} ->
-            {noreply, State#zmq_state{pending = gb_trees:enter(FirstReq#request.reqid, From, Pending)}}
+            {noreply, State#zmq_state{pending = gb_trees:enter(FirstReq#request.reqid, ClientCtx, Pending)}}
     end.
 
-handle_info({zmq, _Socket, _Msgpart, [rcvmore]}, State) ->
+handle_info(_ClientCtx, {zmq, _Socket, _Msgpart, [rcvmore]}, State) ->
     {noreply, State};
-handle_info({zmq, _Socket, Msg, []}, State) ->
+handle_info(ClientCtx, {zmq, _Socket, Msg, []}, State) ->
     case hello_proto:decode(hello_proto_jsonrpc, Msg) of
         #response{reqid = ReqId, result = Result} ->
             {noreply, reply_pending_req([ReqId], {ok, Result}, State)};
@@ -71,11 +71,14 @@ handle_info({zmq, _Socket, Msg, []}, State) ->
                     (Error = #error{reqid = Id}) -> {Id, {error, hello_proto:error_resp_to_error_reply(Error)}}
                 end, Resps))),
             {noreply, reply_pending_req(ReqIds, Results, State)};
+        Notification = #request{reqid = undefined} ->
+            hello_client:client_ctx_notify(ClientCtx, Notification),
+            {noreply, State};
         _ ->
             {noreply, State}
     end.
 
-terminate(_Reason, #zmq_state{context = Context, socket = Socket}) ->
+terminate(_ClientCtx, _Reason, #zmq_state{context = Context, socket = Socket}) ->
     erlzmq:close(Socket),
     erlzmq:term(Context).
 
@@ -85,7 +88,7 @@ reply_pending_req([ReqId | Rest], Resp, State = #zmq_state{pending = Pending}) -
     case gb_trees:lookup(ReqId, Pending) of
         none ->
             reply_pending_req(Rest, Resp, State);
-        {value, From} ->
-            gen_server:reply(From, Resp),
+        {value, FromCtx} ->
+            hello_client:client_ctx_reply(FromCtx, Resp),
             State#zmq_state{pending = gb_trees:delete(ReqId, Pending)}
     end.

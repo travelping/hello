@@ -1,3 +1,24 @@
+% Copyright 2011-2012, Travelping GmbH <info@travelping.com>
+
+% Permission is hereby granted, free of charge, to any person obtaining a
+% copy of this software and associated documentation files (the "Software"),
+% to deal in the Software without restriction, including without limitation
+% the rights to use, copy, modify, merge, publish, distribute, sublicense,
+% and/or sell copies of the Software, and to permit persons to whom the
+% Software is furnished to do so, subject to the following conditions:
+
+% The above copyright notice and this permission notice shall be included in
+% all copies or substantial portions of the Software.
+
+% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+% LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+% DEALINGS IN THE SOFTWARE.
+
+%% @private
 -module(hello_client_conf).
 -export([start_link/0]).
 -export([reconfigure/0]).
@@ -7,7 +28,6 @@
 
 %% --------------------------------------------------------------------------------
 %% -- API
-
 %% @doc create and link a connection context
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -19,7 +39,7 @@ reconfigure() ->
 %% -- gen_server callbacks
 init([]) ->
 	Clients = get_config(),
-	lists:foreach(fun({Name, URI, Opts}) -> hello_client:start_connection(Name, URI, Opts) end, Clients),
+	lists:foreach(fun({Name, URI, Opts}) -> hello_client:start_supervised(Name, URI, Opts) end, Clients),
 	{ok, Clients}.
 
 handle_call(reconfigure, _From, OldClients) ->
@@ -27,8 +47,8 @@ handle_call(reconfigure, _From, OldClients) ->
 		NewClients when is_list(NewClients) ->
 			ToStart = lists:subtract(NewClients, OldClients),
 			ToStop  = lists:subtract(OldClients, NewClients),
-			lists:foreach(fun({Name, _, _, _}) -> hello_client:stop_connection(Name) end, ToStop),
-			lists:foreach(fun({Name, URI, Opts}) -> hello_client:start_connection(Name, URI, Opts) end, ToStart),
+			lists:foreach(fun({Name, _, _, _}) -> hello_client:stop_supervised(Name) end, ToStop),
+			lists:foreach(fun({Name, URI, Opts}) -> hello_client:start_supervised(Name, URI, Opts) end, ToStart),
 			{reply, ok, NewClients};
 		_ ->
 			{reply, ok, OldClients}

@@ -18,7 +18,7 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
-%% @doc This module contains a simple JSON-RPC client.
+%% @doc This module contains a simple RPC client.
 %%   The client defined in this module should <b>only</b> be used
 %%   for testing and debugging purposes, not in actual production code.
 -module(hello_simple_client).
@@ -73,7 +73,7 @@ batch_call(Server, Batch) ->
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
 with_client(Protocol, URL, Function) ->
-    case hello_client:start(URL, []) of
+    case hello_client:start(URL, [{protocol, Protocol}]) of
         {ok, Client} ->
             try
                 Function(Client)
@@ -83,5 +83,3 @@ with_client(Protocol, URL, Function) ->
         {error, Error} ->
             {error, Error}
     end.
-
-
