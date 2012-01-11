@@ -33,7 +33,14 @@ open(CallbackModule, Owner) ->
 
     %% disk_log does reference counting internally, so we can open the log each time.
     %% the log will be closed when the last endpoint terminates.
-    disk_log:open(LogOptions).
+    case disk_log:open(LogOptions) of
+        {ok, Log} ->
+            ok;
+        {repaired, Log, _Recovered, _Badbytes} ->
+            ok;
+        {error, Error} ->
+            {error, Error}
+    end.
 
 -spec close(module()) -> ok | {error, no_such_log}.
 close(CallbackModule) ->

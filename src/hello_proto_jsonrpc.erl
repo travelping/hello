@@ -38,7 +38,7 @@ defaults() ->
 new_request(ReqId, Method, Args) when is_list(Args) orelse (is_tuple(Args) and (tuple_size(Args) == 1) and is_list(element(1, Args))) ->
     #request{reqid = ReqId, method = Method, params = Args, proto_data = defaults(), proto_mod = ?MODULE}.
 
-%% @doc Create a response object representing a JSON-RPC standard error.
+%% @doc Create a response object representing a JSON-RPC error.
 error_response(ProtoData, ReqId, Code, Message, Data) ->
     case Code of
         parse_error ->
@@ -144,7 +144,7 @@ decode(Binary) ->
             decode_json(Request)
     end.
 
--spec decode_json(hello_json:json_value()) -> hello_proto:request() | hello_proto:response() | {proto_reply, hello_proto:response()}.
+-spec decode_json(hello_json:value()) -> hello_proto:request() | hello_proto:response() | {proto_reply, hello_proto:response()}.
 decode_json(Obj) ->
     case Obj of
         [] ->
@@ -155,6 +155,7 @@ decode_json(Obj) ->
             single_request(Obj)
     end.
 
+-spec decode_batch([hello_json:value()]) -> #batch_request{} | #batch_response{}.
 decode_batch([First | Rest]) ->
     case single_request(First) of
         Req = #request{} ->
@@ -167,15 +168,16 @@ decode_batch([First | Rest]) ->
             decode_batch_response(Rest, [Resp])
     end.
 
+-spec decode_batch_request([hello_json:value()], [#request{}], [#error{}]) -> #batch_request{}.
 decode_batch_request([], ReqAcc, ErrorAcc) ->
     #batch_request{proto_mod = ?MODULE, requests = ReqAcc, errors = ErrorAcc};
 decode_batch_request([Obj | Rest], ReqAcc, ErrorAcc) ->
     case single_request(Obj) of
         #error{reqid = Id, proto_data = Data} ->
-            Error = error_response(Id, Data, invalid_request, <<"response object">>, undefined),
+            Error = error_response(Data, Id, invalid_request, <<"response object">>, undefined),
             decode_batch_request(Rest, ReqAcc, [Error | ErrorAcc]);
         #response{reqid = Id, proto_data = Data} ->
-            Error = error_response(Id, Data, invalid_request, <<"response object">>, undefined),
+            Error = error_response(Data, Id, invalid_request, <<"response object">>, undefined),
             decode_batch_request(Rest, ReqAcc, [Error | ErrorAcc]);
         {proto_reply, Error} ->
             decode_batch_request(Rest, ReqAcc, [Error | ErrorAcc]);
@@ -183,6 +185,7 @@ decode_batch_request([Obj | Rest], ReqAcc, ErrorAcc) ->
             decode_batch_request(Rest, [Request | ReqAcc], ErrorAcc)
     end.
 
+-spec decode_batch_response([hello_json:value()], [#response{} | #error{}]) -> #batch_response{}.
 decode_batch_response([], RespAcc) ->
     #batch_response{proto_mod = ?MODULE, responses = RespAcc};
 decode_batch_response([Obj | Rest], RespAcc) ->

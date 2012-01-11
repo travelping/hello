@@ -31,12 +31,12 @@
 
 -record(batch_response, {
     proto_mod  :: module(),
-    responses  :: list(#request{})
+    responses  :: list(#response{} | #error{})
 }).
 
 -record(binding, {
     pid           :: pid(),
-    url           :: ex_uri:uri(),
+    url           :: hello:decoded_url(),
     host          :: string(),
     port          :: pos_integer(),
     ip            :: inet:ip_address(),

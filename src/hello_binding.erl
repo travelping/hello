@@ -33,16 +33,19 @@
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("internal.hrl").
 
+-export_type([handler/0]).
+-type peer() :: term().
+
 -record(stateless, {
     handler_mod :: module(),
-    peer        :: term()
+    peer        :: peer()
 }).
 
 -opaque handler() :: pid() | #stateless{}.
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
--spec start_registered_handler(#binding{}, term(), hello_stateful_handler:transport()) -> term().
+-spec start_registered_handler(#binding{}, peer(), pid()) -> term().
 start_registered_handler(Binding, Peer, Transport) ->
     case lookup_handler(Binding, Peer) of
         {error, not_found} ->
@@ -53,7 +56,7 @@ start_registered_handler(Binding, Peer, Transport) ->
             Handler
     end.
 
--spec start_handler(#binding{}, term(), pid()) -> handler().
+-spec start_handler(#binding{}, peer(), pid()) -> handler().
 start_handler(Binding, Peer, Transport) ->
     case Binding#binding.callback_type of
         stateful ->
@@ -76,7 +79,7 @@ stateless_request(Pid, Peer, CallbackModule, Message) ->
     Pid ! {hello_msg, Handler, Peer, Response},
     Pid ! {hello_closed, Handler, Peer}.
 
--spec lookup_handler(pid(), term()) -> {ok, handler()} | {error, not_found}.
+-spec lookup_handler(#binding{}, peer()) -> {ok, handler()} | {error, not_found}.
 lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
     case hello_registry:lookup({listener_peer, Binding#binding.pid, Peer}) of
         {ok, Pid, _Data} ->
@@ -87,7 +90,7 @@ lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
 lookup_handler(#binding{callback_mod = CallbackMod}, Peer) ->
     {ok, #stateless{handler_mod = CallbackMod, peer = Peer}}.
 
--spec register_handler(pid(), handler(), term()) -> ok | {error, already_registered}.
+-spec register_handler(pid(), handler(), peer()) -> ok | {already_registered, pid(), peer()}.
 register_handler(BindingPid, Pid, Peer) when is_pid(Pid) ->
     hello_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid);
 register_handler(_BindingPid, _Handler, _Peer) ->

@@ -121,7 +121,7 @@ lookup_binding(Module, BindingKey) ->
 lookup_listener({listener, IP, Port}) ->
     lookup_listener(IP, Port).
 
--spec lookup_listener(address(), inet:ip_port() | undefined) -> {ok, pid(), module()} | {error, not_found}.
+-spec lookup_listener(address(), Port::non_neg_integer() | undefined) -> {ok, pid(), module()} | {error, not_found}.
 lookup_listener({ipc, Path}, undefined) ->
     lookup(listener_key({ipc, Path}, undefined));
 
@@ -133,7 +133,7 @@ lookup_listener(IP, Port) ->
             lookup(listener_key(IP, Port))
     end.
 
--spec listener_key({ipc, filename:name()} | inet:ip4_address() | inet:ip6_address(), inet:ip_port() | undefined) -> listener_key().
+-spec listener_key(address(), Port::non_neg_integer() | undefined) -> listener_key().
 listener_key({ipc, Path}, undefined) ->
     {listener, {ipc, Path}, undefined};
 listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->

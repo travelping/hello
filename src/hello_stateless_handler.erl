@@ -101,6 +101,7 @@
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
+%% @headerfile hello.hrl
 -include("hello.hrl").
 -include("internal.hrl").
 

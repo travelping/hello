@@ -26,12 +26,14 @@
 -include("internal.hrl").
 
 -record(zmq_state, {
-    context  :: erlzmq:context(),
-    socket   :: erlzmq:socket(),
-    pending  :: gb_tree()
+    context :: erlzmq:erlzmq_context(),
+    socket  :: erlzmq:erlzmq_socket(),
+    pending :: gb_tree()
 }).
 
--record(zmq_options, {options :: list(erlzmq:option())}).
+-record(zmq_options, {
+    socket_options :: list({atom(), term()})
+}).
 
 validate_options([_|R]) ->
     validate_options(R);

@@ -61,8 +61,7 @@ request_params(#rpc_method{params_as = WantParamEncoding}, PInfo, #request{param
         throw:{invalid, Msg} -> {error, Msg}
     end.
 
--spec type(json_type(), hello_json:value()) -> boolean().
-
+-spec type(json_type(), hello_json:value()) -> boolean() | {true, NewVal::any()}.
 type(boolean, Val) when (Val == true) or (Val == false) -> true;
 type(object, {_}) -> true;
 type(integer, Val) when is_integer(Val) -> true;

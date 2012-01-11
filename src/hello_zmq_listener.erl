@@ -53,7 +53,13 @@ binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(state, {binding, socket, lastmsg_peer, uri, context}).
+-record(state, {
+    context :: erlzmq:erlzmq_context(),
+    socket  :: erlzmq:erlzmq_socket(),
+    binding :: #binding{},
+    uri     :: binary(),
+    lastmsg_peer :: binary()
+}).
 
 init(Binding = #binding{url = URL}) ->
     process_flag(trap_exit, true),

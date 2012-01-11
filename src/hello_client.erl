@@ -38,6 +38,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -export_type([client/0, method/0, options/0, error_code/0, rpc_error/0]).
+-export_type([server_name/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -92,7 +93,7 @@ behaviour_info(_) ->
 %%           Notification messages obey the following format:
 %%           <pre>{rpc_notification, Client::pid(), Method::binary(), Parameters}</pre>
 %%           As with notification sink functions, the Parameters are either sent as a list
-%5           or as a <tt>hello_json:json_object()</tt>.
+%%           or as a <tt>hello_json:json_object()</tt>.
 %%         </li>
 %%       </ul>
 %%     </li>
@@ -107,15 +108,18 @@ start_link(URI, Options) ->
 start(URI, Options) ->
     gen_server:start(?MODULE, {URI, Options}, []).
 
+%% A registered server name as in gen_server.
+-type server_name() :: {local, atom()} | {global, atom()}.
+
 %% @doc create and link a named client client
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start_link(atom(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start_link(server_name(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start_link(Name, URI, Options) ->
     gen_server:start_link(Name, ?MODULE, {URI, Options}, []).
 
 %% @doc create a named client
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start(atom(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start(server_name(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start(Name, URI, Options) ->
     gen_server:start(Name, ?MODULE, {URI, Options}, []).
 
@@ -146,7 +150,7 @@ stop_supervised(Client) ->
 
 %% @doc Perform an RPC method call with positional parameters
 -spec call(client(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call(Client, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
+call(Client, Method, ArgList) when is_list(ArgList) ->
     gen_server:call(Client, {call, Method, ArgList}).
 
 %% @doc Perform an RPC method call with named parameters
@@ -222,7 +226,7 @@ client_ctx_notify(#client_notify_ctx{client = Client, notification_sink = Sink},
 ctx_notify1(_Client, undefined, _Notification) ->
     ok;
 ctx_notify1(Client, Pid, #request{method = Method, params = Params}) when is_pid(Pid) orelse is_atom(Pid) ->
-    catch (Pid ! {notification, Client, Method, Params});
+    catch (Pid ! {rpc_notification, Client, Method, Params});
 ctx_notify1(Client, Function, #request{method = Method, params = Params}) when is_function(Function) ->
     spawn(?MODULE, run_notification_sink_function, [Function, Client, Method, Params]).
 
@@ -241,7 +245,7 @@ run_notification_sink_function(Function, Client, Method, Params) ->
     mod :: module(),
     mod_state :: term(),
     options :: #client_options{},
-    next_reqid = 0 :: pos_integer()
+    next_reqid = 0 :: non_neg_integer()
 }).
 
 %% @hidden
@@ -274,7 +278,7 @@ handle_call({call, Method, ArgList}, From, State = #client_state{options = Opts,
     SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
     handle_reply_result(ReqId + 1, State, SendReply);
 handle_call({notification, Method, ArgList}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
-    Request = hello_proto:new_request(Opts#client_options.protocol, undefined, Method, ArgList),
+    Request = hello_proto:new_notification(Opts#client_options.protocol, Method, ArgList),
     ClientCtx = make_reply_ctx(State, From),
     SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
     handle_reply_result(ReqId, State, SendReply);
@@ -333,7 +337,7 @@ do_validate_options(Module, OptionList) ->
             case Module:validate_options(StrippedRest) of
                 {ok, ValidModOptions} ->
                     {ok, GenericOptions, ValidModOptions};
-                    Error ->
+                Error ->
                     Error
             end;
         Error ->

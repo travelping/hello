@@ -24,7 +24,7 @@
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_binary_request/2, run_stateless_binary_request/3]).
 -export([bind_stateful/3, bind_stateless/2, bindings/0]).
--export_type([url/0]).
+-export_type([url/0, decoded_url/0]).
 
 %% deprecated
 -export([run_stateless_request/2]).
@@ -32,6 +32,7 @@
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 -type url() :: string().
+-type decoded_url() :: #ex_uri{}.
 
 % @doc Starts the application and all dependencies.
 % This is useful for debugging purposes.

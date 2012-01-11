@@ -43,6 +43,7 @@
 -include("hello.hrl").
 
 -record(context, {
+    protocol  :: module(),
     transport :: pid(),
     peer      :: term()
 }).
@@ -104,7 +105,7 @@ reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result)
 
 init({TransportPid, Peer, HandlerModule, Args}) ->
     link(TransportPid),
-    Context = #context{transport = TransportPid, peer = Peer},
+    Context = #context{protocol = hello_proto_jsonrpc, transport = TransportPid, peer = Peer},
     State = start_idle_timeout(#state{mod = HandlerModule, context = Context, async_reply_map = gb_trees:empty()}),
     case HandlerModule:init(Context, Args) of
         {ok, HandlerState} ->
@@ -145,7 +146,7 @@ handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map
                     NewARMap = gb_trees:enter(ReqRef, NewIncompleteBatch, ARMap),
                     {noreply, State#state{async_reply_map = NewARMap}}
             end;
-        error ->
+        none ->
             error_logger:warning_report([{hello_stateful_handler, State#state.mod},
                                          {unknown_reply, ReqRef, ReqId, Result}]),
             {noreply, State}
@@ -304,8 +305,9 @@ proto_send(Result, #state{context = Context}) ->
 
 send_notification(#from_context{context = Context}, Method, Params) ->
     send_notification(Context, Method, Params);
-send_notification(Context = #context{}, Method, Params) ->
-    send_binary(Context, hello_json:encode({[{'jsonrpc', <<"2.0">>}, {'method', Method}, {'params', Params}]})).
+send_notification(Context = #context{protocol = Protocol}, Method, Params) ->
+    Request = hello_proto:new_notification(Protocol, Method, Params),
+    send_binary(Context, hello_proto:encode(Request)).
 
 send_binary(#context{transport = TPid, peer = Peer}, Message) when is_binary(Message) ->
     TPid ! {hello_msg, self(), Peer, Message}.
