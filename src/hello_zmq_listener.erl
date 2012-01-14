@@ -23,7 +23,7 @@
 -export([start_link/1]).
 
 -behaviour(hello_binding).
--export([listener_childspec/2, listener_key/1, binding_key/1]).
+-export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -51,13 +51,15 @@ binding_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) -
 binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port}) ->
     ipc_path(Host, Port).
 
+url_for_log(#binding{url = URL}) ->
+    url_for_log1(URL).
+
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(state, {
     context :: erlzmq:erlzmq_context(),
     socket  :: erlzmq:erlzmq_socket(),
     binding :: #binding{},
-    uri     :: binary(),
     lastmsg_peer :: binary()
 }).
 
@@ -68,7 +70,7 @@ init(Binding = #binding{url = URL}) ->
     {ok, Socket}  = erlzmq:socket(Context, [router, {active, true}]),
     case erlzmq:bind(Socket, Endpoint) of
         ok ->
-            State = #state{binding = Binding, socket = Socket, uri = url_for_log(URL), context = Context},
+            State = #state{binding = Binding, socket = Socket, context = Context},
             {ok, State};
         {error, Error} ->
             {stop, Error}
@@ -120,10 +122,10 @@ code_change(_FromVsn, _ToVsn, State) ->
 url_for_zmq(URI = #ex_uri{scheme = "zmq-tcp"}) -> ex_uri:encode(URI#ex_uri{scheme = "tcp"});
 url_for_zmq(URI = #ex_uri{scheme = "zmq-ipc"}) -> ex_uri:encode(URI#ex_uri{scheme = "ipc"}).
 
-url_for_log(URI = #ex_uri{scheme = "zmq-ipc", authority = #ex_uri_authority{host = Host}, path = Path}) ->
+url_for_log1(URI = #ex_uri{scheme = "zmq-ipc", authority = #ex_uri_authority{host = Host}, path = Path}) ->
     WithFullPath = URI#ex_uri{path = ipc_path(Host, Path), authority = #ex_uri_authority{host = ""}},
     list_to_binary(ex_uri:encode(WithFullPath));
-url_for_log(URI) ->
+url_for_log1(URI) ->
     list_to_binary(ex_uri:encode(URI)).
 
 ipc_path(Host, Path) ->

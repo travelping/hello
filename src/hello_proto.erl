@@ -58,21 +58,28 @@ to_binary(Str) when is_binary(Str) -> Str.
 
 -spec batch_response(#batch_request{}, list(#response{})) -> #batch_response{} | ignore.
 batch_response(#batch_request{proto_mod = Mod, errors = Errors}, Responses) ->
-    case [R || R <- Errors ++ Responses, R /= ignore] of
+    case filter_ignore(Responses, filter_ignore(Errors, [])) of
         [] ->
             ignore;
         AllResps ->
             #batch_response{proto_mod = Mod, responses = AllResps}
     end.
 
--spec success_response(#request{}, hello_json:value()) -> #response{}.
+filter_ignore(Resps, OuterAcc) ->
+    lists:foldl(fun (ignore, Acc) -> Acc;
+                    (Resp, Acc)   -> [Resp | Acc]
+                end, OuterAcc, Resps).
+
+-spec success_response(#request{}, hello_json:value()) -> #response{} | ignore.
+success_response(#request{reqid = undefined}, _Result) ->
+    ignore;
 success_response(Req, Result) ->
     #response{proto_mod  = Req#request.proto_mod,
               proto_data = Req#request.proto_data,
               reqid      = Req#request.reqid,
               result     = Result}.
 
--spec error_response(#request{}, error_reply()) -> #error{}.
+-spec error_response(#request{}, error_reply()) -> #error{} | ignore.
 error_response(Req, {ErrorCode, ErrorMsg}) ->
     error_response(Req, ErrorCode, ErrorMsg);
 error_response(Req, {ErrorCode, ErrorMsg, ErrorData}) ->
@@ -81,12 +88,14 @@ error_response(Req, ErrorCode) ->
     error_response(Req, ErrorCode, undefined).
 
 %% @equiv error_response(Req, Code, Msg, undefined)
--spec error_response(#request{}, error_code(), error_message()) -> #error{}.
+-spec error_response(#request{}, error_code(), error_message()) -> #error{} | ignore.
 error_response(Req, Code, Msg) ->
     error_response(Req, Code, Msg, undefined).
 
 %% @doc Creates a response object that represents an error response to the given request.
--spec error_response(#request{}, error_code(), error_message(), error_data()) -> #error{}.
+-spec error_response(#request{}, error_code(), error_message(), error_data()) -> #error{} | ignore.
+error_response(#request{reqid = undefined}, _Code, _Msg, _Data) ->
+    ignore;
 error_response(#request{proto_mod = Mod, proto_data = ProtoData, reqid = ReqId}, Code, Msg, Data) ->
     Mod:error_response(ProtoData, ReqId, Code, Msg, Data).
 
@@ -100,7 +109,7 @@ mime_type(Mod) when is_atom(Mod)     -> Mod:mime_type().
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
--spec encode(request() | response()) -> binary().
+-spec encode(request() | response() | ignore) -> binary().
 encode(Req = #request{proto_mod = Mod}) ->
     Mod:encode(Req);
 encode(Req = #batch_request{proto_mod = Mod}) ->
@@ -110,12 +119,19 @@ encode(Resp = #response{proto_mod = Mod}) ->
 encode(Resp = #error{proto_mod = Mod}) ->
     Mod:encode(Resp);
 encode(Resp = #batch_response{proto_mod = Mod}) ->
-    Mod:encode(Resp).
+    Mod:encode(Resp);
+encode(ignore) ->
+    <<>>.
 
 -spec decode(module() | request(), binary()) -> request() | response() | {proto_reply, response()}.
-decode(Mod, Binary) when is_atom(Mod) ->
-    Mod:decode(Binary);
-decode(#request{proto_mod = Mod}, Binary) ->
-    Mod:decode(Binary);
-decode(#batch_request{proto_mod = Mod}, Binary) ->
-    Mod:decode(Binary).
+decode(#request{proto_mod = Mod}, Message) -> decode1(Mod, Message);
+decode(#batch_request{proto_mod = Mod}, Message) -> decode1(Mod, Message);
+decode(Mod, Message) when is_atom(Mod) -> decode1(Mod, Message).
+
+decode1(Mod, Binary) ->
+    case (catch Mod:decode(Binary)) of
+        {'EXIT', _Error} ->
+            {proto_reply, Mod:error_response(Mod:defaults(), null, parse_error, undefined, undefined)};
+        Result ->
+            Result
+    end.

@@ -46,18 +46,14 @@ start() ->
 
 start(_Type, _StartArgs) ->
     %% create the log dir
-    {ok, LogDir}     = application:get_env(hello, request_log_dir),
-    ok               = filelib:ensure_dir(filename:join(LogDir, ".")),
+    {ok, LogDir} = application:get_env(hello, request_log_dir),
+    ok = filelib:ensure_dir(filename:join(LogDir, ".")),
     {ok, Supervisor} = hello_supervisor:start_link(),
+    ok = hello_request_log:open_bad_requests(Supervisor),
     {ok, Supervisor, undefined}.
 
 stop(_) ->
-    case application:get_env(hello, status_ipc) of
-        {ok, StatusIPC} when is_list(StatusIPC) ->
-            file:delete(StatusIPC);
-        _ ->
-            ok
-    end.
+    ok.
 
 bind_stateful(URL, CallbackModule, Args) ->
     bind_uri(stateful, URL, CallbackModule, Args).

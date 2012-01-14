@@ -34,13 +34,16 @@
     responses  :: list(#response{} | #error{})
 }).
 
+%% TODO: get rid of some of those fields
 -record(binding, {
     pid           :: pid(),
     url           :: hello:decoded_url(),
+    log_url       :: binary(),
     host          :: string(),
     port          :: pos_integer(),
     ip            :: inet:ip_address(),
     path          :: [binary()],
+    protocol      :: module(),
     listener_mod  :: module(),
     callback_mod  :: module(),
     callback_type :: stateful | stateless,

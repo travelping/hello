@@ -62,8 +62,8 @@ behaviour_info(_Other) ->
     undefined.
 
 -spec start_link(#binding{}, term(), pid()) -> {ok, pid()}.
-start_link(#binding{callback_mod = Mod, callback_args = Args}, Peer, Transport) ->
-    gen_server:start_link(?MODULE, {Transport, Peer, Mod, Args}, []).
+start_link(#binding{callback_mod = Mod, callback_args = Args, log_url = LogURL}, Peer, Transport) ->
+    gen_server:start_link(?MODULE, {Transport, Peer, LogURL, Mod, Args}, []).
 
 %% @private
 -spec incoming_message(pid(), binary()) -> ok.
@@ -97,19 +97,21 @@ reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result)
     mod                     :: module(),
     mod_state               :: term(),
     async_reply_map         :: gb_tree(),
+    log_url                 :: binary(),
     idle_timer              :: term(), %% the current timer
     idle_timeout_ref        :: reference(),
     idle_timeout = infinity :: timeout(),
     stopped_because_idle = false :: boolean()
 }).
 
-init({TransportPid, Peer, HandlerModule, Args}) ->
+init({TransportPid, Peer, LogURL, HandlerModule, Args}) ->
     link(TransportPid),
     Context = #context{protocol = hello_proto_jsonrpc, transport = TransportPid, peer = Peer},
-    State = start_idle_timeout(#state{mod = HandlerModule, context = Context, async_reply_map = gb_trees:empty()}),
+    State0 = #state{mod = HandlerModule, log_url = LogURL, context = Context, async_reply_map = gb_trees:empty()},
+    State1 = start_idle_timeout(State0),
     case HandlerModule:init(Context, Args) of
         {ok, HandlerState} ->
-            {ok, State#state{mod_state = HandlerState}}
+            {ok, State1#state{mod_state = HandlerState}}
     end.
 
 handle_cast({set_idle_timeout, Timeout}, State) ->
@@ -126,19 +128,22 @@ handle_cast({incoming_message, Message}, State0) ->
         #response{} ->
             {noreply, State};
         {proto_reply, Response} ->
+            io:format("~p~n", [{badrequest, Message, Response}]),
+            hello_request_log:bad_request(State#state.mod, self(), State#state.log_url, Message, Response),
             proto_send(Response, State),
             {noreply, State}
     end;
 handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map = ARMap}) ->
     case gb_trees:lookup(ReqRef, ARMap) of
         {value, {incomplete_request, Req}} ->
-            proto_send(to_response_record(Result, Req), State),
+            Resp = to_response_record(Result, Req),
+            proto_send_log(Req, Resp, State),
             {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, ARMap)}};
         {value, {incomplete_batch, BatchReq = #batch_request{requests = Reqs}, Responses}} ->
             case lists:partition(fun (#request{reqid = Id}) -> Id == ReqId end, Reqs) of
                 {[LastReq], []} ->
                     BatchResp = hello_proto:batch_response(BatchReq, [to_response_record(Result, LastReq) | Responses]),
-                    proto_send(BatchResp, State),
+                    proto_send_log(BatchReq, BatchResp, State),
                     {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, ARMap)}};
                 {[Req], StillWaiting} ->
                     NewBatchReq = BatchReq#batch_request{requests = StillWaiting},
@@ -188,12 +193,12 @@ code_change(_FromVsn, _ToVsn, State) ->
 do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
     case hello_validate:find_method(Mod:method_info(ModState), Req#request.method) of
         undefined ->
-            proto_send(hello_proto:error_response(Req, method_not_found), State),
+            proto_send_log(Req, hello_proto:error_response(Req, method_not_found), State),
             {noreply, State};
         ValidatedMethod = #rpc_method{name = MethodName} ->
             case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
                 {error, Msg} ->
-                    proto_send(hello_proto:error_response(Req, invalid_params, Msg), State),
+                    proto_send_log(Req, hello_proto:error_response(Req, invalid_params, Msg), State),
                     {noreply, State};
                 {ok, ValidatedParams} ->
                     ReqRef  = make_ref(),
@@ -201,15 +206,16 @@ do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
                     case Mod:handle_request(Context, MethodName, ValidatedParams, ModState) of
                         %% with reply
                         {reply, Reply, NewModState} ->
-                            proto_send(to_response_record(Reply, Req), State),
+                            proto_send_log(Req, to_response_record(Reply, Req), State),
                             {noreply, State#state{mod_state = NewModState}};
                         {stop, Reason, Reply, NewModState} ->
-                            proto_send(to_response_record(Reply, Req), State),
+                            proto_send_log(Req, to_response_record(Reply, Req), State),
                             {stop, Reason, State#state{mod_state = NewModState}};
                         %% without reply
                         {noreply, NewModState} ->
                             case Req#request.reqid of
                                 undefined ->
+                                    proto_send_log(Req, ignore, State),
                                     % no need to wait for an async reply if request is a notification
                                     {noreply, State#state{mod_state = NewModState}};
                                 _ ->
@@ -226,10 +232,10 @@ do_batch(BatchReq = #batch_request{requests = Requests}, State = #state{async_re
     BatchRef = make_ref(),
     case do_batch_requests(Requests, BatchRef, State, [], []) of
         {stop, Reason, Responses, NewState} ->
-            proto_send(hello_proto:batch_response(BatchReq, Responses), NewState),
+            proto_send_log(BatchReq, hello_proto:batch_response(BatchReq, Responses), NewState),
             {stop, Reason, NewState};
         {reply, Responses, [], NewState} ->
-            proto_send(hello_proto:batch_response(BatchReq, Responses), NewState),
+            proto_send_log(BatchReq, hello_proto:batch_response(BatchReq, Responses), NewState),
             {noreply, NewState};
         {reply, Responses, AsyncReplies, NewState} ->
             StoredReq = BatchReq#batch_request{requests = AsyncReplies},
@@ -297,6 +303,11 @@ to_response_record({ok, Reply}, Request) ->
     hello_proto:success_response(Request, Reply);
 to_response_record({error, Error}, Request) ->
     hello_proto:error_response(Request, Error).
+
+-spec proto_send_log(#state{}, hello_proto:request(), hello_proto:response()) -> any().
+proto_send_log(Req, Resp, State) ->
+    hello_request_log:request(State#state.mod, self(), State#state.log_url, Req, Resp),
+    proto_send(Resp, State).
 
 proto_send(ignore, _State) ->
     ok;

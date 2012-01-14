@@ -21,7 +21,7 @@
 % @private
 -module(hello_http_listener).
 -behaviour(hello_binding).
--export([listener_childspec/2, listener_key/1, binding_key/1]).
+-export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 -export([lookup_binding/4, unslash/1, default_port/1, server_header/0]).
 
 -behaviour(cowboy_http_handler).
@@ -50,6 +50,9 @@ listener_key(#binding{ip = IP, port = Port}) ->
 
 binding_key(#binding{host = Host, port = Port, path = Path}) ->
     {list_to_binary(Host), default_port(Port), unslash(Path)}.
+
+url_for_log(#binding{url = URL}) ->
+    list_to_binary(ex_uri:encode(URL)).
 
 %% --------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)

@@ -97,11 +97,10 @@
 
 -module(hello_stateless_handler).
 -export([behaviour_info/1]).
--export([run_binary_request/3]).
+-export([handler/7, run_binary_request/3]).
 
 -compile({no_auto_import, [register/1, register/2, unregister/1]}).
 
-%% @headerfile hello.hrl
 -include("hello.hrl").
 -include("internal.hrl").
 
@@ -110,15 +109,38 @@ behaviour_info(callbacks) -> [{handle_request,2}, {method_info,0}, {param_info,1
 behaviour_info(_Other)    -> undefined.
 
 %% @private
--spec run_binary_request(module(), module(), binary()) -> binary().
-run_binary_request(Protocol, CallbackModule, Message) ->
-    case hello_proto:decode(Protocol, Message) of
+%% @doc stateless handler process function for hello_binding
+-spec handler(pid(), term(), term(), module(), binary(), module(), binary()) -> any().
+handler(Pid, HandlerId, Peer, Protocol, Endpoint, CallbackModule, Message) ->
+    case run_binary_request(Protocol, CallbackModule, Message) of
+        {ok, Request, Response} ->
+            hello_request_log:request(CallbackModule, self(), Endpoint, Request, Response),
+            BinResp = hello_proto:encode(Response),
+            Pid ! {hello_msg, HandlerId, Peer, BinResp};
+        {proto_reply, Response} ->
+            hello_request_log:bad_request(CallbackModule, self(), Endpoint, Message, Response),
+            BinResp = hello_proto:encode(Response),
+            Pid ! {hello_msg, HandlerId, Peer, BinResp};
+        ignore ->
+            ignore
+    end,
+    Pid ! {hello_closed, HandlerId, Peer}.
+
+%% @private
+-spec run_binary_request(module(), module(), binary()) ->
+        {ok, hello_proto:request(), hello_proto:response()} | {error, hello_proto:response()}.
+run_binary_request(Protocol, CallbackModule, BinRequest) ->
+    case hello_proto:decode(Protocol, BinRequest) of
         Req = #request{} ->
-            hello_proto:encode(do_single_request(CallbackModule, Req));
+            {ok, Req, do_single_request(CallbackModule, Req)};
         Req = #batch_request{requests = GoodReqs} ->
-            hello_proto:encode(hello_proto:batch_response(Req, [do_single_request(CallbackModule, R) || R <- GoodReqs]));
-        _ ->
-            hello_proto:encode(hello_proto:error_response(Protocol, invalid_request))
+            {ok, Req, hello_proto:batch_response(Req, [do_single_request(CallbackModule, R) || R <- GoodReqs])};
+        ProtoReply = {proto_reply, _Resp} ->
+            ProtoReply;
+        #response{} ->
+            ignore;
+        #batch_response{} ->
+            ignore
     end.
 
 do_single_request(Mod, Req = #request{method = MethodName}) ->
