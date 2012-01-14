@@ -118,7 +118,7 @@ encode_json(R = #error{proto_data = #jsonrpc{version = 2}}) ->
         Data ->
             ErrorObj = {[{<<"data">>, Data}, {<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]}
     end,
-    {[{<<"result">>, null}, {<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}, {<<"jsonrpc">>, <<"2.0">>}]};
+    {[{<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}, {<<"jsonrpc">>, <<"2.0">>}]};
 encode_json(#batch_response{responses = Resps}) ->
     [encode_json(R) || R <- Resps];
 
