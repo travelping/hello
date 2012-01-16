@@ -302,7 +302,11 @@ stop_in_batch(Reason, State, Responses, [LeftoverReq | Rest]) ->
 to_response_record({ok, Reply}, Request) ->
     hello_proto:success_response(Request, Reply);
 to_response_record({error, Error}, Request) ->
-    hello_proto:error_response(Request, Error).
+    hello_proto:error_response(Request, Error);
+to_response_record({error, Code, Message}, Request) ->
+    hello_proto:error_response(Request, {Code, Message});
+to_response_record({error, Code, Message, Data}, Request) ->
+    hello_proto:error_response(Request, {Code, Message, Data}).
 
 -spec proto_send_log(#state{}, hello_proto:request(), hello_proto:response()) -> any().
 proto_send_log(Req, Resp, State) ->
