@@ -80,13 +80,17 @@ http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts
         case ibrowse:send_req(URL, Headers, Method, EncRequest, Opts) of
             {ok, "200", _, Body} ->
                 Body;
+            {ok, "201", _, Body} ->
+                Body;
+            {ok, "202", _, Body} ->
+                Body;
 
             %% gotcha, those clauses don't return
             {ok, HttpCode, _, _} ->
-                hello_client:client_ctx_reply(ClientCtx, {error, {http, list_to_integer(HttpCode)}}),
+                hello_client:client_ctx_reply(ClientCtx, {error, {transport, list_to_integer(HttpCode)}}),
                 exit(normal);
             {error, Reason} ->
-                hello_client:client_ctx_reply(ClientCtx, {error, {http, Reason}}),
+                hello_client:client_ctx_reply(ClientCtx, {error, {transport, Reason}}),
                 exit(normal)
         end,
     ClientReply =

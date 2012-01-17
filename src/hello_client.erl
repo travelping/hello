@@ -23,8 +23,8 @@
 %% public API
 -export([start/2, start_link/2, start/3, start_link/3, stop/1, validate_options/2,
          start_supervised/2, start_supervised/3, stop_supervised/1,
-         call/3, call_np/3, batch_call/2,
-         notify/3, notify_np/3]).
+         call/3, call/4, call_np/3, call_np/4, batch_call/2, batch_call/3,
+         notify/3, notify/4, notify_np/3, notify_np/4]).
 %% deprecated
 -export([notification/3]).
 
@@ -42,7 +42,7 @@
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
--define(TIMEOUT, {timeout, 15000}).
+-define(DEFAULT_TIMEOUT, 10000).
 
 -type client() :: pid() | atom().
 
@@ -54,7 +54,7 @@
 -type start_error() :: {invalid_options, any()} | badscheme | badurl.
 -type standard_error() :: parse_error | invalid_request | method_not_found | invalid_params | internal_error | server_error.
 -type error_code() :: standard_error() | integer().
--type rpc_error() :: {error, {http, term()}} | {error, {error_code(), binary()}}.
+-type rpc_error() :: timeout | {transport, term()} | {error_code(), binary()}.
 
 %% @private
 behaviour_info(callbacks) ->
@@ -151,12 +151,22 @@ stop_supervised(Client) ->
 %% @doc Perform an RPC method call with positional parameters
 -spec call(client(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call(Client, Method, ArgList) when is_list(ArgList) ->
-    gen_server:call(Client, {call, Method, ArgList}).
+    timeout_call(Client, {call, Method, ArgList}, ?DEFAULT_TIMEOUT).
+
+%% @doc Like {@link call/3}, but with a configurable timeout
+-spec call(client(), method(), [hello_json:value()], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
+call(Client, Method, ArgList, Timeout) when is_list(ArgList) ->
+    timeout_call(Client, {call, Method, ArgList}, Timeout).
 
 %% @doc Perform an RPC method call with named parameters
 -spec call_np(client(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call_np(Client, Method, ArgProps) when is_list(ArgProps) ->
-    gen_server:call(Client, {call, Method, {ArgProps}}).
+    timeout_call(Client, {call, Method, {ArgProps}}, ?DEFAULT_TIMEOUT).
+
+%% @doc Like {@link call_np/3}, but with a configurable timeout
+-spec call_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
+call_np(Client, Method, ArgProps, Timeout) when is_list(ArgProps) ->
+    timeout_call(Client, {call, Method, {ArgProps}}, Timeout).
 
 %% @deprecated
 %% @doc Send an RPC notification
@@ -168,20 +178,46 @@ notification(Client, Method, ArgList) ->
 %% @doc Send an RPC notification with positional parameters
 -spec notify(client(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
 notify(Client, Method, Parameters) ->
-    gen_server:call(Client, {notification, Method, Parameters}).
+    timeout_call(Client, {notification, Method, Parameters}, ?DEFAULT_TIMEOUT).
+
+%% @doc Like {@link notify/3}, but with a configurable timeout
+-spec notify(client(), method(), [hello_json:value()], timeout()) -> ok | {error, rpc_error()}.
+notify(Client, Method, Parameters, Timeout) ->
+    timeout_call(Client, {notification, Method, Parameters}, Timeout).
 
 %% @doc Send an RPC notification with named parameters
 -spec notify_np(client(), method(), [{string(), hello_json:value()}]) -> ok | {error, rpc_error()}.
 notify_np(Client, Method, Parameters) ->
-    gen_server:call(Client, {notification, Method, {Parameters}}).
+    timeout_call(Client, {notification, Method, {Parameters}}, ?DEFAULT_TIMEOUT).
+
+%% @doc Like {@link notify_np/3}, but with a configurable timeout
+-spec notify_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> ok | {error, rpc_error()}.
+notify_np(Client, Method, Parameters, Timeout) ->
+    timeout_call(Client, {notification, Method, {Parameters}}, Timeout).
 
 %% @doc Send multiple RPC calls in one request.
 %%   The order of the results in the returned list matches the order of the
 %%   calls in the given Batch.
--spec batch_call(client(), [Call]) -> [{ok, hello_json:value()} | {error, rpc_error()}] when
+-spec batch_call(client(), [Call]) -> timeout | [{ok, hello_json:value()} | {error, rpc_error()}] when
     Call :: {method(), hello_json:json_object() | hello_json:json_array()}.
 batch_call(Client, Batch) ->
-    gen_server:call(Client, {batch_call, Batch}).
+    timeout_call(Client, {batch_call, Batch}, ?DEFAULT_TIMEOUT).
+
+%% @doc Like {@link batch_call/2}, but with a configurable timeout
+-spec batch_call(client(), [Call], timeout()) -> {error, timeout} | [{ok, hello_json:value()} | {error, rpc_error()}] when
+    Call :: {method(), hello_json:json_object() | hello_json:json_array()}.
+batch_call(Client, Batch, Timeout) ->
+    timeout_call(Client, {batch_call, Batch}, Timeout).
+
+timeout_call(Client, Call, infinity) ->
+    gen_server:call(Client, Call, infinity);
+timeout_call(Client, Call, Timeout) ->
+    try
+        gen_server:call(Client, Call, Timeout)
+    catch
+        exit:{timeout, {gen_server, call, _}} ->
+            {error, timeout}
+    end.
 
 %% @doc validate the options for a given client URL
 -spec validate_options(hello:url(), list()) -> ok | {error, string()}.
