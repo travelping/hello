@@ -40,7 +40,7 @@ call(Server, Method, ArgList) ->
 %% @doc Perform an RPC method call.
 -spec call(module(), hello:url(), hello_client:method(), [hello_json:value()]) ->
         {ok, hello_json:value()} | {error, hello_client:rpc_error()}.
-call(Protocol, Server, Method, ArgList) when is_list(ArgList) or is_tuple(ArgList) ->
+call(Protocol, Server, Method, ArgList) when is_list(ArgList) ->
     with_client(Protocol, Server, fun (C) -> hello_client:call(C, Method, ArgList) end).
 
 %% @doc Performs an RPC method call with named parameters (property list).
