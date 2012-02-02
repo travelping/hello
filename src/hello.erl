@@ -119,10 +119,15 @@ bindings() ->
 %   The request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary()) -> binary().
 run_stateless_binary_request(CallbackModule, Message) ->
-    hello_stateless_handler:run_binary_request(hello_proto_jsonrpc, CallbackModule, Message).
+    run_stateless_binary_request(hello_proto_jsonrpc, CallbackModule, Message).
 
 run_stateless_binary_request(Protocol, CallbackModule, Message) ->
-    hello_stateless_handler:run_binary_request(Protocol, CallbackModule, Message).
+    case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, Message) of
+        {ok, _Req, Resp} ->
+            hello_proto:encode(Resp);
+        {error, Resp} ->
+            hello_proto:encode(Resp)
+    end.
 
 % @deprecated
 run_stateless_request(CallbackModule, JSON) ->
