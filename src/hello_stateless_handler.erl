@@ -126,8 +126,10 @@ transport_param(Key, Context) ->
 %%   If you rely on transport parameters, your RPC handler <b>will no longer be transport-agnostic</b>.
 %%   Please take this into consideration when designing your system.
 -spec transport_param(atom(), context(), any()) -> any().
-transport_param(Key, Context, Default) ->
-    proplists:get_value(Key, Context#stateless_context.transport_params, Default).
+transport_param(Key, #stateless_context{transport_params = Params}, Default) ->
+    transport_param(Key, Params, Default);
+transport_param(Key, Params, Default) ->
+    proplists:get_value(Key, Params, Default).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Implementation
