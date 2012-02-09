@@ -39,7 +39,7 @@ listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
 
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
-    Acceptors = 1,
+    Acceptors = 30,
     Transport = cowboy_tcp_transport,
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     Protocol = cowboy_http_protocol,
