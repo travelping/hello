@@ -22,12 +22,9 @@
 -module(hello).
 -behaviour(application).
 -export([start/2, stop/1]).
--export([start/0, run_stateless_binary_request/2, run_stateless_binary_request/3]).
+-export([start/0, run_stateless_binary_request/3, run_stateless_binary_request/4]).
 -export([bind_stateful/3, bind_stateless/2, bindings/0]).
--export_type([url/0, decoded_url/0]).
-
-%% deprecated
--export([run_stateless_request/2]).
+-export_type([url/0, decoded_url/0, transport_params/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -113,22 +110,20 @@ binding_module(_Scheme)   -> error(notsup).
 bindings() ->
     [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello_registry:bindings()].
 
+-type transport_params() :: [{atom(), any()}].
 % @doc Run a single not-yet-decoded RPC request against the given callback module.
-%   This can be used for testing, but please note that the request must be%   given as an encoded binary. It's better to use {@link run_stateless_request/2} for testing.
+%   The request must be given as an encoded binary.
+%   The values in ``TransportContextParams'' is inserted into the context of the request.
 %
 %   The request is <b>not</b> logged.
--spec run_stateless_binary_request(module(), binary()) -> binary().
-run_stateless_binary_request(CallbackModule, Message) ->
-    run_stateless_binary_request(hello_proto_jsonrpc, CallbackModule, Message).
+-spec run_stateless_binary_request(module(), binary(), transport_params()) -> binary().
+run_stateless_binary_request(CallbackModule, Message, TransportContextParams) ->
+    run_stateless_binary_request(hello_proto_jsonrpc, CallbackModule, Message, TransportContextParams).
 
-run_stateless_binary_request(Protocol, CallbackModule, Message) ->
-    case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, Message) of
+run_stateless_binary_request(Protocol, CallbackModule, Message, TransportProperties) ->
+    case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, Message, TransportProperties) of
         {ok, _Req, Resp} ->
             hello_proto:encode(Resp);
         {error, Resp} ->
             hello_proto:encode(Resp)
     end.
-
-% @deprecated
-run_stateless_request(CallbackModule, JSON) ->
-    run_stateless_binary_request(CallbackModule, hello_json:encode(JSON)).

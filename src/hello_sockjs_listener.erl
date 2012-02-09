@@ -21,12 +21,12 @@
 % @private
 -module(hello_sockjs_listener).
 -behaviour(hello_binding).
--export([listener_childspec/2, listener_key/1, binding_key/1]).
+-export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 
 -behaviour(cowboy_http_handler).
 -export([init/3, handle/2, terminate/2]).
 
--export([session_init/3]).
+-export([session_init/4]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("internal.hrl").
@@ -54,6 +54,9 @@ listener_key(#binding{ip = IP, port = Port}) ->
 
 binding_key(#binding{host = Host, port = Port, path = Path}) ->
     {list_to_binary(Host), hello_http_listener:default_port(Port), hello_http_listener:unslash(Path)}.
+
+url_for_log(Binding) ->
+    hello_http_listener:url_for_log(Binding).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
@@ -106,7 +109,7 @@ dispatch(_Binding, Req, 'GET', [<<"iframe", IFRest/binary>>]) ->
 dispatch(Binding, Req, 'POST', [_Server, SessionID, <<"xhr">>]) ->
     {CORS, Req2} = cors_headers_and_jsessionid(Req),
     case lookup_session(SessionID) of
-        {ok, SessionPid, Handler} ->
+        {ok, SessionPid, _Handler} ->
             case session_connect(SessionPid, self()) of
                 ok ->
                     SessionMsg = session_get_final_message(SessionPid),
@@ -115,8 +118,9 @@ dispatch(Binding, Req, 'POST', [_Server, SessionID, <<"xhr">>]) ->
                     xhr_reply(already_connected, CORS, Req2)
             end;
         {error, not_found} ->
-            {ok, _SessionPid} = start_session(Binding, SessionID),
-            xhr_reply(started, CORS, Req2)
+            {TransportParams, Req3} = hello_http_listener:req_transport_params(Req2),
+            {ok, _SessionPid} = start_session(Binding, SessionID, TransportParams),
+            xhr_reply(started, CORS, Req3)
     end;
 dispatch(_Binding, Req, 'POST', [_Server, SessionID, <<"xhr_send">>]) ->
     case lookup_session(SessionID) of
@@ -170,8 +174,8 @@ cache_headers(ETag) ->
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Session Process API
-start_session(Binding, SessionID) ->
-    SessionPid = spawn(?MODULE, session_init, [Binding, self(), SessionID]),
+start_session(Binding, SessionID, TransportParams) ->
+    SessionPid = spawn(?MODULE, session_init, [Binding, self(), SessionID, TransportParams]),
     receive
         {started, SessionPid} ->
             {ok, SessionPid};
@@ -205,8 +209,8 @@ session_get_final_message(SessionPid) ->
 %% -- Session Process Implementation
 -record(session_state, {handler :: hello_binding:handler(), queue = queue:new()}).
 
-session_init(Binding, Conn, SessionID) ->
-    Handler = hello_binding:start_handler(Binding, SessionID, self()),
+session_init(Binding, Conn, SessionID, TransportParams) ->
+    Handler = hello_binding:start_handler(Binding, SessionID, self(), TransportParams),
     case hello_registry:register({sockjs_session, SessionID}, Handler, self()) of
         ok ->
             Conn ! {started, self()},

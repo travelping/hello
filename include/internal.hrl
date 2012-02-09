@@ -49,3 +49,5 @@
     callback_type :: stateful | stateless,
     callback_args :: term()
 }).
+
+-define(INCOMING_MSG_MSG, '$hello_incoming_message').

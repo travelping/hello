@@ -22,7 +22,9 @@
 -module(hello_http_listener).
 -behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
--export([lookup_binding/4, unslash/1, default_port/1, server_header/0]).
+
+%% http utils used by other listeners
+-export([lookup_binding/4, unslash/1, default_port/1, server_header/0, req_transport_params/1]).
 
 -behaviour(cowboy_http_handler).
 -export([init/3, handle/2, terminate/2]).
@@ -37,7 +39,7 @@ listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
 
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
-    Acceptors = 100,
+    Acceptors = 1,
     Transport = cowboy_tcp_transport,
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     Protocol = cowboy_http_protocol,
@@ -69,12 +71,13 @@ handle(Req, _State) ->
             {Host, Req5} = cowboy_http_req:raw_host(Req4),
             case lookup_binding(?MODULE, Host, Port, PathList) of
                 {ok, Binding} ->
-                    Handler = hello_binding:start_handler(Binding, Peer, self()),
-                    {ok, Body, Req6} = cowboy_http_req:body(Req5),
+                    {TransportParams, Req6} = req_transport_params(Req5),
+                    Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
+                    {ok, Body, Req7} = cowboy_http_req:body(Req6),
                     hello_binding:incoming_message(Handler, Body),
-                    Req7 = cowboy_http_req:compact(Req6),
-                    {ok, Req8} = cowboy_http_req:chunked_reply(200, json_headers(), Req7),
-                    http_chunked_loop(Handler, Req8);
+                    Req8 = cowboy_http_req:compact(Req7),
+                    {ok, Req9} = cowboy_http_req:chunked_reply(200, json_headers(), Req8),
+                    http_chunked_loop(Handler, Req9);
                 {error, not_found} ->
                     {ok, Req6} = cowboy_http_req:reply(404, server_header(), Req5),
                     {ok, Req6, undefined}
@@ -104,6 +107,18 @@ json_headers() ->
 server_header() ->
     {ok, Vsn} = application:get_key(hello, vsn),
     [{'Server', erlang:list_to_binary("hello/" ++ Vsn)}].
+
+req_transport_params(Req1) ->
+    {{PeerIP, PeerPort}, Req2} = cowboy_http_req:peer(Req1),
+    {ProxyPeerIP, Req3} = cowboy_http_req:peer_addr(Req2),
+    {QSVals, Req4} = cowboy_http_req:qs_vals(Req3),
+    {Cookies, Req5} = cowboy_http_req:cookies(Req4),
+    TransportParams = [{peer_ip, PeerIP},
+                       {peer_port, PeerPort},
+                       {real_peer_ip, ProxyPeerIP},
+                       {query_params, QSVals},
+                       {cookie_params, Cookies}],
+    {TransportParams, Req5}.
 
 lookup_binding(Module, Host, Port, PathList) ->
     case hello_registry:lookup_binding(Module, {Host, Port, PathList}) of

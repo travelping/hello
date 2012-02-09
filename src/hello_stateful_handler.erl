@@ -32,9 +32,14 @@
 %
 % -callback terminate(context(), Reason :: term(), State :: term()) -> term().
 
+%% @doc Stateful RPC handler behaviour.
 -module(hello_stateful_handler).
--export([behaviour_info/1, incoming_message/2]).
--export([start_link/3, set_idle_timeout/1, set_idle_timeout/2, notify/3, notify_np/3, reply/2]).
+-export([behaviour_info/1, set_idle_timeout/1, set_idle_timeout/2, notify/3,
+         notify_np/3, reply/2, transport_param/2, transport_param/3]).
+-export_type([context/0, from_context/0]).
+
+%% from listener
+-export([start_link/4]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -44,8 +49,9 @@
 
 -record(context, {
     protocol  :: module(),
+    peer      :: term(),
     transport :: pid(),
-    peer      :: term()
+    transport_params :: hello:transport_params()
 }).
 
 -record(from_context, {
@@ -55,39 +61,77 @@
     context     :: #context{}
 }).
 
+-opaque context() :: #context{}.
+-opaque from_context() :: #from_context{}.
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- Callback Module API
 -spec behaviour_info(callbacks) -> [{atom(), integer()}].
 behaviour_info(callbacks) ->
     [{method_info,1}, {param_info,2}, {init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
 behaviour_info(_Other) ->
     undefined.
 
--spec start_link(#binding{}, term(), pid()) -> {ok, pid()}.
-start_link(#binding{callback_mod = Mod, callback_args = Args, log_url = LogURL}, Peer, Transport) ->
-    gen_server:start_link(?MODULE, {Transport, Peer, LogURL, Mod, Args}, []).
-
-%% @private
--spec incoming_message(pid(), binary()) -> ok.
-incoming_message(HandlerPid, Message) ->
-    gen_server:cast(HandlerPid, {incoming_message, Message}).
-
+%% @equiv set_idle_timeout(self(), Timeout)
+-spec set_idle_timeout(timeout()) -> ok.
 set_idle_timeout(Timeout) ->
     set_idle_timeout(self(), Timeout).
 
+%% @doc Set the idle timeout of a handler.
+%%   The handler will exit when no request arrives before the given timeout.
+%%   This only needs to be set once, any incoming request will restart the timer.
+-spec set_idle_timeout(pid(), timeout()) -> ok.
 set_idle_timeout(HandlerPid, Timeout) ->
     gen_server:cast(HandlerPid, {set_idle_timeout, Timeout}).
 
+%% @doc Send an RPC notification with positional parameters to the client.
+-spec notify(context() | from_context(), hello_client:method(), [hello_json:value()]) -> ok.
 notify(Context, Method, Args) when is_list(Args) ->
     send_notification(Context, Method, Args).
 
+%% @doc Send an RPC notification with named parameters to the client.
+-spec notify_np(context() | from_context(), hello_client:method(), [{string(), hello_json:value()}] | hello_json:json_object()) -> ok.
 notify_np(Context, Method, Args) when is_list(Args) ->
     notify_np(Context, Method, {Args});
 notify_np(Context, Method, Args = {_}) ->
     send_notification(Context, Method, Args).
 
+%% @doc Send an asynchronous reply to an RPC request.
+%%   If you want to use asynchronous replies,  your handler module must
+%%   return ``{noreply, State}'' from ``handle_request/4''.
+%%   ``reply/2'' can be called from any process, not just the handler process.
+-spec reply(from_context(), Reply) -> ok
+    when Reply :: {ok, hello_json:value()} | Error,
+         Error :: {error, ErrorCode} | {error, ErrorCode, ErrorMessage} | {error, ErrorCode, ErrorMessage, ErrorData},
+         ErrorCode :: integer(),
+         ErrorMessage :: binary(),
+         ErrorData :: hello_json:value().
 reply(#from_context{reqid = undefined}, _Result) ->
     ok;
 reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result) ->
     gen_server:cast(Pid, {async_reply, ReqRef, ReqId, Result}).
+
+%% @equiv transport_param(Key, Context, undefined)
+-spec transport_param(context() | from_context(), atom()) -> any().
+transport_param(Key, Context) ->
+    transport_param(Key, Context, undefined).
+
+%% @doc Get the value of a transport parameter.
+%%   The list of supported transport parameters will vary between transport implementations.<br/>
+%%   If you rely on transport parameters, your RPC handler <b>will no longer be transport-agnostic</b>.
+%%   Please take this into consideration when designing your system.
+-spec transport_param(Key::atom(), context() | from_context(), Default::any()) -> any().
+transport_param(Key, #context{transport_params = Params}, Default) ->
+    proplists:get_value(Key, Params, Default);
+transport_param(Key, #from_context{context = #context{transport_params = Params}}, Default) ->
+    proplists:get_value(Key, Params, Default).
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- for listener communication
+%% @private
+-spec start_link(#binding{}, term(), pid(), hello:transport_params()) -> {ok, pid()}.
+start_link(Binding, Peer, Transport, TransportParams) ->
+    gen_server:start_link(?MODULE, {Binding, Peer, Transport, TransportParams}, []).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -104,35 +148,27 @@ reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result)
     stopped_because_idle = false :: boolean()
 }).
 
-init({TransportPid, Peer, LogURL, HandlerModule, Args}) ->
+%% @hidden
+init({Binding, Peer, TransportPid, TransportParams}) ->
     link(TransportPid),
-    Context = #context{protocol = hello_proto_jsonrpc, transport = TransportPid, peer = Peer},
-    State0 = #state{mod = HandlerModule, log_url = LogURL, context = Context, async_reply_map = gb_trees:empty()},
+    CallbackMod = Binding#binding.callback_mod,
+    Context = #context{protocol = hello_proto_jsonrpc,
+                       peer = Peer,
+                       transport = TransportPid,
+                       transport_params = TransportParams},
+    State0 = #state{mod = CallbackMod,
+                    log_url = Binding#binding.log_url,
+                    context = Context,
+                    async_reply_map = gb_trees:empty()},
     State1 = start_idle_timeout(State0),
-    case HandlerModule:init(Context, Args) of
+    case CallbackMod:init(Context, Binding#binding.callback_args) of
         {ok, HandlerState} ->
             {ok, State1#state{mod_state = HandlerState}}
     end.
 
+%% @hidden
 handle_cast({set_idle_timeout, Timeout}, State) ->
     {noreply, reset_idle_timeout(State#state{idle_timeout = Timeout})};
-handle_cast({incoming_message, Message}, State0) ->
-    State = reset_idle_timeout(State0),
-    case hello_proto:decode(hello_proto_jsonrpc, Message) of
-        Req = #request{} ->
-            do_single_request(Req, State);
-        Req = #batch_request{} ->
-            do_batch(Req, State);
-        #error{} ->
-            {noreply, State};
-        #response{} ->
-            {noreply, State};
-        {proto_reply, Response} ->
-            io:format("~p~n", [{badrequest, Message, Response}]),
-            hello_request_log:bad_request(State#state.mod, self(), State#state.log_url, Message, Response),
-            proto_send(Response, State),
-            {noreply, State}
-    end;
 handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map = ARMap}) ->
     case gb_trees:lookup(ReqRef, ARMap) of
         {value, {incomplete_request, Req}} ->
@@ -157,15 +193,32 @@ handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map
             {noreply, State}
     end.
 
+%% @hidden
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
+%% @hidden
 handle_info({?IDLE_TIMEOUT_MSG, Ref}, State = #state{idle_timeout_ref = Ref}) ->
     {stop, normal, State#state{stopped_because_idle = true}};
 handle_info({?IDLE_TIMEOUT_MSG, _OtherRef}, State) ->
     %% ignore timeouts other than the current one
     {noreply, State};
-
+handle_info({?INCOMING_MSG_MSG, Message}, State0) ->
+    State = reset_idle_timeout(State0),
+    case hello_proto:decode(hello_proto_jsonrpc, Message) of
+        Req = #request{} ->
+            do_single_request(Req, State);
+        Req = #batch_request{} ->
+            do_batch(Req, State);
+        #error{} ->
+            {noreply, State};
+        #response{} ->
+            {noreply, State};
+        {proto_reply, Response} ->
+            hello_request_log:bad_request(State#state.mod, self(), State#state.log_url, Message, Response),
+            proto_send(Response, State),
+            {noreply, State}
+    end;
 handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
     case Mod:handle_info(Context, InfoMsg, ModState) of
         {noreply, NewModState} ->
@@ -174,6 +227,7 @@ handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = C
             {stop, Reason, State#state{mod_state = NewModState}}
     end.
 
+%% @hidden
 terminate(Reason, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
     %% there is a nasty error report if we exit with reason /= normal, that's why we fake the reason for idle_timeout
     case {Reason, State#state.stopped_because_idle} of
@@ -185,6 +239,7 @@ terminate(Reason, State = #state{mod = Mod, mod_state = ModState, context = Cont
     send_closed(Context).
 
 %% TODO: code_change
+%% @hidden
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 

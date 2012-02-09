@@ -86,7 +86,8 @@ handle_info({zmq, Socket, Message, []}, State = #state{binding = Binding, socket
     %% second message part is the actual request
     case hello_binding:lookup_handler(Binding, Peer) of
         {error, not_found} ->
-            HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self()),
+            TransportParams = [{peer_identity, Peer}],
+            HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self(), TransportParams),
             hello_binding:incoming_message(HandlerPid, Message);
         {ok, HandlerPid} ->
             hello_binding:incoming_message(HandlerPid, Message)

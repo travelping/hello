@@ -26,56 +26,41 @@
 % Binding process
 -export([start_link/5, stop/1, stop/2, behaviour_info/1]).
 % API for listeners
--export([start_registered_handler/3, start_handler/3, incoming_message/2, lookup_handler/2]).
+-export([start_registered_handler/4, start_handler/4, incoming_message/2, lookup_handler/2]).
+-export_type([peer/0, handler/0]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("internal.hrl").
 
--export_type([handler/0]).
 -type peer() :: term().
-
--record(stateless, {
-    handler_mod :: module(),
-    peer        :: peer(),
-    protocol    :: module(),
-    endpoint    :: binary()
-}).
-
--opaque handler() :: pid() | #stateless{}.
+-type handler() :: pid().
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
--spec start_registered_handler(#binding{}, peer(), pid()) -> term().
-start_registered_handler(Binding, Peer, Transport) ->
+-spec start_registered_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
+start_registered_handler(Binding, Peer, Transport, TransportParams) ->
     case lookup_handler(Binding, Peer) of
         {error, not_found} ->
-            Handler = start_handler(Binding, Peer, Transport),
+            Handler = start_handler(Binding, Peer, Transport, TransportParams),
             register_handler(Binding#binding.pid, Handler, Peer),
             Handler;
         {ok, Handler} ->
             Handler
     end.
 
--spec start_handler(#binding{}, peer(), pid()) -> handler().
-start_handler(Binding, Peer, Transport) ->
+-spec start_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
+start_handler(Binding, Peer, Transport, TransportParams) ->
     case Binding#binding.callback_type of
         stateful ->
-            {ok, Pid} = hello_stateful_handler:start_link(Binding, Peer, Transport),
+            {ok, Pid} = hello_stateful_handler:start_link(Binding, Peer, Transport, TransportParams),
             Pid;
         stateless ->
-            #stateless{handler_mod = Binding#binding.callback_mod,
-                       peer = Peer,
-                       protocol = Binding#binding.protocol,
-                       endpoint = Binding#binding.log_url}
+            spawn_link(hello_stateless_handler, handler, [Binding, Peer, Transport, TransportParams])
     end.
 
--spec incoming_message(handler(), binary()) -> any().
-incoming_message(HandlerId = #stateless{handler_mod = Mod, peer = Peer}, Message) ->
-    spawn(hello_stateless_handler, handler, [self(), HandlerId, Peer,
-                                             HandlerId#stateless.protocol,
-                                             HandlerId#stateless.endpoint, Mod, Message]);
+-spec incoming_message(handler(), binary()) -> ok.
 incoming_message(Pid, Message) ->
-    hello_stateful_handler:incoming_message(Pid, Message).
+    Pid ! {?INCOMING_MSG_MSG, Message}, ok.
 
 -spec lookup_handler(#binding{}, peer()) -> {ok, handler()} | {error, not_found}.
 lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
@@ -85,14 +70,12 @@ lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
         Error ->
             Error
     end;
-lookup_handler(#binding{callback_mod = CallbackMod, protocol = ProtoMod, log_url = LogURL}, Peer) ->
-    {ok, #stateless{handler_mod = CallbackMod, protocol = ProtoMod, endpoint = LogURL, peer = Peer}}.
+lookup_handler(#binding{callback_type = stateless}, _Peer) ->
+    {error, not_found}.
 
 -spec register_handler(pid(), handler(), peer()) -> ok | {already_registered, pid(), peer()}.
-register_handler(BindingPid, Pid, Peer) when is_pid(Pid) ->
-    hello_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid);
-register_handler(_BindingPid, _Handler, _Peer) ->
-    ok.
+register_handler(BindingPid, Pid, Peer) ->
+    hello_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Binding process
@@ -182,7 +165,7 @@ terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 handle_cast(_Cast, State)           -> {noreply, State, hibernate}.
 
-    %% --------------------------------------------------------------------------------
+%% --------------------------------------------------------------------------------
 %% -- helpers
 start_listener(BindingIn = #binding{listener_mod = Mod, callback_mod = CallbackMod}) ->
     Binding       = BindingIn#binding{log_url = Mod:url_for_log(BindingIn)},

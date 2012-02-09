@@ -23,7 +23,7 @@
 -behaviour(hello_stateless_handler).
 
 -export([register_yourself/0]).
--export([handle_request/2, param_info/1, method_info/0]).
+-export([handle_request/3, param_info/1, method_info/0]).
 -include("hello.hrl").
 
 register_yourself() ->
@@ -64,11 +64,11 @@ param_info(return_error) ->
                 optional = true,
                 default  = <<"">>}].
 
-handle_request(echo, [Str]) ->
+handle_request(_Context, echo, [Str]) ->
     {ok, Str};
-handle_request(append, [Str1, Str2]) ->
+handle_request(_Context, append, [Str1, Str2]) ->
     {ok, <<Str1/binary, Str2/binary>>};
-handle_request(enum_test, [Atom]) ->
+handle_request(_Context, enum_test, [Atom]) ->
     {ok, Atom};
-handle_request(return_error, [Code, Message]) ->
+handle_request(_Context, return_error, [Code, Message]) ->
     {error, Code, Message}.
