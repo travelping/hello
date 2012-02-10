@@ -127,6 +127,8 @@ transport_param(Key, Context) ->
 %%   Please take this into consideration when designing your system.
 -spec transport_param(atom(), context(), any()) -> any().
 transport_param(Key, #stateless_context{transport_params = Params}, Default) ->
+    transport_param(Key, Params, Default);
+transport_param(Key, Params, Default) ->
     proplists:get_value(Key, Params, Default).
 
 %% ----------------------------------------------------------------------------------------------------
