@@ -73,8 +73,8 @@ http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts
     EncRequest = hello_proto:encode(Request),
     {ok, Vsn} = application:get_key(hello, vsn),
     MimeType = hello_proto:mime_type(Request),
-    Headers = [{"Content-Type", MimeType},
-               {"Accept", MimeType},
+    Headers = [{"Content-Type", binary_to_list(MimeType)},
+               {"Accept", binary_to_list(MimeType)},
                {"User-Agent", "hello/" ++ Vsn}],
     ResponseBody =
         case ibrowse:send_req(URL, Headers, Method, EncRequest, Opts) of
