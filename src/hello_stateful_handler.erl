@@ -251,7 +251,7 @@ do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
             proto_send_log(Req, hello_proto:error_response(Req, method_not_found), State),
             {noreply, State};
         ValidatedMethod = #rpc_method{name = MethodName} ->
-            case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
+            case hello_validate:request_params(ValidatedMethod, Mod, ModState, Req) of
                 {error, Msg} ->
                     proto_send_log(Req, hello_proto:error_response(Req, invalid_params, Msg), State),
                     {noreply, State};
@@ -307,7 +307,7 @@ do_batch_requests([Req = #request{} | Rest], BatchRef, State = #state{mod = Mod}
             ErrorResp = hello_proto:error_response(Req, method_not_found),
             do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
         ValidatedMethod = #rpc_method{name = MethodName} ->
-            case hello_validate:request_params(ValidatedMethod, Mod:param_info(MethodName, ModState), Req) of
+            case hello_validate:request_params(ValidatedMethod, Mod, ModState, Req) of
                 {error, Msg} ->
                     ErrorResp = hello_proto:error_response(Req, invalid_params, Msg),
                     do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
