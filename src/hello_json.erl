@@ -105,6 +105,7 @@ encode({Props})                  -> enc_obj(Props, <<"{">>);
 encode({obj, Props})             -> enc_obj(Props, <<"{">>);
 encode(Lis) when is_list(Lis)    -> enc_array(Lis, <<"[">>);
 encode(Bin) when is_binary(Bin)  -> enc_string(Bin);
+encode(Atom) when is_atom(Atom)  -> enc_string(Atom);
 encode(AnythingElse)             -> error(badarg, [AnythingElse]).
 
 enc_obj([], Result) ->
