@@ -6,5 +6,6 @@
 /dist/
 /doc/*
 !/doc/overview.edoc
+!/doc/hello.html
 
 /tetrapak/.local.cache

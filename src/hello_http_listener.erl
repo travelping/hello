@@ -25,6 +25,7 @@
 
 %% http utils used by other listeners
 -export([lookup_binding/4, unslash/1, default_port/1, server_header/0, req_transport_params/1]).
+-export([process/3]).
 
 -behaviour(cowboy_http_handler).
 -export([init/3, handle/2, terminate/2]).
@@ -61,23 +62,16 @@ url_for_log(#binding{url = URL}) ->
 init({tcp, http}, Req, _) ->
     {ok, Req, undefined}.
 
-handle(Req, _State) ->
+handle(Req, State) ->
     {Method, Req1} = cowboy_http_req:method(Req),
     case lists:member(Method, ['PUT', 'POST']) of
         true ->
-            {Peer, Req2} = cowboy_http_req:peer(Req1),
-            {Port, Req3} = cowboy_http_req:port(Req2),
+            {Port, Req3} = cowboy_http_req:port(Req1),
             {PathList, Req4} = cowboy_http_req:path_info(Req3),
             {Host, Req5} = cowboy_http_req:raw_host(Req4),
             case lookup_binding(?MODULE, Host, Port, PathList) of
                 {ok, Binding} ->
-                    {TransportParams, Req6} = req_transport_params(Req5),
-                    Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
-                    {ok, Body, Req7} = cowboy_http_req:body(Req6),
-                    hello_binding:incoming_message(Handler, Body),
-                    Req8 = cowboy_http_req:compact(Req7),
-                    {ok, Req9} = cowboy_http_req:chunked_reply(200, json_headers(), Req8),
-                    http_chunked_loop(Handler, Req9);
+		    process(Binding, Req, State);
                 {error, not_found} ->
                     {ok, Req6} = cowboy_http_req:reply(404, server_header(), Req5),
                     {ok, Req6, undefined}
@@ -90,13 +84,23 @@ handle(Req, _State) ->
 terminate(_Req, _State) ->
     ok.
 
-http_chunked_loop(Handler, Request) ->
+process(Binding, Req, State) ->
+    {Peer, Req1} = cowboy_http_req:peer(Req),
+    {TransportParams, Req6} = req_transport_params(Req1),
+    Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
+    {ok, Body, Req7} = cowboy_http_req:body(Req6),
+    hello_binding:incoming_message(Handler, Body),
+    Req8 = cowboy_http_req:compact(Req7),
+    {ok, Req9} = cowboy_http_req:chunked_reply(200, json_headers(), Req8),
+    http_chunked_loop(Handler, Req9, State).
+
+http_chunked_loop(Handler, Request, State) ->
     receive
         {hello_closed, Handler, _Peer} ->
-            {ok, Request, undefined};
+            {ok, Request, State};
         {hello_msg, Handler, _, Message} ->
             cowboy_http_req:chunk(Message, Request),
-            http_chunked_loop(Handler, Request)
+            http_chunked_loop(Handler, Request, State)
     end.
 
 json_headers() ->

@@ -27,6 +27,7 @@
 -export([start_link/5, stop/1, stop/2, behaviour_info/1]).
 % API for listeners
 -export([start_registered_handler/4, start_handler/4, incoming_message/2, lookup_handler/2]).
+-export([new/7]).
 -export_type([peer/0, handler/0]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -34,6 +35,41 @@
 
 -type peer() :: term().
 -type handler() :: pid().
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- Contruct a new binding
+-spec new(pid(), module(), string() | #ex_uri{}, module(), module(), stateful | stateless, term()) -> #binding{}.
+new(Pid, ListenerModule, URL = #ex_uri{}, Protocol, CallbackModule, CallbackType, CallbackArgs) ->
+    {IP, Host} = extract_ip_and_host(URL),
+    Binding = #binding{pid = Pid,
+		       url = URL,
+		       ip = IP,
+		       host = Host,
+		       port = (URL#ex_uri.authority)#ex_uri_authority.port,
+		       path = URL#ex_uri.path,
+		       protocol = Protocol,
+		       listener_mod = ListenerModule,
+		       callback_mod = CallbackModule,
+		       callback_type = CallbackType,
+		       callback_args = CallbackArgs},
+    Binding#binding{log_url = ListenerModule:url_for_log(Binding)};
+
+new(Pid, ListenerModule, URL, Protocol, CallbackModule, CallbackType, CallbackArgs) when is_list(URL) ->
+    {ok, DecURL, _} = ex_uri:decode(URL),
+    {IP, Host} = extract_ip_and_host(DecURL),
+    Binding = #binding{pid = Pid,
+		       url = DecURL,
+		       ip = IP,
+		       host = Host,
+		       port = (DecURL#ex_uri.authority)#ex_uri_authority.port,
+		       path = DecURL#ex_uri.path,
+		       protocol = Protocol,
+		       listener_mod = ListenerModule,
+		       callback_mod = CallbackModule,
+		       callback_type = CallbackType,
+		       callback_args = CallbackArgs},
+    Binding#binding{log_url = ListenerModule:url_for_log(Binding)}.
+  
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
@@ -83,18 +119,7 @@ start_link(ListenerModule, URL, CallbackModule, CallbackType, CallbackArgs) when
     {ok, DecURL, _} = ex_uri:decode(URL),
     start_link(ListenerModule, DecURL, CallbackModule, CallbackType, CallbackArgs);
 start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, CallbackArgs) ->
-    {IP, Host} = extract_ip_and_host(URL),
-    Binding = #binding{pid = self(),
-                       url = URL,
-                       ip = IP,
-                       host = Host,
-                       port = (URL#ex_uri.authority)#ex_uri_authority.port,
-                       path = URL#ex_uri.path,
-                       protocol = hello_proto_jsonrpc,
-                       listener_mod = ListenerModule,
-                       callback_mod = CallbackModule,
-                       callback_type = CallbackType,
-                       callback_args = CallbackArgs},
+    Binding = new(self(), ListenerModule, URL, hello_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs),
     StarterRef = make_ref(),
     case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of
         {ok, Pid} ->
