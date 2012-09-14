@@ -192,6 +192,8 @@ dec_stringb(Bin) ->
 
 dec_string(<<Bin/binary>>, Res) ->
     case Bin of
+        <<"\\/", R/binary>> ->
+           dec_string(R, [$/ | Res]);
         <<$\\, R1/binary>> ->
             case R1 of
                 <<C, R2/binary>> when (C =:= $"); (C =:= $\\) ->
