@@ -103,6 +103,7 @@ encode(false)                    -> <<"false">>;
 encode(null)                     -> <<"null">>;
 encode({Props})                  -> enc_obj(Props, <<"{">>);
 encode({obj, Props})             -> enc_obj(Props, <<"{">>);
+encode({Date, Time})             -> enc_timestamp(Date, Time);
 encode(Lis) when is_list(Lis)    -> enc_array(Lis, <<"[">>);
 encode(Bin) when is_binary(Bin)  -> enc_string(Bin);
 encode(Atom) when is_atom(Atom)  -> enc_string(Atom);
@@ -129,6 +130,11 @@ enc_string(Lis) when is_list(Lis)    -> <<$", (escape(list_to_binary(Lis)))/bina
 enc_string(Atm) when is_atom(Atm)    -> <<$", (escape(atom_to_binary(Atm, utf8)))/binary, $">>;
 enc_string(Int) when is_integer(Int) -> <<$", (list_to_binary(integer_to_list(Int)))/binary, $">>;
 enc_string(Flt) when is_float(Flt)   -> <<$", (list_to_binary(io_lib:write(Flt)))/binary, $">>.
+
+enc_timestamp({Year, Month, Day}, {Hour, Minute, Second})
+  when is_integer(Year), is_integer(Month), is_integer(Day),
+       is_integer(Hour), is_integer(Minute), is_integer(Second) ->
+    list_to_binary(io_lib:fwrite("\"~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ\"", [Year, Month, Day, Hour, Minute, Second])).
 
 -compile({inline, escape/1}).
 escape(Bin) ->
