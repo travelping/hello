@@ -30,45 +30,29 @@ register_yourself() ->
     hello2:bind_stateless("zmq-tcp://127.0.0.1:5999", ?MODULE).
 
 method_info() ->
-    [#rpc_method{name        = echo,
-                 description = "return the given string"},
-     #rpc_method{name        = append,
-                 description = "append the given strings"},
-     #rpc_method{name        = enum_test,
-                 description = "test hello's support for enums"},
-     #rpc_method{name        = return_error,
-                 description = "always returns an error reply"}].
+    yang_typespec:rpc_methods(typespec()).
 
-param_info(echo) ->
-    [#rpc_param{name = text,
-                type = string,
-                description = "the text to be echoed"}];
-param_info(append) ->
-    [#rpc_param{name = str1,
-                type = string,
-                optional = true,
-                default  = <<"">>},
-     #rpc_param{name = str2,
-                type = string,
-                optional = true,
-                default  = <<"">>}];
-param_info(enum_test) ->
-    [#rpc_param{name = atom,
-                type = {enum, [a, b, c]},
-                description = "the atom to be echoed, \"a\", \"b\", or \"c\""}];
-param_info(return_error) ->
-    [#rpc_param{name = code,
-                type = integer},
-     #rpc_param{name = message,
-                type = string,
-                optional = true,
-                default  = <<"">>}].
+param_info(Method) ->
+    yang_typespec:rpc_params(Method, typespec()).
 
-handle_request(_Context, echo, [Str]) ->
-    {ok, Str};
-handle_request(_Context, append, [Str1, Str2]) ->
-    {ok, <<Str1/binary, Str2/binary>>};
-handle_request(_Context, enum_test, [Atom]) ->
-    {ok, Atom};
-handle_request(_Context, return_error, [Code, Message]) ->
-    {error, Code, Message}.
+handle_request(_Context, <<"echo">>, Params) ->
+    case hello_validate:validate_params(typespec(), <<"echo">>, Params) of
+	[{_,Str}] -> {ok, Str};
+	R -> R
+    end;
+handle_request(_Context, <<"append">>, Params) ->
+    case hello_validate:validate_params(typespec(), <<"append">>, Params) of
+    	[{_,Str1}, {_,Str2}] -> {ok, <<Str1/binary, Str2/binary>>};
+    	R -> R
+    end;
+handle_request(_Context, <<"enum_test">>, Params) ->
+    case hello_validate:validate_params(typespec(), <<"enum_test">>, Params) of
+	[{_,Atom}] -> {ok, Atom};
+	R -> R
+    end;
+handle_request(_Context, <<"return_error">>, Params) ->
+    case hello_validate:validate_params(typespec(), <<"return_error">>, Params) of
+	[{<<"code">>, Code}, {<<"message">>, Message}] ->
+	    {error, Code, Message};
+	R -> R
+    end.
