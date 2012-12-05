@@ -246,41 +246,35 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
-    case hello_validate:find_method(Mod:method_info(ModState), Req#request.method) of
-        undefined ->
-            proto_send_log(Req, hello_proto:error_response(Req, method_not_found), State),
+    case hello_validate:request({Mod, ModState}, Req) of
+	{error, Error} ->
+            proto_send_log(Req, Error, State),
             {noreply, State};
-        ValidatedMethod = #rpc_method{name = MethodName} ->
-            case hello_validate:request_params(ValidatedMethod, Mod, ModState, Req) of
-                {error, Msg} ->
-                    proto_send_log(Req, hello_proto:error_response(Req, invalid_params, Msg), State),
-                    {noreply, State};
-                {ok, ValidatedParams} ->
-                    ReqRef  = make_ref(),
-                    Context = make_from_context(ReqRef, Req, State),
-                    case Mod:handle_request(Context, MethodName, ValidatedParams, ModState) of
-                        %% with reply
-                        {reply, Reply, NewModState} ->
-                            proto_send_log(Req, to_response_record(Reply, Req), State),
-                            {noreply, State#state{mod_state = NewModState}};
-                        {stop, Reason, Reply, NewModState} ->
-                            proto_send_log(Req, to_response_record(Reply, Req), State),
-                            {stop, Reason, State#state{mod_state = NewModState}};
-                        %% without reply
-                        {noreply, NewModState} ->
-                            case Req#request.reqid of
-                                undefined ->
-                                    proto_send_log(Req, ignore, State),
-                                    % no need to wait for an async reply if request is a notification
-                                    {noreply, State#state{mod_state = NewModState}};
-                                _ ->
-                                    NewARMap = gb_trees:enter(ReqRef, {incomplete_request, Req}, State#state.async_reply_map),
-                                    {noreply, State#state{mod_state = NewModState, async_reply_map = NewARMap}}
-                            end;
-                        {stop, Reason, NewModState} ->
-                            {stop, Reason, State#state{mod_state = NewModState}}
-                    end
-            end
+	{ok, Method, ValidatedParams} when is_list(ValidatedParams) ->
+	    ReqRef  = make_ref(),
+	    Context = make_from_context(ReqRef, Req, State),
+	    case Mod:handle_request(Context, Method, ValidatedParams, ModState) of
+		%% with reply
+		{reply, Reply, NewModState} ->
+		    proto_send_log(Req, to_response_record(Reply, Req), State),
+		    {noreply, State#state{mod_state = NewModState}};
+		{stop, Reason, Reply, NewModState} ->
+		    proto_send_log(Req, to_response_record(Reply, Req), State),
+		    {stop, Reason, State#state{mod_state = NewModState}};
+		%% without reply
+		{noreply, NewModState} ->
+		    case Req#request.reqid of
+			undefined ->
+			    proto_send_log(Req, ignore, State),
+			    %% no need to wait for an async reply if request is a notification
+			    {noreply, State#state{mod_state = NewModState}};
+			_ ->
+			    NewARMap = gb_trees:enter(ReqRef, {incomplete_request, Req}, State#state.async_reply_map),
+			    {noreply, State#state{mod_state = NewModState, async_reply_map = NewARMap}}
+		    end;
+		{stop, Reason, NewModState} ->
+		    {stop, Reason, State#state{mod_state = NewModState}}
+	    end
     end.
 
 do_batch(BatchReq = #batch_request{requests = Requests}, State = #state{async_reply_map = ReplyMap}) ->
@@ -298,53 +292,37 @@ do_batch(BatchReq = #batch_request{requests = Requests}, State = #state{async_re
             {noreply, NewState#state{async_reply_map = NewARMap}}
     end.
 
+maybe_async_reply(AsyncReplies, #request{reqid = undefined}) ->
+    AsyncReplies;
+maybe_async_reply(AsyncReplies, Req = #request{}) ->
+    [Req | AsyncReplies].
+
 do_batch_requests([], _BR, State, Responses, NeedAsyncReply) ->
     {reply, Responses, NeedAsyncReply, State};
 do_batch_requests([Req = #request{} | Rest], BatchRef, State = #state{mod = Mod}, Responses, AsyncReplies) ->
     ModState = State#state.mod_state,
-    case hello_validate:find_method(Mod:method_info(ModState), Req#request.method) of
-        undefined ->
-            ErrorResp = hello_proto:error_response(Req, method_not_found),
+    case hello_validate:request({Mod, ModState}, Req) of
+	{error, ErrorResp} ->
             do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
-        ValidatedMethod = #rpc_method{name = MethodName} ->
-            case hello_validate:request_params(ValidatedMethod, Mod, ModState, Req) of
-                {error, Msg} ->
-                    ErrorResp = hello_proto:error_response(Req, invalid_params, Msg),
-                    do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
-                {ok, ValidatedParams} ->
-                    Context = make_from_context(BatchRef, Req, State),
-                    case Mod:handle_request(Context, MethodName, ValidatedParams, ModState) of
-                        %% with reply
-                        {reply, Reply, NewModState} ->
-                            NewResps = [to_response_record(Reply, Req) | Responses],
-                            do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
-                                              NewResps, AsyncReplies);
-                        {stop, Reason, Reply, NewModState} ->
-                            NewResps = [to_response_record(Reply, Req) | Responses],
-                            stop_in_batch(Reason, State#state{mod_state = NewModState},
-                                          NewResps, AsyncReplies);
-                        %% without reply
-                        {noreply, NewModState} ->
-                            case Req#request.reqid of
-                                undefined ->
-                                    do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
-                                                      Responses, AsyncReplies);
-                                _Id ->
-                                    NewAsyncReplies = [Req | AsyncReplies],
-                                    do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
-                                                      Responses, NewAsyncReplies)
-                            end;
-                        {stop, Reason, NewModState} ->
-                            case Req#request.reqid of
-                                undefined ->
-                                    stop_in_batch(Reason, State#state{mod_state = NewModState},
-                                                  Responses, AsyncReplies);
-                                _Id ->
-                                    NewAsyncReplies = [Req | AsyncReplies],
-                                    stop_in_batch(Reason, State#state{mod_state = NewModState},
-                                                  Responses, NewAsyncReplies)
-                            end
-                    end
+	{ok, Method, ValidatedParams} when is_list(ValidatedParams) ->
+	    Context = make_from_context(BatchRef, Req, State),
+	    case Mod:handle_request(Context, Method, ValidatedParams, ModState) of
+		%% with reply
+		{reply, Reply, NewModState} ->
+		    NewResps = [to_response_record(Reply, Req) | Responses],
+		    do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
+				      NewResps, AsyncReplies);
+		{stop, Reason, Reply, NewModState} ->
+		    NewResps = [to_response_record(Reply, Req) | Responses],
+		    stop_in_batch(Reason, State#state{mod_state = NewModState},
+				  NewResps, AsyncReplies);
+		%% without reply
+		{noreply, NewModState} ->
+		    do_batch_requests(Rest, BatchRef, State#state{mod_state = NewModState},
+				      Responses, maybe_async_reply(AsyncReplies, Req));
+		{stop, Reason, NewModState} ->
+		    stop_in_batch(Reason, State#state{mod_state = NewModState},
+				  Responses, maybe_async_reply(AsyncReplies, Req))
             end
     end.
 
