@@ -4,62 +4,90 @@
 -include("ct.hrl").
 -define(UNKNOWN_HOST, "http://undefined.undefined:8888").
 
+-define(equal(Expected, Actual),
+    (fun (Expected@@@, Expected@@@) -> true;
+         (Expected@@@, Actual@@@) ->
+             ct:fail("MISMATCH(~s:~b, ~s)~nExpected: ~p~nActual:   ~p~n",
+		     [?FILE, ?LINE, ??Actual, Expected@@@, Actual@@@])
+     end)(Expected, Actual)).
+
+-define(match(Guard, Expr),
+        ((fun () ->
+                  case (Expr) of
+                      Guard -> ok;
+                      V -> ct:fail("MISMATCH(~s:~b, ~s)~nExpected: ~p~nActual:   ~p~n",
+                                   [?FILE, ?LINE, ??Expr, ??Guard, V])
+                  end
+          end)())).
+
 % ---------------------------------------------------------------------
 % -- test cases
 call(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {ok,<<"abcdef">>} = hello_client:call(Clnt, "append", [<<"abc">>,<<"def">>]).
+    Clnt = proplists:get_value(client, Config),
+    ?match({ok,<<"abcdef">>}, hello_client:call(Clnt, "append", [<<"abc">>,<<"def">>])),
+    ok.
 call_errors(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {method_not_found, _}} = hello_client:call(Clnt, "nonamemethod", [<<"test">>]),
-    {error, {invalid_params, _}} = hello_client:call(Clnt, "append", [1]),
-    {error, {30000, <<"test error message">>}} = hello_client:call(Clnt, "return_error", [30000, <<"test error message">>]).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {method_not_found, _}}, hello_client:call(Clnt, "nonamemethod", [<<"test">>])),
+    ?match({error, {invalid_params, _}}, hello_client:call(Clnt, "append", [1])),
+    ?match({error, {30000, <<"test error message">>}}, hello_client:call(Clnt, "return_error", [30000, <<"test error message">>])),
+    ok.
 
 notification(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    ok = hello_client:notification(Clnt, "echo", [<<"test">>]).
+    Clnt = proplists:get_value(client, Config),
+    ?match(ok, hello_client:notification(Clnt, "echo", [<<"test">>])),
+    ok.
 
 call_np(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {ok, <<"cdab">>} = hello_client:call_np(Clnt, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    Clnt = proplists:get_value(client, Config),
+    ?match({ok, <<"cdab">>}, hello_client:call_np(Clnt, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ok.
 
 batch_call(Config) ->
     Clnt = proplists:get_value(client, Config),
-    [{error, {method_not_found, _}},
-     {error, {invalid_params, _}},
-     {ok, <<"abcd">>}] = hello_client:batch_call(Clnt, [{"nonamemethod", [<<"test">>]},
-                                                        {'append', [1]},
-                                                        {'append', {[{str1, <<"ab">>}, {str2, <<"cd">>}]}}]).
+    ?match([{error, {method_not_found, _}},
+	    {error, {invalid_params, _}},
+	    {ok, <<"abcd">>}],
+	   hello_client:batch_call(Clnt, [{"nonamemethod", [<<"test">>]},
+					  {'append', [1]},
+					  {'append', {[{str1, <<"ab">>}, {str2, <<"cd">>}]}}])),
+    ok.
 
 call_np_method_not_found(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {method_not_found, _}} = hello_client:call_np(Clnt, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {method_not_found, _}}, hello_client:call_np(Clnt, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ok.
 
 call_http_error(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {http, _Reason}} = hello_client:call(Clnt, "foo", []).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {transport, _Reason}}, hello_client:call(Clnt, "foo", [])),
+    ok.
 
 notification_http_error(Config) ->
-	Clnt = proplists:get_value(client, Config),
-	R = hello_client:notification(Clnt, "foo", []),
-	ct:pal("R: ~p~n", [R]),
-    {error, {http, _Reason}} = R.
+    Clnt = proplists:get_value(client, Config),
+    R = hello_client:notification(Clnt, "foo", []),
+    ?match({error, {transport, _Reason}}, R),
+    ok.
 
 call_np_http_error(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {http, _Reason}} = hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {transport, _Reason}}, hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ok.
 
 call_zmq_tcp_error(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {zmq_tcp, _Reason}} = hello_client:call(Clnt, "foo", []).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {zmq_tcp, _Reason}}, hello_client:call(Clnt, "foo", [])),
+    ok.
 
 notification_zmq_tcp_error(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {zmq_tcp, _Reason}} = hello_client:notification(Clnt, "foo", []).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {zmq_tcp, _Reason}}, hello_client:notification(Clnt, "foo", [])),
+    ok.
 
 call_np_zmq_tcp_error(Config) ->
-	Clnt = proplists:get_value(client, Config),
-    {error, {zmq_tcp, _Reason}} = hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}]).
+    Clnt = proplists:get_value(client, Config),
+    ?match({error, {zmq_tcp, _Reason}}, hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ok.
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
@@ -109,13 +137,14 @@ init_per_group(GroupName, Config) ->
 	[{client,Clnt}|Config].
 
 end_per_group(_GroupName, Config) ->
-	Clnt = proplists:get_value(client, Config),
-	hello_client:stop(Clnt),
-	proplists:delete(client, Config).
+    Clnt = proplists:get_value(client, Config),
+    hello_client:stop(Clnt),
+    ok.
 
 init_per_suite(Config) ->
     hello:start(),
     Config.
 
 end_per_suite(_Config) ->
-	application:stop(hello).
+    application:stop(hello),
+    ok.
