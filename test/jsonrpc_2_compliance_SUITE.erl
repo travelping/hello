@@ -1,6 +1,6 @@
 -module(jsonrpc_2_compliance_SUITE).
 -behaviour(hello_stateless_handler).
--export([method_info/0, param_info/1, handle_request/2]).
+-export([method_info/0, param_info/1, handle_request/3]).
 -compile(export_all).
 
 -include("ct.hrl").
@@ -22,7 +22,7 @@ error_codes(_Config) ->
 	% invalid request
     ErrorCode(-32600, "\"foo\""),
     ErrorCode(-32600, "[]"),
-    ErrorCode(-32600, "{\"method\": null, \"params\": [], \"id\": 1}"),
+    ErrorCode(-32603, "{\"method\": null, \"params\": [], \"id\": 1}"),
     ErrorCode(-32600, "{\"method\": \"foobar\", \"params\": 0, \"id\": 1}"),
 
 	% method not found
@@ -110,7 +110,7 @@ param_info(subtract) ->
      #rpc_param{name = minuend,
                 type = number}].
 
-handle_request(subtract, [Subtrahend, Minuend]) ->
+handle_request(_Context, subtract, [Subtrahend, Minuend]) ->
     {ok, Subtrahend - Minuend}.
 
 % ---------------------------------------------------------------------
@@ -125,7 +125,7 @@ request({Method, Params}) ->
 request(Request) when is_list(Request) ->
     request(list_to_binary(Request));
 request(Request) ->
-    RespJSON = hello:run_stateless_binary_request(?MODULE, Request),
+    RespJSON = hello:run_stateless_binary_request(?MODULE, Request, []),
     case hello_json:decode(RespJSON) of
         {ok, DecRespObj, _Rest} -> DecRespObj;
         {error, syntax_error}   -> {no_json, RespJSON}

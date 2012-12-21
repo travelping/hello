@@ -39,7 +39,7 @@ bind_stateless_cross_protocol_checking(_Config) ->
 bindings(_Config) ->
     OrigBindings = lists:sort(hello:bindings()),
 
-    IPCPath = filename:absname("bindings_test.ipc"),
+    IPCPath = filename:absname("/tmp/bindings_test.ipc"),
 
     Bindings = [{"http://127.0.0.1:6003/test_1", test_1},
                 {"http://127.0.0.1:6003/test_2", test_2},
