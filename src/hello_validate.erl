@@ -43,6 +43,8 @@ request(Mod, Req = #request{method = Method, params = Params}) ->
 		{error, hello_proto:error_response(Req, Code)};
 	    {error, Code, Msg} ->
 		{error, hello_proto:error_response(Req, Code, Msg)};
+	    {error, Code, Msg, Data} ->
+		{error, hello_proto:error_response(Req, Code, Msg, Data)};
 	    ParamsValidated ->
 		ParamsValidated
 	end
@@ -78,6 +80,8 @@ validate_params(TypeSpec, Method, Depth, Params) ->
 	throw:{error, Error} ->
 	    Msg = io_lib:format("Error: ~p", [Error]),
 	    {error, invalid_params, Msg};
+	throw:{error, invalid_type, {Data, _Type}} ->
+	    {error, invalid_params, Data};
 	throw:{error, Error, EMsg} ->
 	    Msg = io_lib:format("Error: ~p, EMsg: ~p", [Error, EMsg]),
 	    {error, invalid_params, Msg}
