@@ -269,7 +269,7 @@ dec_object(<<Bin/binary>>, Res) ->
             {Value, R4} = decode2(R3),
             case skipspace(R4) of
                 <<",", R5/binary>> -> dec_object(R5, [{Key, Value} | Res]);
-                <<"}", R5/binary>> -> {{[{Key, Value} | Res]}, R5};
+                <<"}", R5/binary>> -> {{lists:reverse([{Key, Value} | Res])}, R5};
                 _                  -> error(syntax_error)
             end;
         _ ->
