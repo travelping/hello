@@ -79,11 +79,14 @@ validate_params(TypeSpec, Method, Depth, Params) ->
             #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
             params_return({ok, Method, ParamsValidated}, Opts)
     catch
-	throw:{error, Error} ->
-	    Msg = io_lib:format("Error: ~p", [Error]),
-	    {error, invalid_params, Msg};
-	throw:{error, invalid_type, {Data, _Type}} ->
-	    {error, invalid_params, Data};
+        throw:{error, Error} ->
+            Msg = io_lib:format("Error: ~p", [Error]),
+            {error, invalid_params, Msg};
+        throw:{error, invalid_type, {Data, _Type}} ->
+            {error, invalid_params, Data};
+        throw:{error, Error, EMsg} ->
+            Msg = io_lib:format("Error: ~p, EMsg: ~p", [Error, EMsg]),
+            {error, invalid_params, Msg}
     end.
 
 %% --------------------------------------------------------------------------------
