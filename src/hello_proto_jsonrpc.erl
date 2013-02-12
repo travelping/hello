@@ -51,7 +51,7 @@ error_response(ProtoData, ReqId, Code, Message, Data) ->
             NumCode = -32602, MsgPrefix = <<"Invalid params">>;
         internal_error ->
             NumCode = -32603, MsgPrefix = <<"Internal Error">>;
-	invalid_response ->
+	    invalid_response ->
             NumCode = -32603, MsgPrefix = <<"invalid JSON-RPC response">>;
         server_error ->
             NumCode = -32099, MsgPrefix = <<"Server Error">>;
