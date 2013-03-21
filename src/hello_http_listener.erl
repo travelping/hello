@@ -63,21 +63,21 @@ init({tcp, http}, Req, _) ->
     {ok, Req, undefined}.
 
 handle(Req, State) ->
-    {Method, Req1} = cowboy_http_req:method(Req),
+    {Method, Req1} = cowboy_req:method(Req),
     case lists:member(Method, ['PUT', 'POST']) of
         true ->
-            {Port, Req3} = cowboy_http_req:port(Req1),
-            {PathList, Req4} = cowboy_http_req:path_info(Req3),
-            {Host, Req5} = cowboy_http_req:raw_host(Req4),
+            {Port, Req3} = cowboy_req:port(Req1),
+            {PathList, Req4} = cowboy_req:path_info(Req3),
+            {Host, Req5} = cowboy_req:raw_host(Req4),
             case lookup_binding(?MODULE, Host, Port, PathList) of
                 {ok, Binding} ->
 		    process(Binding, Req, State);
                 {error, not_found} ->
-                    {ok, Req6} = cowboy_http_req:reply(404, server_header(), Req5),
+                    {ok, Req6} = cowboy_req:reply(404, server_header(), Req5),
                     {ok, Req6, undefined}
             end;
         false ->
-            {ok, Req2} = cowboy_http_req:reply(405, server_header(), Req1),
+            {ok, Req2} = cowboy_req:reply(405, server_header(), Req1),
             {ok, Req2, undefined}
     end.
 
@@ -85,13 +85,14 @@ terminate(_Req, _State) ->
     ok.
 
 process(Binding, Req, State) ->
-    {Peer, Req1} = cowboy_http_req:peer(Req),
+    {Peer, Req1} = cowboy_req:peer(Req),
     {TransportParams, Req6} = req_transport_params(Req1),
     Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
-    {ok, Body, Req7} = cowboy_http_req:body(Req6),
+    {ok, Body, Req7} = cowboy_req:body(Req6),
     hello_binding:incoming_message(Handler, Body),
-    Req8 = cowboy_http_req:compact(Req7),
-    {ok, Req9} = cowboy_http_req:chunked_reply(200, json_headers(), Req8),
+    Req8 = cowboy_req:compact(Req7),
+    {ok, Req9} = cowboy_req:chunked_reply(200, json_headers(), Req8),
+    erlang:display(loop),
     http_chunked_loop(Handler, Req9, State).
 
 http_chunked_loop(Handler, Request, State) ->
@@ -99,24 +100,24 @@ http_chunked_loop(Handler, Request, State) ->
         {hello_closed, Handler, _Peer} ->
             {ok, Request, State};
         {hello_msg, Handler, _, Message} ->
-            cowboy_http_req:chunk(Message, Request),
+            cowboy_req:chunk(Message, Request),
             http_chunked_loop(Handler, Request, State)
     end.
 
 json_headers() ->
     {ok, Vsn} = application:get_key(hello, vsn),
-    [{'Content-Type', <<"application/json">>},
-     {'Server', erlang:list_to_binary("hello/" ++ Vsn)}].
+    [{<<"Content-Type">>, <<"application/json">>},
+     {<<"Server">>, erlang:list_to_binary("hello/" ++ Vsn)}].
 
 server_header() ->
     {ok, Vsn} = application:get_key(hello, vsn),
-    [{'Server', erlang:list_to_binary("hello/" ++ Vsn)}].
+    [{<<"Server">>, erlang:list_to_binary("hello/" ++ Vsn)}].
 
 req_transport_params(Req1) ->
-    {{PeerIP, PeerPort}, Req2} = cowboy_http_req:peer(Req1),
-    {ProxyPeerIP, Req3} = cowboy_http_req:peer_addr(Req2),
-    {QSVals, Req4} = cowboy_http_req:qs_vals(Req3),
-    {Cookies, Req5} = cowboy_http_req:cookies(Req4),
+    {{PeerIP, PeerPort}, Req2} = cowboy_req:peer(Req1),
+    {ProxyPeerIP, Req3} = cowboy_req:peer_addr(Req2),
+    {QSVals, Req4} = cowboy_req:qs_vals(Req3),
+    {Cookies, Req5} = cowboy_req:cookies(Req4),
     TransportParams = [{peer_ip, PeerIP},
                        {peer_port, PeerPort},
                        {real_peer_ip, ProxyPeerIP},
