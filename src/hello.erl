@@ -35,12 +35,10 @@
 % This is useful for debugging purposes.
 start() ->
     application:start(sasl),
-    application:start(ranch),
-    application:start(crypto),
     application:start(cowboy),
     application:start(ex_uri),
     application:start(ibrowse),
-    %application:start(erlzmq),
+    application:start(erlzmq),
     application:start(hello).
 
 start(_Type, _StartArgs) ->
@@ -126,6 +124,6 @@ run_stateless_binary_request(Protocol, CallbackModule, Message, TransportPropert
     case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, TransportProperties, Message) of
         {ok, _Req, Resp} ->
             hello_proto:encode(Resp);
-        {proto_reply, Resp} ->
+        {error, Resp} ->
             hello_proto:encode(Resp)
     end.
