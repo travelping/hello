@@ -93,9 +93,9 @@ find_binding(Host, Port, PathList, Acc, N) ->
             end
     end.
 
-dispatch(_Binding, Req, 'GET', []) ->
+dispatch(_Binding, Req, <<"GET">>, []) ->
     reply(200, [{'Content-Type', <<"text/plain; charset=UTF-8">>}], ?SOCKJS_WELCOME, Req);
-dispatch(_Binding, Req, 'GET', [<<"iframe", IFRest/binary>>]) ->
+dispatch(_Binding, Req, <<"GET">>, [<<"iframe", IFRest/binary>>]) ->
     %% TODO: caching headers
     %% TODO: serve correct script location
     case re:run(IFRest, ".*\\.html$", [{capture, none}]) of
@@ -104,7 +104,7 @@ dispatch(_Binding, Req, 'GET', [<<"iframe", IFRest/binary>>]) ->
         nomatch ->
             reply(404, [], <<>>, Req)
     end;
-dispatch(Binding, Req, 'POST', [_Server, SessionID, <<"xhr">>]) ->
+dispatch(Binding, Req, <<"POST">>, [_Server, SessionID, <<"xhr">>]) ->
     {CORS, Req2} = cors_headers_and_jsessionid(Req),
     case lookup_session(SessionID) of
         {ok, SessionPid, _Handler} ->
@@ -120,7 +120,7 @@ dispatch(Binding, Req, 'POST', [_Server, SessionID, <<"xhr">>]) ->
             {ok, _SessionPid} = start_session(Binding, SessionID, TransportParams),
             xhr_reply(started, CORS, Req3)
     end;
-dispatch(_Binding, Req, 'POST', [_Server, SessionID, <<"xhr_send">>]) ->
+dispatch(_Binding, Req, <<"POST">>, [_Server, SessionID, <<"xhr_send">>]) ->
     case lookup_session(SessionID) of
         {ok, _Session, Handler} ->
             {ok, [{Body, _}], Req2} = cowboy_req:body_qs(Req),
@@ -136,7 +136,7 @@ dispatch(_Binding, Req, 'POST', [_Server, SessionID, <<"xhr_send">>]) ->
         {error, not_found} ->
             reply(404, [], <<>>, Req)
     end;
-dispatch(_Binding, Req, 'GET', _) ->
+dispatch(_Binding, Req, <<"GET">>, _) ->
     reply(404, [], <<>>, Req);
 dispatch(_Binding, Req, _, _) ->
     reply(404, [], <<>>, Req).
