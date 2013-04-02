@@ -61,7 +61,7 @@ init({tcp, http}, Req, _) ->
 
 handle(Req, State) ->
     {Method, Req1} = cowboy_req:method(Req),
-    case lists:member(Method, ['PUT', 'POST']) of
+    case lists:member(Method, [<<"PUT">>, <<"POST">>]) of
         true ->
             {Port, Req3} = cowboy_req:port(Req1),
             {PathList, Req4} = cowboy_req:path_info(Req3),
