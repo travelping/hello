@@ -95,8 +95,8 @@ bind_uri(Type, URL, CallbackModule, Args) ->
                 {ok, _Pid}     -> ok;
                 {error, Error} -> {error, Error}
             end;
-        _Other ->
-            error(badurl)
+        Other ->
+            error({badurl, URL, Other})
     end.
 
 binding_module("zmq-tcp") -> hello_zmq_listener;
