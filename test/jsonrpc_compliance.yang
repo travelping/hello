@@ -1,0 +1,22 @@
+module hello_example {
+    namespace "http://travelping.com/ns/hello";
+    prefix "ex";
+
+    rpc subtract {
+        input {
+            leaf subtrahend {
+                type int64;
+                mandatory true;
+            }
+            leaf minuend {
+                type int64;
+                mandatory true;
+            }
+        }
+        output {
+            leaf result {
+                type int64;
+            }
+        }
+    }
+}
