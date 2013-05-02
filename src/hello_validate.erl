@@ -82,9 +82,6 @@ validate_params(TypeSpec, Method, Depth, Params) ->
 	    {error, invalid_params, Msg};
 	throw:{error, invalid_type, {Data, _Type}} ->
 	    {error, invalid_params, Data};
-	throw:{error, Error, EMsg} ->
-	    Msg = io_lib:format("Error: ~p, EMsg: ~p", [Error, EMsg]),
-	    {error, invalid_params, Msg}
     end.
 
 %% --------------------------------------------------------------------------------
