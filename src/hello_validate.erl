@@ -20,9 +20,11 @@
 
 % @private
 -module(hello_validate).
--export([find_method/2, request_params/3, request_params/4, type/2]).
+-export([request/2]).
+-export([validate_params/3, validate_params/4]).
 -export_type([json_type/0, param_type/0]).
 
+-include_lib("yang/include/typespec.hrl").
 -include("hello.hrl").
 -include("internal.hrl").
 
@@ -31,137 +33,66 @@
 
 %% --------------------------------------------------------------------------------
 %% -- API functions
--spec find_method(list(#rpc_method{}), atom() | string() | binary()) -> #rpc_method{} | undefined.
-
-find_method(MList, MethodName) when is_binary(MethodName) ->
-    find_method(MList, binary_to_list(MethodName));
-find_method(MList, MethodName) when is_list(MethodName) ->
-    case catch list_to_existing_atom(MethodName) of
-        {'EXIT', {badarg, _TR}} -> undefined;
-        Atom                    -> find_method(MList, Atom)
-    end;
-find_method(MList, MethodName) when is_atom(MethodName) ->
-    case lists:keyfind(MethodName, #rpc_method.name, MList) of
-        false  -> undefined;
-        Method -> Method
+-spec request(atom, #request{}) -> [term()] | {error, iodata()}.
+request(Mod, Req = #request{method = Method, params = Params}) ->
+    ModSpec = find_hello_info(Mod),
+    try
+	Fields = yang_typespec:rpc_params(Method, ModSpec),
+	case hello_validate:validate_params(ModSpec, Method, params_to_proplist(Fields, Params)) of
+	    {error, Code} ->
+		{error, hello_proto:error_response(Req, Code)};
+	    {error, Code, Msg} ->
+		{error, hello_proto:error_response(Req, Code, Msg)};
+	    ParamsValidated ->
+		ParamsValidated
+	end
+    catch
+	error:{badarg, _} ->
+            {error, hello_proto:error_response(Req, method_not_found)};
+	throw:{error, unknown_type} ->
+            {error, hello_proto:error_response(Req, method_not_found)};
+	throw:_ ->
+	    hello_proto:error_response(Req, invalid_params, <<"">>)
     end.
 
--spec request_params(#rpc_method{}, module(), #request{})
-    -> {ok, [hello_json:value()] | [{atom(), hello_json:value()}]} | {error, iodata()}.
+params_return(Return, []) ->
+    Return;
+params_return({ok, Method, Params}, [{methods_as, atom}|T]) ->
+    params_return({ok, binary_to_atom(Method, utf8), Params}, T);
+params_return({ok, Method, Params}, [{params_as, list}|T]) ->
+    params_return({ok, Method, strip_keys(Params)}, T);
+params_return(Return, [_|T]) ->
+    params_return(Return, T).
 
-request_params(Method, CallbackModule, Request) ->
-    Mod = {CallbackModule},
-    PInfo = get_param_info(Mod, Method#rpc_method.name),
-    request_params_gen(Method, PInfo, Mod, Request).
+validate_params(TypeSpec, Method, Params) ->
+    validate_params(TypeSpec, Method, -1, Params).
 
--spec request_params(#rpc_method{}, module(), any(), #request{})
-    -> {ok, [hello_json:value()] | [{atom(), hello_json:value()}]} | {error, iodata()}.
-
-request_params(Method, CallbackModule, ModuleStat, Request) ->
-    Mod = {CallbackModule, ModuleStat},
-    PInfo = get_param_info(Mod, Method#rpc_method.name),
-    request_params_gen(Method, PInfo, Mod, Request).
-
--spec type(json_type(), hello_json:value()) -> boolean() | {true, NewVal::any()}.
-type(boolean, Val) when (Val == true) or (Val == false) -> true;
-type(object, {_}) -> true;
-type(integer, Val) when is_integer(Val) -> true;
-type(float, Val) when is_float(Val) -> true;
-type(number, Val) when is_number(Val) -> true;
-type(string, Val) when is_binary(Val) -> true;
-type(list, Val) when is_list(Val) -> true;
-type(array, Val) when is_list(Val) -> true;
-type(iso_date, Val) when is_binary(Val) -> validate_date(Val);
-type(any, _Val) -> true;
-type(_T, _Val) -> false.
+validate_params(TypeSpec, Method, Depth, Params) ->
+    try yang_json_validate:validate(TypeSpec, {rpc, Method, input}, Depth, Params) of
+	Error when element(1, Error) == error ->
+	    Error;
+	ParamsValidated when is_list(ParamsValidated) ->
+	    #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
+	    params_return({ok, Method, ParamsValidated}, Opts)
+    catch
+	throw:{error, Error} ->
+	    Msg = io_lib:format("Error: ~p", [Error]),
+	    {error, invalid_params, Msg};
+	throw:{error, Error, EMsg} ->
+	    Msg = io_lib:format("Error: ~p, EMsg: ~p", [Error, EMsg]),
+	    {error, invalid_params, Msg}
+    end.
 
 %% --------------------------------------------------------------------------------
 %% -- internal functions
-get_param_info({CallbackModule}, Name) ->
-    CallbackModule:param_info(Name);
-get_param_info({CallbackModule, ModuleStat}, Name) ->
-    CallbackModule:param_info(Name, ModuleStat).
-
-filter_param_info(PInfo, []) ->
-    {PInfo, []};
-filter_param_info(PInfo, Except) ->
-    lists:partition(fun(#rpc_param{name = PName}) -> not lists:member(PName, Except) end, PInfo).
-
-strip_keys(Proplist) ->
-    lists:map(fun ({_K, V}) -> V end, Proplist).
-
-request_params_gen(#rpc_method{params_as = WantParamEncoding}, Info, Mod, #request{params = ParamsIn}) ->
-    try
-        case is_record(Info, rpc_bulk) of
-            false ->
-                Params = params_to_proplist(Info, ParamsIn),
-                Validated = validate_params(Info, Params);
-            true  ->
-                PInfo = get_param_info(Mod, Info#rpc_bulk.reuse),
-                {BulkInfo, SingleInfo} = filter_param_info(PInfo, Info#rpc_bulk.except),
-                [BulkParam|SingleParam] = ParamsIn,
-                SingleProps = params_to_proplist(SingleInfo, SingleParam),
-                SingleValid = validate_params(SingleInfo, SingleProps),
-                BulkValid = lists:map(fun(P) ->
-                        BulkProp = params_to_proplist(BulkInfo, P),
-                        strip_keys(validate_params(BulkInfo, BulkProp))
-                    end, BulkParam),
-                Validated = [{Info#rpc_bulk.name, BulkValid}|SingleValid]
-        end,
-        case WantParamEncoding of
-            proplist -> {ok, Validated};
-            list     -> {ok, strip_keys(Validated)}
-        end
-    catch
-        throw:{invalid, Msg} -> {error, Msg}
-    end.
-
-validate_params(PInfo, Params) ->
-    lists:map(fun(OneParamInfo) -> validate_field(OneParamInfo, Params) end, PInfo).
-
-validate_field(Info = #rpc_param{name = PNameAtom}, Param) ->
-    PName = atom_to_binary(PNameAtom, utf8),
-    Value = case proplists:get_value(PName, Param) of
-                Undef when (Undef =:= undefined) or (Undef =:= null) ->
-                    if Info#rpc_param.optional -> Info#rpc_param.default;
-                       true -> throw({invalid, ["required parameter '", PName, "' is missing"]})
-                    end;
-                GivenValue ->
-                    validate_type(PName, Info, GivenValue)
-            end,
-    {PNameAtom, Value}.
-
-validate_type(PName, #rpc_param{type = PType}, GivenValue) ->
-    case PType of
-        {enum, Elems} ->
-            atom_from_enum(PName, Elems, GivenValue);
-        _T ->
-            case type(PType, GivenValue) of
-                true -> GivenValue;
-                false -> throw({invalid, ["invalid parameter type for param '", PName, "': expected ", atom_to_list(PType)]});
-                {true, NewValue} -> NewValue
-            end
-    end.
-
-atom_from_enum(Param, Enum, Input) ->
-    try
-        A = erlang:binary_to_existing_atom(Input, utf8),
-        case lists:member(A, Enum) of
-            true -> A;
-            false -> erlang:error(badarg)
-        end
-    catch
-        error:badarg ->
-            Choices = string:join(lists:map(fun (P) -> ["\"", atom_to_list(P), "\""] end, Enum), ", "),
-            throw({invalid, ["parameter '", Param, "' must be one of: ", Choices]})
-    end.
-
 params_to_proplist(_PInfo, {Props}) -> Props;
-params_to_proplist(PInfo,  Params) when is_list(Params) ->
-    Names = lists:map(fun (P) -> atom_to_binary(P#rpc_param.name, utf8) end, PInfo),
-    {Proplist, TooMany} = zip(Names, Params, {[], false}),
+params_to_proplist(Fields,  Params) when is_list(Params) ->
+    {Proplist, TooMany} = zip(Fields, Params, {[], false}),
     TooMany andalso throw({invalid, "superfluous parameters"}),
     lists:reverse(Proplist).
+
+strip_keys(Proplist) ->
+    [V || {_K, V} <- Proplist].
 
 zip([], [], Result) ->
     Result;
@@ -172,63 +103,55 @@ zip(_1, [], Result) ->
 zip([H1|R1], [H2|R2], {Result, TooMany}) ->
     zip(R1, R2, {[{H1, H2}|Result], TooMany}).
 
-validate_date(Date) when is_binary(Date) ->
-    validate_date(binary_to_list(Date));
-validate_date(Date) ->
-    case re:run(Date, "^([0-9]{4})(-?)([0-9]{2})(-?)([0-9]{2})([tT])(.*)$", [{capture, all_but_first, list}]) of
-        {match, [Year, Cut1, Month, Cut2, Day, T, TimeString]} when (((T == "t") or (T == "T")) and (Cut1 == Cut2)) ->
-            case re:run(TimeString, "^([0-9]{2})(:?)([0-9]{2})(:?)([0-9]{2})(.*)$", [{capture, all_but_first, list}]) of
-                {match, [Hour, Cut3, Minute, Cut4, Second, TimeZoneString]} when (Cut3 == Cut4) ->
-                    validate_datetime({s2i(Year), s2i(Month), s2i(Day)}, {s2i(Hour), s2i(Minute), s2i(Second)}, TimeZoneString);
-                _ ->
-                    false
-            end;
-        _ -> false
+cb_apply(Mod, Function) ->
+    cb_apply(Mod, Function, []).
+cb_apply({Mod, State}, Function, Args) ->
+    erlang:apply(Mod, Function, Args ++ [State]);
+cb_apply(Mod, Function, Args) ->
+    erlang:apply(Mod, Function, Args).
+
+%% --------------------------------------------------------------------------------
+%% -- backwards compatibility functions
+
+module_type({Mod, _}) ->
+    module_type(Mod);
+module_type(Mod) ->
+    atom_to_binary(Mod, utf8).
+
+build_field(#rpc_param{name = Name, optional = Optional, description = Desc}, Type) ->
+    #field{name = atom_to_binary(Name, utf8),
+	   description = Desc,
+	   type = Type,
+	   mandatory = not Optional,
+	   opts = []
+	  }.
+
+build_fields_spec(P = #rpc_param{type = string}) ->
+    build_field(P, #string{});
+build_fields_spec(P = #rpc_param{type = {enum, Enums}}) ->
+    build_field(P, #enumeration{enum = Enums});
+build_fields_spec(P = #rpc_param{type = Type}) ->
+    build_field(P, {atom_to_binary(Type, utf8), []}).
+
+build_rpc_opts(#rpc_method{params_as = list}) ->
+    [{methods_as, atom},{params_as, list}];
+build_rpc_opts(_) ->
+    [{methods_as, atom}].
+
+build_rpc_typespec(Mod, M = #rpc_method{name = Name, description = Desc}) ->
+    Fields = [build_fields_spec(F) || F <- cb_apply(Mod, param_info, [Name])],
+    #rpc{name = atom_to_binary(Name, utf8), description = Desc,
+	 input = #object{name = input, fields = Fields, opts = build_rpc_opts(M)}
+	}.
+
+build_hello_info(Mod) ->
+    {module_type(Mod),
+     [build_rpc_typespec(Mod, RPC) || RPC <- cb_apply(Mod, method_info)]}.
+
+find_hello_info(Mod) ->
+    try
+	cb_apply(Mod, hello_info)
+    catch
+	error:undef ->
+	    build_hello_info(Mod)
     end.
-
-validate_datetime({Year, Month, Day} = DateTuple, {Hour, Minute, Second} = TimeTuple, TimeZoneString) ->
-    case {calendar:valid_date(Year, Month, Day), valid_time(Hour, Minute, Second)} of
-        {true, true} ->
-            check_time_zone(DateTuple, TimeTuple, TimeZoneString);
-        _ ->
-            false
-    end.
-
-check_time_zone(DateTuple, TimeTuple, TimeZoneString) ->
-    case re:run(TimeZoneString, "^([Z+-])([0-9]{2})?(:?)([0-9]{2})?$", [{capture, all_but_first, list}]) of
-        {match, ["Z", "", ""]} ->
-            {true, {DateTuple, TimeTuple}};
-        {match, [T, Time | Other]} when ((T == "+") or (T == "-")) ->
-            add_time({DateTuple, TimeTuple}, T, s2i(Time), Other);
-        _ ->
-            false
-    end.
-
-valid_time(H, M, S) when (H >= 0) and (H =< 23) and (M >= 0) and (M =< 59) and (S >= 0) and (S =< 59) ->
-    true;
-valid_time(_, _, _) ->
-    false.
-
-s2i("") -> 0;
-s2i(Str) -> list_to_integer(Str).
-
-add_time(DateTime, T, Hours, PossiblyMinutes) when (Hours >= 0) and (Hours =< 23)  ->
-    Seconds1 = calendar:datetime_to_gregorian_seconds(DateTime),
-    Seconds2 = add(T, Seconds1, Hours * 3600),
-    case PossiblyMinutes of
-        [""] ->
-            {true, calendar:gregorian_seconds_to_datetime(Seconds2)};
-        [_Cut, MinutesString] ->
-            Minutes = s2i(MinutesString),
-            case (Minutes >= 0) and (Minutes =< 59) of
-                true ->
-                    Seconds3 = add(T, Seconds2, Minutes * 60),
-                    {true, calendar:gregorian_seconds_to_datetime(Seconds3)};
-                false ->
-                    false
-            end
-    end;
-add_time(_DateTime, _, _, _) -> false.
-
-add("+", A, B) -> A - B;
-add("-", A, B) -> A + B.
