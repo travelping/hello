@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_request_log).
+-module(hello2_request_log).
 -export([open/2, close/1, open_bad_requests/1, close_bad_requests/0, request/5, bad_request/5]).
 
 -include("internal.hrl").
@@ -29,7 +29,7 @@
 -spec open(module(), pid()) -> ok | {error, term()}.
 open(CallbackModule, Owner) ->
     Name         = reg_key(CallbackModule),
-    {ok, LogDir} = application:get_env(hello, request_log_dir),
+    {ok, LogDir} = application:get_env(hello2, request_log_dir),
     File         = filename:join(LogDir, atom_to_list(CallbackModule) ++ ".log"),
     LogOptions   = [{name, Name}, {linkto, Owner}, {file, File}, {format, external}, {type, halt}],
 
@@ -54,7 +54,7 @@ close(CallbackModule) ->
 close_bad_requests() ->
     close(bad_requests).
 
--spec request(module(), atom() | pid(), binary(), hello_proto:request(), hello_proto:response()) ->
+-spec request(module(), atom() | pid(), binary(), hello2_proto:request(), hello2_proto:response()) ->
         ok | {error, no_such_log}.
 request(CallbackModule, Handler, Endpoint, Request, Response) ->
     Date = cowboy_clock:rfc1123(),
@@ -76,18 +76,18 @@ bad_request(CallbackModule, Handler, Endpoint, Message, Response) ->
 %% -- helpers
 -compile({inline,reg_key/1}).
 reg_key(Module) ->
-    {hello_request_log, Module}.
+    {hello2_request_log, Module}.
 
 fmt_handler(Pid) ->
     list_to_binary(pid_to_list(Pid)).
 
 fmt_request(#request{reqid = undefined, method = Method, params = Params}) ->
-    <<"{\"method\":", (hello_json:encode(Method))/binary,
-      ",\"params\":", (hello_json:encode(Params))/binary, "}\n">>;
+    <<"{\"method\":", (hello2_json:encode(Method))/binary,
+      ",\"params\":", (hello2_json:encode(Params))/binary, "}\n">>;
 fmt_request(#request{reqid = ReqId, method = Method, params = Params}) ->
-    <<"{\"id\":", (hello_json:encode(ReqId))/binary,
-      ",\"method\":", (hello_json:encode(Method))/binary,
-      ",\"params\":", (hello_json:encode(Params))/binary, "}\n">>;
+    <<"{\"id\":", (hello2_json:encode(ReqId))/binary,
+      ",\"method\":", (hello2_json:encode(Method))/binary,
+      ",\"params\":", (hello2_json:encode(Params))/binary, "}\n">>;
 fmt_request(#batch_request{requests = Requests}) ->
     lists:foldl(fun (Req, Acc) ->
                         <<Acc/binary, "\t", (fmt_request(Req))/binary>>
@@ -96,10 +96,10 @@ fmt_request(#batch_request{requests = Requests}) ->
 fmt_response(ignore) ->
     <<>>;
 fmt_response(#response{reqid = ReqId, result = Result}) ->
-    <<"{\"id\":", (hello_json:encode(ReqId))/binary,
-      ",\"result\":", (hello_json:encode(Result))/binary, "}\n">>;
+    <<"{\"id\":", (hello2_json:encode(ReqId))/binary,
+      ",\"result\":", (hello2_json:encode(Result))/binary, "}\n">>;
 fmt_response(#error{reqid = ReqId, code = Code, message = Message, data = Data}) ->
-    <<"{\"id\":", (hello_json:encode(ReqId))/binary,
+    <<"{\"id\":", (hello2_json:encode(ReqId))/binary,
       (maybe_undefined(<<",\"code\":">>, Code))/binary,
       (maybe_undefined(<<",\"message\":">>, Message))/binary,
       (maybe_undefined(<<",\"data\": ">>, Data))/binary, "}\n">>;
@@ -110,7 +110,7 @@ fmt_response(#batch_response{responses = Responses}) ->
 
 -compile([{inline, maybe_undefined/2}]).
 maybe_undefined(_Key, undefined) -> <<>>;
-maybe_undefined(Key, Value) -> <<Key/binary, (hello_json:encode(Value))/binary>>.
+maybe_undefined(Key, Value) -> <<Key/binary, (hello2_json:encode(Value))/binary>>.
 
 -compile([{inline, escape_badreq/1}]).
 escape_badreq(Message) ->

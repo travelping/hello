@@ -19,13 +19,13 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_validate).
+-module(hello2_validate).
 -export([request/2]).
 -export([validate_params/3, validate_params/4]).
 -export_type([json_type/0, param_type/0]).
 
 -include_lib("yang/include/typespec.hrl").
--include("hello.hrl").
+-include("hello2.hrl").
 -include("internal.hrl").
 
 -type json_type()  :: 'boolean' | 'object' | 'integer' | 'float' | 'number' | 'string' | 'list' | 'array' | 'any' | 'iso_date'.
@@ -35,12 +35,12 @@
 %% -- API functions
 -spec request(atom, #request{}) -> [term()] | {error, iodata()}.
 request(Mod, Req = #request{method = Method, params = Params}) ->
-    ModSpec = find_hello_info(Mod),
+    ModSpec = find_hello2_info(Mod),
     try
 	Fields = yang_typespec:rpc_params(Method, ModSpec),
-	case hello_validate:validate_params(ModSpec, Method, params_to_proplist(Fields, Params)) of
+	case hello2_validate:validate_params(ModSpec, Method, params_to_proplist(Fields, Params)) of
 	    {error, Code} ->
-		{error, hello_proto:error_response(Req, Code)};
+		{error, hello2_proto:error_response(Req, Code)};
 	    {error, Code, Msg} ->
 		{error, hello_proto:error_response(Req, Code, Msg)};
 	    {error, Code, Msg, Data} ->
@@ -50,11 +50,11 @@ request(Mod, Req = #request{method = Method, params = Params}) ->
 	end
     catch
 	error:{badarg, _} ->
-            {error, hello_proto:error_response(Req, method_not_found)};
+            {error, hello2_proto:error_response(Req, method_not_found)};
 	throw:{error, unknown_type} ->
-            {error, hello_proto:error_response(Req, method_not_found)};
+            {error, hello2_proto:error_response(Req, method_not_found)};
 	throw:_ ->
-	    hello_proto:error_response(Req, invalid_params, <<"">>)
+	    hello2_proto:error_response(Req, invalid_params, <<"">>)
     end.
 
 params_return(Return, []) ->
@@ -145,14 +145,14 @@ build_rpc_typespec(Mod, M = #rpc_method{name = Name, description = Desc}) ->
 	 input = #object{name = input, fields = Fields, opts = build_rpc_opts(M)}
 	}.
 
-build_hello_info(Mod) ->
+build_hello2_info(Mod) ->
     {module_type(Mod),
      [build_rpc_typespec(Mod, RPC) || RPC <- cb_apply(Mod, method_info)]}.
 
-find_hello_info(Mod) ->
+find_hello2_info(Mod) ->
     try
-	cb_apply(Mod, hello_info)
+	cb_apply(Mod, hello2_info)
     catch
 	error:undef ->
-	    build_hello_info(Mod)
+	    build_hello2_info(Mod)
     end.

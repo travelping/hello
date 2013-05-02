@@ -1,8 +1,8 @@
--module(hello_json_SUITE).
+-module(hello2_json_SUITE).
 -compile(export_all).
 
 -include("ct.hrl").
--include("../include/hello.hrl").
+-include("../include/hello2.hrl").
 
 % ---------------------------------------------------------------------
 % -- test cases

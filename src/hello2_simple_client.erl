@@ -21,7 +21,7 @@
 %% @doc This module contains a simple RPC client.
 %%   The client defined in this module should <b>only</b> be used
 %%   for testing and debugging purposes, not in actual production code.
--module(hello_simple_client).
+-module(hello2_simple_client).
 -export([call/3, notification/3, call_np/3, batch_call/2]).
 
 -include("internal.hrl").
@@ -32,53 +32,53 @@
 %% -- Client API
 
 %% @doc Perform an RPC method call.
--spec call(hello:url(), hello_client:method(), [hello_json:value()]) ->
-        {ok, hello_json:value()} | {error, hello_client:rpc_error()}.
+-spec call(hello2:url(), hello2_client:method(), [hello2_json:value()]) ->
+        {ok, hello2_json:value()} | {error, hello2_client:rpc_error()}.
 call(Server, Method, ArgList) ->
-    call(hello_proto_jsonrpc, Server, Method, ArgList).
+    call(hello2_proto_jsonrpc, Server, Method, ArgList).
 
 %% @doc Perform an RPC method call.
--spec call(module(), hello:url(), hello_client:method(), [hello_json:value()]) ->
-        {ok, hello_json:value()} | {error, hello_client:rpc_error()}.
+-spec call(module(), hello2:url(), hello2_client:method(), [hello2_json:value()]) ->
+        {ok, hello2_json:value()} | {error, hello2_client:rpc_error()}.
 call(Protocol, Server, Method, ArgList) when is_list(ArgList) ->
-    with_client(Protocol, Server, fun (C) -> hello_client:call(C, Method, ArgList) end).
+    with_client(Protocol, Server, fun (C) -> hello2_client:call(C, Method, ArgList) end).
 
 %% @doc Performs an RPC method call with named parameters (property list).
--spec call_np(hello:url(), hello_client:method(), [{string(), hello_json:value()}]) ->
-        {ok, hello_json:value()} | {error, hello_client:rpc_error()}.
+-spec call_np(hello2:url(), hello2_client:method(), [{string(), hello2_json:value()}]) ->
+        {ok, hello2_json:value()} | {error, hello2_client:rpc_error()}.
 call_np(Server, Method, ArgProps) when is_list(ArgProps) ->
-    call_np(hello_proto_jsonrpc, Server, Method, ArgProps).
+    call_np(hello2_proto_jsonrpc, Server, Method, ArgProps).
 
--spec call_np(module(), hello:url(), hello_client:method(), [{string(), hello_json:value()}]) ->
-        {ok, hello_json:value()} | {error, hello_client:rpc_error()}.
+-spec call_np(module(), hello2:url(), hello2_client:method(), [{string(), hello2_json:value()}]) ->
+        {ok, hello2_json:value()} | {error, hello2_client:rpc_error()}.
 call_np(Protocol, Server, Method, ArgProps) when is_list(ArgProps) ->
-    with_client(Protocol, Server, fun (C) -> hello_client:call_np(C, Method, ArgProps) end).
+    with_client(Protocol, Server, fun (C) -> hello2_client:call_np(C, Method, ArgProps) end).
 
 %% @doc Special form of an RPC call that returns no result.
--spec notification(hello:url(), hello_client:method(), [hello_json:value()]) ->
-        ok | {error, hello_client:rpc_error()}.
+-spec notification(hello2:url(), hello2_client:method(), [hello2_json:value()]) ->
+        ok | {error, hello2_client:rpc_error()}.
 notification(Server, Method, ArgList) ->
-    notification(hello_proto_jsonrpc, Server, Method, ArgList).
+    notification(hello2_proto_jsonrpc, Server, Method, ArgList).
 
--spec notification(module(), hello:url(), hello_client:method(), [hello_json:value()]) ->
-        ok | {error, hello_client:rpc_error()}.
+-spec notification(module(), hello2:url(), hello2_client:method(), [hello2_json:value()]) ->
+        ok | {error, hello2_client:rpc_error()}.
 notification(Protocol, Server, Method, ArgList) ->
-    with_client(Protocol, Server, fun (C) -> hello_client:notification(C, Method, ArgList) end).
+    with_client(Protocol, Server, fun (C) -> hello2_client:notification(C, Method, ArgList) end).
 
--spec batch_call(hello:url(), [{hello_client:method(), hello_json:json_array() | hello_json:json_object()}]) ->
-    [{ok, hello_json:value()} | {error, hello_client:rpc_error()}].
+-spec batch_call(hello2:url(), [{hello2_client:method(), hello2_json:json_array() | hello2_json:json_object()}]) ->
+    [{ok, hello2_json:value()} | {error, hello2_client:rpc_error()}].
 batch_call(Server, Batch) ->
-    with_client(hello_proto_jsonrpc, Server, fun (C) -> hello_client:batch_call(C, Batch) end).
+    with_client(hello2_proto_jsonrpc, Server, fun (C) -> hello2_client:batch_call(C, Batch) end).
 
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
 with_client(Protocol, URL, Function) ->
-    case hello_client:start(URL, [{protocol, Protocol}]) of
+    case hello2_client:start(URL, [{protocol, Protocol}]) of
         {ok, Client} ->
             try
                 Function(Client)
             after
-                hello_client:stop(Client)
+                hello2_client:stop(Client)
             end;
         {error, Error} ->
             {error, Error}

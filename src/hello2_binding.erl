@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_binding).
+-module(hello2_binding).
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -73,7 +73,7 @@ new(Pid, ListenerModule, URL, Protocol, CallbackModule, CallbackType, CallbackAr
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
--spec start_registered_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
+-spec start_registered_handler(#binding{}, peer(), pid(), hello2:transport_params()) -> handler().
 start_registered_handler(Binding, Peer, Transport, TransportParams) ->
     case lookup_handler(Binding, Peer) of
         {error, not_found} ->
@@ -84,14 +84,14 @@ start_registered_handler(Binding, Peer, Transport, TransportParams) ->
             Handler
     end.
 
--spec start_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
+-spec start_handler(#binding{}, peer(), pid(), hello2:transport_params()) -> handler().
 start_handler(Binding, Peer, Transport, TransportParams) ->
     case Binding#binding.callback_type of
         stateful ->
-            {ok, Pid} = hello_stateful_handler:start_link(Binding, Peer, Transport, TransportParams),
+            {ok, Pid} = hello2_stateful_handler:start_link(Binding, Peer, Transport, TransportParams),
             Pid;
         stateless ->
-            spawn_link(hello_stateless_handler, handler, [Binding, Peer, Transport, TransportParams])
+            spawn_link(hello2_stateless_handler, handler, [Binding, Peer, Transport, TransportParams])
     end.
 
 -spec incoming_message(handler(), binary()) -> ok.
@@ -100,7 +100,7 @@ incoming_message(Pid, Message) ->
 
 -spec lookup_handler(#binding{}, peer()) -> {ok, handler()} | {error, not_found}.
 lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
-    case hello_registry:lookup({listener_peer, Binding#binding.pid, Peer}) of
+    case hello2_registry:lookup({listener_peer, Binding#binding.pid, Peer}) of
         {ok, Pid, _Data} ->
             {ok, Pid};
         Error ->
@@ -111,7 +111,7 @@ lookup_handler(#binding{callback_type = stateless}, _Peer) ->
 
 -spec register_handler(pid(), handler(), peer()) -> ok | {already_registered, pid(), peer()}.
 register_handler(BindingPid, Pid, Peer) ->
-    hello_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid).
+    hello2_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Binding process
@@ -119,7 +119,7 @@ start_link(ListenerModule, URL, CallbackModule, CallbackType, CallbackArgs) when
     {ok, DecURL, _} = ex_uri:decode(URL),
     start_link(ListenerModule, DecURL, CallbackModule, CallbackType, CallbackArgs);
 start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, CallbackArgs) ->
-    Binding = new(self(), ListenerModule, URL, hello_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs),
+    Binding = new(self(), ListenerModule, URL, hello2_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs),
     StarterRef = make_ref(),
     case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of
         {ok, Pid} ->
@@ -155,7 +155,7 @@ init({StarterPid, StarterRef, Binding}) ->
 
     case start_listener(Binding) of
         {ok, ListenerPid, ListenerID, ListenerMonitor} ->
-            ok = hello_request_log:open(Binding#binding.callback_mod, self()),
+            ok = hello2_request_log:open(Binding#binding.callback_mod, self()),
             State = #state{binding = Binding,
                            listener_id = ListenerID,
                            listener_pid = ListenerPid,
@@ -179,9 +179,9 @@ handle_info(_Info, State) ->
     {noreply, State, hibernate}.
 
 terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_pid = Pid}) ->
-    hello_request_log:close(Binding#binding.callback_mod),
-    case hello_registry:add_to_key(?REFC(ListenerID), -1) of
-        {ok, Pid, 0} -> catch hello_listener_supervisor:stop_child(ListenerID);
+    hello2_request_log:close(Binding#binding.callback_mod),
+    case hello2_registry:add_to_key(?REFC(ListenerID), -1) of
+        {ok, Pid, 0} -> catch hello2_listener_supervisor:stop_child(ListenerID);
         _            -> ok
     end,
     error_logger:info_msg("hello binding ~s stopped~n", [ex_uri:encode(Binding#binding.url)]).
@@ -198,30 +198,30 @@ start_listener(BindingIn = #binding{listener_mod = Mod, callback_mod = CallbackM
     ModBindingKey = Mod:binding_key(Binding),
     BindingKey    = {binding, Mod, ModBindingKey},
 
-    case hello_registry:lookup_listener(ListenerKey) of
+    case hello2_registry:lookup_listener(ListenerKey) of
         {error, not_found} ->
             %% no server running on Host:Port, we need to start a listener
             ListenerID = make_ref(),
             ListenerChildSpec = Mod:listener_childspec(ListenerID, Binding),
-            case hello_listener_supervisor:start_child(ListenerChildSpec) of
+            case hello2_listener_supervisor:start_child(ListenerChildSpec) of
                 {ok, ListenerPid} ->
                     ListenerMonitor = monitor(process, ListenerPid),
                     ListenerData = {ListenerID, Mod},
-                    ok = hello_registry:multi_register([{?REFC(ListenerID), 1}, {ListenerKey, ListenerData}], ListenerPid),
-                    ok = hello_registry:register(BindingKey, Binding, self()),
+                    ok = hello2_registry:multi_register([{?REFC(ListenerID), 1}, {ListenerKey, ListenerData}], ListenerPid),
+                    ok = hello2_registry:register(BindingKey, Binding, self()),
                     {ok, ListenerPid, ListenerID, ListenerMonitor};
                 {error, {StartError, _Child}} ->
                     {error, {transport, StartError}}
             end;
         {ok, ListenerPid, {ListenerID, Mod}} ->
             %% listener (with same listener module) already running, do binding checks
-            case hello_registry:lookup(BindingKey) of
+            case hello2_registry:lookup(BindingKey) of
                 {error, not_found} ->
                     %% nobody is on that path yet, let's register the Module
                     %% this is only relevant to http listeners because there can
                     %% be N bindings per HTTP listener.
-                    ok = hello_registry:register(BindingKey, Binding, self()),
-                    {ok, ListenerPid, _} = hello_registry:add_to_key(?REFC(ListenerID), 1),
+                    ok = hello2_registry:register(BindingKey, Binding, self()),
+                    {ok, ListenerPid, _} = hello2_registry:add_to_key(?REFC(ListenerID), 1),
                     ListenerMonitor = monitor(process, ListenerPid),
                     {ok, ListenerPid, ListenerID, ListenerMonitor};
                 {ok, _Pid, #binding{callback_mod = CallbackMod}} ->

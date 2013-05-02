@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_client_sup).
+-module(hello2_client_sup).
 %% API
 -export([start_link/0]).
 -export([clients/0, start_client/2, start_named_client/3, stop_client/1]).
@@ -57,5 +57,5 @@ clients() ->
 %% -- supervisor callbacks
 init([]) ->
     {ok, {{simple_one_for_one, 0, 1},
-          [{hello_client, {hello_client, start_link, []},
-            temporary, 500, worker, [hello_client]}]}}.
+          [{hello2_client, {hello2_client, start_link, []},
+            temporary, 500, worker, [hello2_client]}]}}.

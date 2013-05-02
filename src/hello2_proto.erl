@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_proto).
+-module(hello2_proto).
 -export([new_request/4, new_notification/3, new_batch_request/2]).
 -export([success_response/2, error_response/2, error_response/3, error_response/4,
          batch_response/2, error_resp_to_error_reply/1, mime_type/1]).
@@ -33,18 +33,18 @@
 
 -type error_code()    :: integer() | standard_error().
 -type error_message() :: undefined | term().
--type error_data()    :: undefined | hello_json:value().
+-type error_data()    :: undefined | hello2_json:value().
 -type error_reply()   :: error_code() | {error_code(), error_message()} | {error_code(), error_message(), error_data()}.
 
 -type standard_error() :: parse_error | invalid_request | method_not_found | invalid_params | internal_error | server_error.
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Record Creation/Conversion
--spec new_request(module(), hello_json:value(), atom() | string() | binary(), hello_json:value()) -> #request{}.
+-spec new_request(module(), hello2_json:value(), atom() | string() | binary(), hello2_json:value()) -> #request{}.
 new_request(Mod, ReqId, Method, Args) when is_atom(Mod) ->
     Mod:new_request(ReqId, to_binary(Method), Args).
 
--spec new_notification(module(), atom() | string() | binary(), hello_json:value()) -> #request{}.
+-spec new_notification(module(), atom() | string() | binary(), hello2_json:value()) -> #request{}.
 new_notification(Mod, Method, Args) when is_atom(Mod) ->
     Mod:new_request(undefined, to_binary(Method), Args).
 
@@ -70,7 +70,7 @@ filter_ignore(Resps, OuterAcc) ->
                     (Resp, Acc)   -> [Resp | Acc]
                 end, OuterAcc, Resps).
 
--spec success_response(#request{}, hello_json:value()) -> #response{} | ignore.
+-spec success_response(#request{}, hello2_json:value()) -> #response{} | ignore.
 success_response(#request{reqid = undefined}, _Result) ->
     ignore;
 success_response(Req, Result) ->

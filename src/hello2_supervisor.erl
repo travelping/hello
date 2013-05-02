@@ -19,12 +19,12 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_supervisor).
+-module(hello2_supervisor).
 -behaviour(supervisor).
 -export([start_link/0]).
 -export([init/1]).
 
--define(SERVER, hello_supervisor).
+-define(SERVER, hello2_supervisor).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
@@ -55,11 +55,11 @@ get_roles() ->
     end.
 
 role_children(client) ->
-    [{client_sup,   {hello_client_sup, start_link, []}, transient, infinity, supervisor, [hello_client_sup]},
-     {client_conf,  {hello_client_conf, start_link, []}, transient, 300, worker, [hello_client_conf]}];
+    [{client_sup,   {hello2_client_sup, start_link, []}, transient, infinity, supervisor, [hello2_client_sup]},
+     {client_conf,  {hello2_client_conf, start_link, []}, transient, 300, worker, [hello2_client_conf]}];
 role_children(server) ->
-    [{registry,     {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
-     {listener_sup, {hello_listener_supervisor, start_link, []}, transient, infinity, supervisor, [hello_listener_supervisor]},
-     {binding_sup,  {hello_binding_supervisor, start_link, []}, transient, infinity, supervisor, [hello_binding_supervisor]}];
+    [{registry,     {hello2_registry, start_link, []}, transient, 1000, worker, [hello2_registry]},
+     {listener_sup, {hello2_listener_supervisor, start_link, []}, transient, infinity, supervisor, [hello2_listener_supervisor]},
+     {binding_sup,  {hello2_binding_supervisor, start_link, []}, transient, infinity, supervisor, [hello2_binding_supervisor]}];
 role_children(_) ->
     [].

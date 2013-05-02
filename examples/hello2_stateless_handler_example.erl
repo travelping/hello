@@ -19,15 +19,15 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @hidden
--module(hello_stateless_handler_example).
--behaviour(hello_stateless_handler).
+-module(hello2_stateless_handler_example).
+-behaviour(hello2_stateless_handler).
 
 -export([register_yourself/0]).
 -export([handle_request/3, param_info/1, method_info/0]).
--include("hello.hrl").
+-include("hello2.hrl").
 
 register_yourself() ->
-    hello:bind_stateless("zmq-tcp://127.0.0.1:5999", ?MODULE).
+    hello2:bind_stateless("zmq-tcp://127.0.0.1:5999", ?MODULE).
 
 method_info() ->
     [#rpc_method{name        = echo,

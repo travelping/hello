@@ -44,7 +44,7 @@
 %%    One particularly useful facility is the automated conversion
 %%    of JSON objects to and from Erlang records. Because record definitions
 %%    exist only at compile time, the conversion routines are defined as
-%%    macros in the `hello.hrl' include file. They are documented below.
+%%    macros in the `hello2.hrl' include file. They are documented below.
 %%
 %%    === ?record_to_json_obj(RecordName::atom(), Record::tuple()) -> value() ===
 %%
@@ -78,7 +78,7 @@
 %%    <i>into</i> an existing instance of the record type in question.
 %% @end
 
--module(hello_json).
+-module(hello2_json).
 -export([encode/1, decode/1]).
 -export([object_to_record/5, record_to_object/4]).
 -export_type([value/0, json_string/0, json_number/0, json_boolean/0, json_array/0, json_object/0, json_null/0]).

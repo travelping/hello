@@ -19,8 +19,8 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_zmq_client).
--behaviour(hello_client).
+-module(hello2_zmq_client).
+-behaviour(hello2_client).
 -export([validate_options/1, init/2, send_request/3, handle_info/3, terminate/3]).
 
 -include("internal.hrl").
@@ -49,7 +49,7 @@ init(URLRec, Options) ->
 
 send_request(ClientCtx, Request, State = #zmq_state{socket = Socket, pending = Pending}) ->
     erlzmq:send(Socket, <<>>, [sndmore]),
-    erlzmq:send(Socket, hello_proto:encode(Request)),
+    erlzmq:send(Socket, hello2_proto:encode(Request)),
     case Request of
         #request{reqid = undefined} ->
             {reply, ok, State};
@@ -62,19 +62,19 @@ send_request(ClientCtx, Request, State = #zmq_state{socket = Socket, pending = P
 handle_info(_ClientCtx, {zmq, _Socket, _Msgpart, [rcvmore]}, State) ->
     {noreply, State};
 handle_info(ClientCtx, {zmq, _Socket, Msg, []}, State) ->
-    case hello_proto:decode(hello_proto_jsonrpc, Msg) of
+    case hello2_proto:decode(hello2_proto_jsonrpc, Msg) of
         #response{reqid = ReqId, result = Result} ->
             {noreply, reply_pending_req([ReqId], {ok, Result}, State)};
         Resp = #error{reqid = ReqId} ->
-            {noreply, reply_pending_req([ReqId], {error, hello_proto:error_resp_to_error_reply(Resp)}, State)};
+            {noreply, reply_pending_req([ReqId], {error, hello2_proto:error_resp_to_error_reply(Resp)}, State)};
         #batch_response{responses = Resps} ->
             {ReqIds, Results} = lists:unzip(lists:keysort(1, lists:map(
                 fun (#response{reqid = Id, result = Result}) -> {Id, {ok, Result}};
-                    (Error = #error{reqid = Id}) -> {Id, {error, hello_proto:error_resp_to_error_reply(Error)}}
+                    (Error = #error{reqid = Id}) -> {Id, {error, hello2_proto:error_resp_to_error_reply(Error)}}
                 end, Resps))),
             {noreply, reply_pending_req(ReqIds, Results, State)};
         Notification = #request{reqid = undefined} ->
-            hello_client:client_ctx_notify(ClientCtx, Notification),
+            hello2_client:client_ctx_notify(ClientCtx, Notification),
             {noreply, State};
         _ ->
             {noreply, State}
@@ -91,6 +91,6 @@ reply_pending_req([ReqId | Rest], Resp, State = #zmq_state{pending = Pending}) -
         none ->
             reply_pending_req(Rest, Resp, State);
         {value, FromCtx} ->
-            hello_client:client_ctx_reply(FromCtx, Resp),
+            hello2_client:client_ctx_reply(FromCtx, Resp),
             State#zmq_state{pending = gb_trees:delete(ReqId, Pending)}
     end.

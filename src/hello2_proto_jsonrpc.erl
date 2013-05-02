@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello_proto_jsonrpc).
+-module(hello2_proto_jsonrpc).
 
 %% new interface
 -export([mime_type/0, defaults/0, new_request/3, error_response/5, error_resp_to_error_reply/1, encode/1, decode/1]).
@@ -97,9 +97,9 @@ error_resp_to_error_reply(#error{code = Code, message = Msg}) ->
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding
--spec encode(hello_proto:request() | hello_proto:response()) -> binary().
+-spec encode(hello2_proto:request() | hello2_proto:response()) -> binary().
 encode(Thing) ->
-    hello_json:encode(encode_json(Thing)).
+    hello2_json:encode(encode_json(Thing)).
 
 encode_json(R = #response{reqid = ID, proto_data = #jsonrpc{version = 1}}) ->
     {[{<<"error">>, null}, {<<"result">>, R#response.result}, {<<"id">>, ID}]};
@@ -137,16 +137,16 @@ encode_json(#batch_request{requests = Reqs}) ->
 
 %% ----------------------------------------------------------------------
 %% -- Decoding
--spec decode(binary()) -> hello_proto:request() | hello_proto:response() | {proto_reply, hello_proto:response()}.
+-spec decode(binary()) -> hello2_proto:request() | hello2_proto:response() | {proto_reply, hello2_proto:response()}.
 decode(Binary) ->
-    case hello_json:decode(Binary) of
+    case hello2_json:decode(Binary) of
         {error, _Error} ->
             {proto_reply, error_response(defaults(), undefined, parse_error, undefined, undefined)};
         {ok, Request, _Rest} ->
             decode_json(Request)
     end.
 
--spec decode_json(hello_json:value()) -> hello_proto:request() | hello_proto:response() | {proto_reply, hello_proto:response()}.
+-spec decode_json(hello2_json:value()) -> hello2_proto:request() | hello2_proto:response() | {proto_reply, hello2_proto:response()}.
 decode_json(Obj) ->
     case Obj of
         [] ->
@@ -157,7 +157,7 @@ decode_json(Obj) ->
             single_request(Obj)
     end.
 
--spec decode_batch([hello_json:value()]) -> #batch_request{} | #batch_response{}.
+-spec decode_batch([hello2_json:value()]) -> #batch_request{} | #batch_response{}.
 decode_batch([First | Rest]) ->
     case single_request(First) of
         Req = #request{} ->
@@ -170,7 +170,7 @@ decode_batch([First | Rest]) ->
             decode_batch_response(Rest, [Resp])
     end.
 
--spec decode_batch_request([hello_json:value()], [#request{}], [#error{}]) -> #batch_request{}.
+-spec decode_batch_request([hello2_json:value()], [#request{}], [#error{}]) -> #batch_request{}.
 decode_batch_request([], ReqAcc, ErrorAcc) ->
     #batch_request{proto_mod = ?MODULE, requests = lists:reverse(ReqAcc), errors = ErrorAcc};
 decode_batch_request([Obj | Rest], ReqAcc, ErrorAcc) ->
@@ -187,7 +187,7 @@ decode_batch_request([Obj | Rest], ReqAcc, ErrorAcc) ->
             decode_batch_request(Rest, [Request | ReqAcc], ErrorAcc)
     end.
 
--spec decode_batch_response([hello_json:value()], [#response{} | #error{}]) -> #batch_response{}.
+-spec decode_batch_response([hello2_json:value()], [#response{} | #error{}]) -> #batch_response{}.
 decode_batch_response([], RespAcc) ->
     #batch_response{proto_mod = ?MODULE, responses = RespAcc};
 decode_batch_response([Obj | Rest], RespAcc) ->

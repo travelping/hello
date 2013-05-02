@@ -18,8 +18,8 @@
 % FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 % DEALINGS IN THE SOFTWARE.
 
-% @doc This module is the main interface to the hello application.
--module(hello).
+% @doc This module is the main interface to the hello2 application.
+-module(hello2).
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_binary_request/3, run_stateless_binary_request/4]).
@@ -39,14 +39,14 @@ start() ->
     application:start(ex_uri),
     application:start(ibrowse),
     application:start(erlzmq),
-    application:start(hello).
+    application:start(hello2).
 
 start(_Type, _StartArgs) ->
     %% create the log dir
-    {ok, LogDir} = application:get_env(hello, request_log_dir),
+    {ok, LogDir} = application:get_env(hello2, request_log_dir),
     ok = filelib:ensure_dir(filename:join(LogDir, ".")),
-    {ok, Supervisor} = hello_supervisor:start_link(),
-    ok = hello_request_log:open_bad_requests(Supervisor),
+    {ok, Supervisor} = hello2_supervisor:start_link(),
+    ok = hello2_request_log:open_bad_requests(Supervisor),
     {ok, Supervisor, undefined}.
 
 stop(_) ->
@@ -91,7 +91,7 @@ bind_uri(Type, URL, CallbackModule, Args) ->
     case (catch ex_uri:decode(URL)) of
         {ok, Rec = #ex_uri{scheme = Scheme}, _} ->
             ListenerMod = binding_module(Scheme),
-            case hello_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Type, Args) of
+            case hello2_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Type, Args) of
                 {ok, _Pid}     -> ok;
                 {error, Error} -> {error, Error}
             end;
@@ -99,16 +99,16 @@ bind_uri(Type, URL, CallbackModule, Args) ->
             error({badurl, URL, Other})
     end.
 
-binding_module("zmq-tcp") -> hello_zmq_listener;
-binding_module("zmq-ipc") -> hello_zmq_listener;
-binding_module("http")    -> hello_http_listener;
-binding_module("sockjs")  -> hello_sockjs_listener;
+binding_module("zmq-tcp") -> hello2_zmq_listener;
+binding_module("zmq-ipc") -> hello2_zmq_listener;
+binding_module("http")    -> hello2_http_listener;
+binding_module("sockjs")  -> hello2_sockjs_listener;
 binding_module(_Scheme)   -> error(notsup).
 
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].
 bindings() ->
-    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello_registry:bindings()].
+    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello2_registry:bindings()].
 
 -type transport_params() :: [{atom(), any()}].
 % @doc Run a single not-yet-decoded RPC request against the given callback module.
@@ -118,12 +118,12 @@ bindings() ->
 %   The request is <b>not</b> logged.
 -spec run_stateless_binary_request(module(), binary(), transport_params()) -> binary().
 run_stateless_binary_request(CallbackModule, Message, TransportContextParams) ->
-    run_stateless_binary_request(hello_proto_jsonrpc, CallbackModule, Message, TransportContextParams).
+    run_stateless_binary_request(hello2_proto_jsonrpc, CallbackModule, Message, TransportContextParams).
 
 run_stateless_binary_request(Protocol, CallbackModule, Message, TransportProperties) ->
-    case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, TransportProperties, Message) of
+    case hello2_stateless_handler:run_binary_request(Protocol, CallbackModule, TransportProperties, Message) of
         {ok, _Req, Resp} ->
-            hello_proto:encode(Resp);
+            hello2_proto:encode(Resp);
         {proto_reply, Resp} ->
-            hello_proto:encode(Resp)
+            hello2_proto:encode(Resp)
     end.

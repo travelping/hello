@@ -19,7 +19,7 @@
 % DEALINGS IN THE SOFTWARE.
 
 %% @doc This module contains an RPC client.
--module(hello_client).
+-module(hello2_client).
 %% public API
 -export([start/2, start_link/2, start/3, start_link/3, stop/1, validate_options/2,
          start_supervised/2, start_supervised/3, stop_supervised/1,
@@ -48,7 +48,7 @@
 
 -type method() :: atom() | string() | binary().
 -type notification_sink() :: undefined | pid() | atom()
-                           | fun((pid(), Method::binary(), hello_json:json_array() | hello_json:json_object()) -> any()).
+                           | fun((pid(), Method::binary(), hello2_json:json_array() | hello2_json:json_object()) -> any()).
 -type generic_options() :: {protocol, module()} | {notification_sink, notification_sink()}.
 -type options() :: [generic_options() | {atom(), any()}].
 -type start_error() :: {invalid_options, any()} | badscheme | badurl.
@@ -71,7 +71,7 @@ behaviour_info(_) ->
 %%   <ul style="list-style-type: none;">
 %%     <li>
 %%       <b>{protocol, module()}</b><br/>
-%%       Selects the RPC protocol implementation. The default is <tt>hello_proto_jsonrpc</tt>.<br/><br/>
+%%       Selects the RPC protocol implementation. The default is <tt>hello2_proto_jsonrpc</tt>.<br/><br/>
 %%     </li>
 %%     <li>
 %%       <b>{notification_sink, function() | pid() | atom()}</b><br/>
@@ -81,7 +81,7 @@ behaviour_info(_) ->
 %%           If a function is given, it will be called with 3 arguments for each notification.
 %%           The first argument is the pid of the client process, the second argument is the notification's
 %%           RPC method name (as a binary) and the third is the argument list. For protocols that
-%%           support named parameters, the third parameter can also be a value of type hello_json:json_object().
+%%           support named parameters, the third parameter can also be a value of type hello2_json:json_object().
 %%         </li>
 %%         <li>
 %%           If the notification sink is the atom <tt>undefined</tt>, notifications are dropped.<br/>
@@ -93,18 +93,18 @@ behaviour_info(_) ->
 %%           Notification messages obey the following format:
 %%           <pre>{rpc_notification, Client::pid(), Method::binary(), Parameters}</pre>
 %%           As with notification sink functions, the Parameters are either sent as a list
-%%           or as a <tt>hello_json:json_object()</tt>.
+%%           or as a <tt>hello2_json:json_object()</tt>.
 %%         </li>
 %%       </ul>
 %%     </li>
 %%   </ul>
--spec start_link(hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start_link(hello2:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start_link(URI, Options) ->
     gen_server:start_link(?MODULE, {URI, Options}, []).
 
 %% @doc create a client process
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start(hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start(hello2:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start(URI, Options) ->
     gen_server:start(?MODULE, {URI, Options}, []).
 
@@ -113,13 +113,13 @@ start(URI, Options) ->
 
 %% @doc create and link a named client client
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start_link(server_name(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start_link(server_name(), hello2:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start_link(Name, URI, Options) ->
     gen_server:start_link(Name, ?MODULE, {URI, Options}, []).
 
 %% @doc create a named client
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start(server_name(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start(server_name(), hello2:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start(Name, URI, Options) ->
     gen_server:start(Name, ?MODULE, {URI, Options}, []).
 
@@ -130,82 +130,82 @@ stop(Client) ->
 
 %% @doc create client that is supervised by hello
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start_supervised(hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start_supervised(hello2:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start_supervised(URI, Options) ->
-    hello_client_sup:start_client(URI, Options).
+    hello2_client_sup:start_client(URI, Options).
 
 %% @doc create a named client that is supervised by hello
 %%   This function is used to create a client as part of the hello supervisor tree.
 %%   It is intended to be used by applications that do not have supervisor trees
 %%   on their own, and for scripts.
 %%   For a description of the parameters, see {@link start_link/2}.
--spec start_supervised(atom(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
+-spec start_supervised(atom(), hello2:url(), options()) -> {ok, pid()} | {error, start_error()}.
 start_supervised(Name, URI, Options) ->
-    hello_client_sup:start_named_client(Name, URI, Options).
+    hello2_client_sup:start_named_client(Name, URI, Options).
 
 %% @doc terminate a client process that is supervised by hello
 -spec stop_supervised(client()) -> ok.
 stop_supervised(Client) ->
-    hello_client_sup:stop_client(Client).
+    hello2_client_sup:stop_client(Client).
 
 %% @doc Perform an RPC method call with positional parameters
--spec call(client(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+-spec call(client(), method(), [hello2_json:value()]) -> {ok, hello2_json:value()} | {error, rpc_error()}.
 call(Client, Method, ArgList) when is_list(ArgList) ->
     timeout_call(Client, {call, Method, ArgList}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link call/3}, but with a configurable timeout
--spec call(client(), method(), [hello_json:value()], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
+-spec call(client(), method(), [hello2_json:value()], timeout()) -> {ok, hello2_json:value()} | {error, rpc_error()}.
 call(Client, Method, ArgList, Timeout) when is_list(ArgList) ->
     timeout_call(Client, {call, Method, ArgList}, Timeout).
 
 %% @doc Perform an RPC method call with named parameters
--spec call_np(client(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
+-spec call_np(client(), method(), [{string(), hello2_json:value()}]) -> {ok, hello2_json:value()} | {error, rpc_error()}.
 call_np(Client, Method, ArgProps) when is_list(ArgProps) ->
     timeout_call(Client, {call, Method, {ArgProps}}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link call_np/3}, but with a configurable timeout
--spec call_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
+-spec call_np(client(), method(), [{string(), hello2_json:value()}], timeout()) -> {ok, hello2_json:value()} | {error, rpc_error()}.
 call_np(Client, Method, ArgProps, Timeout) when is_list(ArgProps) ->
     timeout_call(Client, {call, Method, {ArgProps}}, Timeout).
 
 %% @deprecated
 %% @doc Send an RPC notification
 %%   This function is deprecated and will be removed in hello 0.3. Use {@link notify/3} instead.
--spec notification(client(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
+-spec notification(client(), method(), [hello2_json:value()]) -> ok | {error, rpc_error()}.
 notification(Client, Method, ArgList) ->
     notify(Client, Method, ArgList).
 
 %% @doc Send an RPC notification with positional parameters
--spec notify(client(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
+-spec notify(client(), method(), [hello2_json:value()]) -> ok | {error, rpc_error()}.
 notify(Client, Method, Parameters) ->
     timeout_call(Client, {notification, Method, Parameters}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link notify/3}, but with a configurable timeout
--spec notify(client(), method(), [hello_json:value()], timeout()) -> ok | {error, rpc_error()}.
+-spec notify(client(), method(), [hello2_json:value()], timeout()) -> ok | {error, rpc_error()}.
 notify(Client, Method, Parameters, Timeout) ->
     timeout_call(Client, {notification, Method, Parameters}, Timeout).
 
 %% @doc Send an RPC notification with named parameters
--spec notify_np(client(), method(), [{string(), hello_json:value()}]) -> ok | {error, rpc_error()}.
+-spec notify_np(client(), method(), [{string(), hello2_json:value()}]) -> ok | {error, rpc_error()}.
 notify_np(Client, Method, Parameters) ->
     timeout_call(Client, {notification, Method, {Parameters}}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link notify_np/3}, but with a configurable timeout
--spec notify_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> ok | {error, rpc_error()}.
+-spec notify_np(client(), method(), [{string(), hello2_json:value()}], timeout()) -> ok | {error, rpc_error()}.
 notify_np(Client, Method, Parameters, Timeout) ->
     timeout_call(Client, {notification, Method, {Parameters}}, Timeout).
 
 %% @doc Send multiple RPC calls in one request.
 %%   The order of the results in the returned list matches the order of the
 %%   calls in the given Batch.
--spec batch_call(client(), [Call]) -> timeout | [{ok, hello_json:value()} | {error, rpc_error()}] when
-    Call :: {method(), hello_json:json_object() | hello_json:json_array()}.
+-spec batch_call(client(), [Call]) -> timeout | [{ok, hello2_json:value()} | {error, rpc_error()}] when
+    Call :: {method(), hello2_json:json_object() | hello2_json:json_array()}.
 batch_call(Client, Batch) ->
     timeout_call(Client, {batch_call, Batch}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link batch_call/2}, but with a configurable timeout
--spec batch_call(client(), [Call], timeout()) -> {error, timeout} | [{ok, hello_json:value()} | {error, rpc_error()}] when
-    Call :: {method(), hello_json:json_object() | hello_json:json_array()}.
+-spec batch_call(client(), [Call], timeout()) -> {error, timeout} | [{ok, hello2_json:value()} | {error, rpc_error()}] when
+    Call :: {method(), hello2_json:json_object() | hello2_json:json_array()}.
 batch_call(Client, Batch, Timeout) ->
     timeout_call(Client, {batch_call, Batch}, Timeout).
 
@@ -220,7 +220,7 @@ timeout_call(Client, Call, Timeout) ->
     end.
 
 %% @doc validate the options for a given client URL
--spec validate_options(hello:url(), list()) -> ok | {error, string()}.
+-spec validate_options(hello2:url(), list()) -> ok | {error, string()}.
 validate_options(URL, Options) ->
     case (catch ex_uri:decode(URL)) of
         {ok, URIRec = #ex_uri{}, _} ->
@@ -273,7 +273,7 @@ run_notification_sink_function(Function, Client, Method, Params) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(client_options, {
-    protocol = hello_proto_jsonrpc :: module(),
+    protocol = hello2_proto_jsonrpc :: module(),
     notification_sink :: function() | pid() | atom()
 }).
 
@@ -309,22 +309,22 @@ init({URI, Options}) ->
 
 %% @hidden
 handle_call({call, Method, ArgList}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
-    Request   = hello_proto:new_request(Opts#client_options.protocol, ReqId, Method, ArgList),
+    Request   = hello2_proto:new_request(Opts#client_options.protocol, ReqId, Method, ArgList),
     ClientCtx = make_reply_ctx(State, From),
     SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
     handle_reply_result(ReqId + 1, State, SendReply);
 handle_call({notification, Method, ArgList}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
-    Request = hello_proto:new_notification(Opts#client_options.protocol, Method, ArgList),
+    Request = hello2_proto:new_notification(Opts#client_options.protocol, Method, ArgList),
     ClientCtx = make_reply_ctx(State, From),
     SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
     handle_reply_result(ReqId, State, SendReply);
 handle_call({batch_call, Batch}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
     Protocol = Opts#client_options.protocol,
     {Reqs, NewReqId} = lists:mapfoldl(fun ({Method, Args}, ReqIdAcc) ->
-                                              Req = hello_proto:new_request(Protocol, ReqIdAcc, Method, Args),
+                                              Req = hello2_proto:new_request(Protocol, ReqIdAcc, Method, Args),
                                               {Req, ReqIdAcc + 1}
                                       end, ReqId, Batch),
-    Request = hello_proto:new_batch_request(Protocol, Reqs),
+    Request = hello2_proto:new_batch_request(Protocol, Reqs),
     ClientCtx = make_reply_ctx(State, From),
     SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
     handle_reply_result(NewReqId, State, SendReply);
@@ -354,10 +354,10 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
-uri_client_module(URI = #ex_uri{scheme = "http"})    -> {URI, hello_http_client};
-uri_client_module(URI = #ex_uri{scheme = "https"})   -> {URI, hello_http_client};
-uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"}) -> {URI#ex_uri{scheme = "tcp"}, hello_zmq_client};
-uri_client_module(URI = #ex_uri{scheme = "zmq-ipc"}) -> {URI#ex_uri{scheme = "ipc"}, hello_zmq_client};
+uri_client_module(URI = #ex_uri{scheme = "http"})    -> {URI, hello2_http_client};
+uri_client_module(URI = #ex_uri{scheme = "https"})   -> {URI, hello2_http_client};
+uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"}) -> {URI#ex_uri{scheme = "tcp"}, hello2_zmq_client};
+uri_client_module(URI = #ex_uri{scheme = "zmq-ipc"}) -> {URI#ex_uri{scheme = "ipc"}, hello2_zmq_client};
 uri_client_module(_) ->
     badscheme.
 
