@@ -2,6 +2,7 @@
 -record(request,  {
     reqid      :: hello_json:value(),
     method     :: binary(),
+    namespace  :: binary(),
     params     :: hello_json:json_object() | list(hello_json:value()),
     proto_mod  :: module(),
     proto_data :: term()
@@ -34,6 +35,12 @@
     responses  :: list(#response{} | #error{})
 }).
 
+-record(callback, {
+    mod  :: module(),
+    type :: stateful | stateless,
+    args :: term()
+}).
+
 %% TODO: get rid of some of those fields
 -record(binding, {
     pid           :: pid(),
@@ -45,9 +52,7 @@
     path          :: [binary()],
     protocol      :: module(),
     listener_mod  :: module(),
-    callback_mod  :: module(),
-    callback_type :: stateful | stateless,
-    callback_args :: term()
+    callbacks     :: [#callback{}]
 }).
 
 -define(INCOMING_MSG_MSG, '$hello_incoming_message').

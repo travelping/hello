@@ -1,5 +1,5 @@
-hello_test_jsonrpc_compliance_typespec() -> 
-{<<"hello_example">>,
+hello2_test_jsonrpc_compliance_typespec() -> 
+{<<"hello_example">>, <<"">>,
  [#rpc{
       name = <<"subtract">>,description = undefined,
       input = 

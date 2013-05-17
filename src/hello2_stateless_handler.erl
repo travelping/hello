@@ -134,16 +134,16 @@ transport_param(Key, #stateless_context{transport_params = Params}, Default) ->
 %% @private
 %% @doc stateless handler process function for hello2_binding
 -spec handler(#binding{}, hello2_binding:peer(), pid(), hello2:transport_params()) -> any().
-handler(#binding{protocol = Protocol, log_url = Endpoint, callback_mod = CallbackModule}, Peer, Transport, TransportParams) ->
+handler(#binding{protocol = Protocol, log_url = Endpoint, callbacks = Callbacks}, Peer, Transport, TransportParams) ->
     receive
         {?INCOMING_MSG_MSG, Message} ->
-            case run_binary_request(Protocol, CallbackModule, TransportParams, Message) of
+            case run_binary_request(Protocol, Callbacks, TransportParams, Message) of
                 {ok, Request, Response} ->
-                    hello2_request_log:request(CallbackModule, self(), Endpoint, Request, Response),
+                    hello2_request_log:request(undefined, self(), Endpoint, Request, Response),
                     BinResp = hello2_proto:encode(Response),
                     Transport ! {hello2_msg, self(), Peer, BinResp};
                 {proto_reply, Response} ->
-                    hello2_request_log:bad_request(CallbackModule, self(), Endpoint, Message, Response),
+                    hello2_request_log:bad_request(undefined, self(), Endpoint, Message, Response),
                     BinResp = hello2_proto:encode(Response),
                     Transport ! {hello2_msg, self(), Peer, BinResp};
                 ignore ->
@@ -156,15 +156,15 @@ handler(#binding{protocol = Protocol, log_url = Endpoint, callback_mod = Callbac
     end.
 
 %% @private
--spec run_binary_request(module(), module(), hello2:transport_params(), binary()) ->
-        {ok, hello2_proto:request(), hello2_proto:response()} | {error, hello2_proto:response()}.
-run_binary_request(Protocol, CallbackModule, TransportParams, BinRequest) ->
+-spec run_binary_request(module(), hello2:callback(), hello2:transport_params(), binary()) ->
+    {ok, hello2_proto:request(), hello2_proto:response(), module()} | {error, hello2_proto:response()}.
+run_binary_request(Protocol, Callbacks, TransportParams, BinRequest) ->
     Context = #stateless_context{transport_params = TransportParams},
     case hello2_proto:decode(Protocol, BinRequest) of
         Req = #request{} ->
-            {ok, Req, do_single_request(CallbackModule, Context, Req)};
+            {ok, Req, do_single_request(Callbacks, Context, Req)};
         Req = #batch_request{requests = GoodReqs} ->
-            Resps = [do_single_request(CallbackModule, Context, R) || R <- GoodReqs],
+            Resps = [do_single_request(Callbacks, Context, R) || R <- GoodReqs],
             {ok, Req, hello2_proto:batch_response(Req, Resps)};
         ProtoReply = {proto_reply, _Resp} ->
             ProtoReply;
@@ -174,19 +174,30 @@ run_binary_request(Protocol, CallbackModule, TransportParams, BinRequest) ->
             ignore
     end.
 
-do_single_request(Mod, Context, Req = #request{}) ->
+do_single_request(Callbacks, Context, Req = #request{namespace=Namespace}) when not is_atom(Callbacks) ->
+    case dict:find(Namespace, Callbacks) of
+        error ->
+            hello2_proto:error_response(Req, method_not_found);
+        {ok, [Callback]} ->
+            #callback{mod=Mod} = Callback,
+            do_single_request(Mod, Context, Req)
+    end;
+ do_single_request(Mod, Context, Req = #request{method=Method0}) ->
     try
+        Method1 = binary_to_atom(Method0, utf8),
         case hello2_validate:request(Mod, Req) of
-	    {error, ErrorMsg} ->
-		ErrorMsg;
-	    {ok, Method, Validated} when is_list(Validated) ->
-		run_callback_module(Req, Mod, Context, Method, Validated)
-	end
+            {error, ErrorMsg} ->
+                ErrorMsg;
+            {ok, Method0, Validated} when is_list(Validated) ->
+                run_callback_module(Req, Mod, Context, Method0, Validated);
+            {ok, Method1, Validated} when is_list(Validated) ->
+                run_callback_module(Req, Mod, Context, Method1, Validated)
+        end
     catch
         Type:Error ->
             Report = io_lib:format("Error (~p) thrown by RPC handler '~p' while executing the method \"~s\":~n"
-                                   "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
-                                   [Type, Mod, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
+                "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
+                [Type, Mod, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
             error_logger:error_report(Report),
             hello2_proto:error_response(Req, server_error)
     end.

@@ -20,11 +20,13 @@
 
 % @private
 -module(hello2_validate).
--export([request/2]).
--export([validate_params/3, validate_params/4]).
+
+-export([request/2, validate_params/3, validate_params/4, find_hello2_info/2]).
+
 -export_type([json_type/0, param_type/0]).
 
 -include_lib("yang/include/typespec.hrl").
+
 -include("hello2.hrl").
 -include("internal.hrl").
 
@@ -35,7 +37,7 @@
 %% -- API functions
 -spec request(atom, #request{}) -> [term()] | {error, iodata()}.
 request(Mod, Req = #request{method = Method, params = Params}) ->
-    ModSpec = find_hello2_info(Mod),
+    ModSpec = find_hello2_info(Mod, <<"">>),
     try
 	Fields = yang_typespec:rpc_params(Method, ModSpec),
 	case hello2_validate:validate_params(ModSpec, Method, params_to_proplist(Fields, Params)) of
@@ -49,12 +51,12 @@ request(Mod, Req = #request{method = Method, params = Params}) ->
 		ParamsValidated
 	end
     catch
-	error:{badarg, _} ->
+        error:{badarg, _} ->
             {error, hello2_proto:error_response(Req, method_not_found)};
-	throw:{error, unknown_type} ->
+        throw:{error, unknown_type} ->
             {error, hello2_proto:error_response(Req, method_not_found)};
-	throw:_ ->
-	    hello2_proto:error_response(Req, invalid_params, <<"">>)
+        throw:_ ->
+            hello2_proto:error_response(Req, invalid_params, <<"">>)
     end.
 
 params_return(Return, []) ->
@@ -71,11 +73,11 @@ validate_params(TypeSpec, Method, Params) ->
 
 validate_params(TypeSpec, Method, Depth, Params) ->
     try yang_json_validate:validate(TypeSpec, {rpc, Method, input}, Depth, Params) of
-	Error when element(1, Error) == error ->
-	    Error;
-	ParamsValidated when is_list(ParamsValidated) ->
-	    #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
-	    params_return({ok, Method, ParamsValidated}, Opts)
+        Error when element(1, Error) == error ->
+            Error;
+        ParamsValidated when is_list(ParamsValidated) ->
+            #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
+            params_return({ok, Method, ParamsValidated}, Opts)
     catch
 	throw:{error, Error} ->
 	    Msg = io_lib:format("Error: ~p", [Error]),
@@ -145,14 +147,14 @@ build_rpc_typespec(Mod, M = #rpc_method{name = Name, description = Desc}) ->
 	 input = #object{name = input, fields = Fields, opts = build_rpc_opts(M)}
 	}.
 
-build_hello2_info(Mod) ->
-    {module_type(Mod),
-     [build_rpc_typespec(Mod, RPC) || RPC <- cb_apply(Mod, method_info)]}.
+build_hello2_info(Mod, DefaultNamespace) ->
+    {module_type(Mod), DefaultNamespace,
+        [build_rpc_typespec(Mod, RPC) || RPC <- cb_apply(Mod, method_info)]}.
 
-find_hello2_info(Mod) ->
+find_hello2_info(Mod, DefaultNamespace) ->
     try
-	cb_apply(Mod, hello2_info)
+        cb_apply(Mod, hello2_info)
     catch
-	error:undef ->
-	    build_hello2_info(Mod)
+        error:undef ->
+            build_hello2_info(Mod, DefaultNamespace)
     end.

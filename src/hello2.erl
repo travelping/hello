@@ -23,7 +23,7 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_binary_request/3, run_stateless_binary_request/4]).
--export([bind_stateful/3, bind_stateless/2, bindings/0]).
+-export([bind_stateful/3, bind_stateless/2, bind_stateless/3, bindings/0]).
 -export_type([url/0, decoded_url/0, transport_params/0]).
 
 -include("internal.hrl").
@@ -85,7 +85,10 @@ bind_stateful(URL, CallbackModule, Args) ->
 %   </ul>
 -spec bind_stateless(url(), module()) -> ok | {error, already_started} | {error, occupied} | {error, {transport, term()}}.
 bind_stateless(URL, CallbackModule) ->
-    bind_uri(stateless, URL, CallbackModule, []).
+    bind_stateless(URL, CallbackModule, []).
+
+bind_stateless(URL, CallbackModule, Args) ->
+    bind_uri(stateless, URL, CallbackModule, Args).
 
 bind_uri(Type, URL, CallbackModule, Args) ->
     case (catch ex_uri:decode(URL)) of
@@ -108,7 +111,11 @@ binding_module(_Scheme)   -> error(notsup).
 % @doc Return the list of bound modules.
 -spec bindings() -> [{url(), module()}].
 bindings() ->
-    [{ex_uri:encode(Binding#binding.url), Binding#binding.callback_mod} || Binding <- hello2_registry:bindings()].
+    Bindings0 = [{ex_uri:encode(Binding#binding.url), dict:to_list(Binding#binding.callbacks)} || Binding <- hello2_registry:bindings()],
+    lists:foldl(
+        fun({Url, Callbacks}, Bindings1) ->
+                Bindings1 ++ [{Url, Cb#callback.mod} || {_, [Cb]} <- Callbacks]
+        end, [], Bindings0).
 
 -type transport_params() :: [{atom(), any()}].
 % @doc Run a single not-yet-decoded RPC request against the given callback module.

@@ -20,7 +20,9 @@
 
 % @private
 -module(hello2_binding).
+
 -behaviour(gen_server).
+
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 % Binding process
@@ -31,6 +33,7 @@
 -export_type([peer/0, handler/0]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
+
 -include("internal.hrl").
 
 -type peer() :: term().
@@ -39,37 +42,36 @@
 %% ----------------------------------------------------------------------------------------------------
 %% -- Contruct a new binding
 -spec new(pid(), module(), string() | #ex_uri{}, module(), module(), stateful | stateless, term()) -> #binding{}.
-new(Pid, ListenerModule, URL = #ex_uri{}, Protocol, CallbackModule, CallbackType, CallbackArgs) ->
-    {IP, Host} = extract_ip_and_host(URL),
-    Binding = #binding{pid = Pid,
-		       url = URL,
-		       ip = IP,
-		       host = Host,
-		       port = (URL#ex_uri.authority)#ex_uri_authority.port,
-		       path = URL#ex_uri.path,
-		       protocol = Protocol,
-		       listener_mod = ListenerModule,
-		       callback_mod = CallbackModule,
-		       callback_type = CallbackType,
-		       callback_args = CallbackArgs},
-    Binding#binding{log_url = ListenerModule:url_for_log(Binding)};
-
-new(Pid, ListenerModule, URL, Protocol, CallbackModule, CallbackType, CallbackArgs) when is_list(URL) ->
+new(Pid, ListenerModule, URL, Protocol, CallbackMod, CallbackType, CallbackArgs) when is_list(URL) ->
     {ok, DecURL, _} = ex_uri:decode(URL),
-    {IP, Host} = extract_ip_and_host(DecURL),
+    new(Pid, ListenerModule, DecURL, Protocol, CallbackMod, CallbackType, CallbackArgs);
+new(Pid, ListenerModule, URL = #ex_uri{}, Protocol, CallbackMod, CallbackType, CallbackArgs0) ->
+    {IP, Host} = extract_ip_and_host(URL),
+    CallbackArgs1 = case lists:keymember(exclusive, 1, CallbackArgs0) of
+        true ->
+            CallbackArgs0;
+        false ->
+            [{exclusive, true} | CallbackArgs0]
+    end,
+    Callback = #callback{
+        mod = CallbackMod,
+        type = CallbackType,
+        args = CallbackArgs1
+    },
+    {_, Namespace, _} = hello2_validate:find_hello2_info(CallbackMod, <<"">>),
+    Callbacks0 = dict:new(),
+    Callbacks1 = dict:append(Namespace, Callback, Callbacks0),
     Binding = #binding{pid = Pid,
-		       url = DecURL,
-		       ip = IP,
-		       host = Host,
-		       port = (DecURL#ex_uri.authority)#ex_uri_authority.port,
-		       path = DecURL#ex_uri.path,
-		       protocol = Protocol,
-		       listener_mod = ListenerModule,
-		       callback_mod = CallbackModule,
-		       callback_type = CallbackType,
-		       callback_args = CallbackArgs},
+        url = URL,
+        ip = IP,
+        host = Host,
+        port = (URL#ex_uri.authority)#ex_uri_authority.port,
+        path = URL#ex_uri.path,
+        protocol = Protocol,
+        listener_mod = ListenerModule,
+        callbacks = Callbacks1
+    },
     Binding#binding{log_url = ListenerModule:url_for_log(Binding)}.
-  
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
@@ -85,8 +87,9 @@ start_registered_handler(Binding, Peer, Transport, TransportParams) ->
     end.
 
 -spec start_handler(#binding{}, peer(), pid(), hello2:transport_params()) -> handler().
-start_handler(Binding, Peer, Transport, TransportParams) ->
-    case Binding#binding.callback_type of
+start_handler(#binding{callbacks=Callbacks}=Binding, Peer, Transport, TransportParams) ->
+    [{_, [Callback]} | _] = dict:to_list(Callbacks),
+    case Callback#callback.type of
         stateful ->
             {ok, Pid} = hello2_stateful_handler:start_link(Binding, Peer, Transport, TransportParams),
             Pid;
@@ -99,15 +102,13 @@ incoming_message(Pid, Message) ->
     Pid ! {?INCOMING_MSG_MSG, Message}, ok.
 
 -spec lookup_handler(#binding{}, peer()) -> {ok, handler()} | {error, not_found}.
-lookup_handler(Binding = #binding{callback_type = stateful}, Peer) ->
+lookup_handler(Binding, Peer) ->
     case hello2_registry:lookup({listener_peer, Binding#binding.pid, Peer}) of
         {ok, Pid, _Data} ->
             {ok, Pid};
         Error ->
             Error
-    end;
-lookup_handler(#binding{callback_type = stateless}, _Peer) ->
-    {error, not_found}.
+    end.
 
 -spec register_handler(pid(), handler(), peer()) -> ok | {already_registered, pid(), peer()}.
 register_handler(BindingPid, Pid, Peer) ->
@@ -155,7 +156,9 @@ init({StarterPid, StarterRef, Binding}) ->
 
     case start_listener(Binding) of
         {ok, ListenerPid, ListenerID, ListenerMonitor} ->
-            ok = hello2_request_log:open(Binding#binding.callback_mod, self()),
+            #binding{callbacks=Callbacks} = Binding,
+            [{_, [Callback]} | _] = dict:to_list(Callbacks),
+            ok = hello2_request_log:open(Callback#callback.mod, self()),
             State = #state{binding = Binding,
                            listener_id = ListenerID,
                            listener_pid = ListenerPid,
@@ -179,7 +182,9 @@ handle_info(_Info, State) ->
     {noreply, State, hibernate}.
 
 terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_pid = Pid}) ->
-    hello2_request_log:close(Binding#binding.callback_mod),
+    #binding{callbacks=Callbacks} = Binding,
+    [{_, [Callback]} | _] = dict:to_list(Callbacks),
+    hello2_request_log:close(Callback#callback.mod),
     case hello2_registry:add_to_key(?REFC(ListenerID), -1) of
         {ok, Pid, 0} -> catch hello2_listener_supervisor:stop_child(ListenerID);
         _            -> ok
@@ -192,11 +197,12 @@ handle_cast(_Cast, State)           -> {noreply, State, hibernate}.
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-start_listener(BindingIn = #binding{listener_mod = Mod, callback_mod = CallbackMod}) ->
+start_listener(BindingIn = #binding{listener_mod = Mod, callbacks = Callbacks}) ->
     Binding       = BindingIn#binding{log_url = Mod:url_for_log(BindingIn)},
     ListenerKey   = Mod:listener_key(BindingIn),
     ModBindingKey = Mod:binding_key(Binding),
     BindingKey    = {binding, Mod, ModBindingKey},
+    [{_, [NewCallback]} | _] = dict:to_list(Callbacks),
 
     case hello2_registry:lookup_listener(ListenerKey) of
         {error, not_found} ->
@@ -224,10 +230,35 @@ start_listener(BindingIn = #binding{listener_mod = Mod, callback_mod = CallbackM
                     {ok, ListenerPid, _} = hello2_registry:add_to_key(?REFC(ListenerID), 1),
                     ListenerMonitor = monitor(process, ListenerPid),
                     {ok, ListenerPid, ListenerID, ListenerMonitor};
-                {ok, _Pid, #binding{callback_mod = CallbackMod}} ->
-                    {error, already_started};
-                {ok, _Pid, #binding{callback_mod = _OtherModule}} ->
-                    {error, occupied}
+                {ok, _Pid, #binding{callbacks = Callbacks0}=ExistingBinding} ->
+                    #callback{mod=NewCallbackMod, type=NewCallbackType} = NewCallback,
+                    {_, Namespace, _} = hello2_validate:find_hello2_info(NewCallbackMod, <<"">>),
+                    case dict:find(Namespace, Callbacks0) of
+                        {ok, _} ->
+                            {error, already_started};
+                        error ->
+                            Exclusive = dict:fold(
+                                    fun
+                                        (_, _, true) ->
+                                            true;
+                                        (_, [#callback{args=CallbackArgs, type=CallbackType}], false) when 
+                                                NewCallbackType =:= CallbackType ->
+                                            {exclusive, Exclusive0} = lists:keyfind(exclusive, 1, CallbackArgs),
+                                            Exclusive0;
+                                        (_, _, false) ->
+                                            true
+                                    end, false, Callbacks0),
+                            case Exclusive of
+                                true ->
+                                    {error, occupied};
+                                false ->
+                                    Callbacks1 = dict:append(Namespace, NewCallback, Callbacks0),
+                                    NewBinding = ExistingBinding#binding{callbacks=Callbacks1},
+                                    ok = hello2_registry:update(BindingKey, NewBinding),
+                                    ListenerMonitor = monitor(process, ListenerPid),
+                                    {ok, ListenerPid, ListenerID, ListenerMonitor}
+                            end
+                    end
             end;
         {ok, _ListenerPid, _Data} ->
             %% there is a listener, but the listener module is different

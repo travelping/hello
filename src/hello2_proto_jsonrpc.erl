@@ -218,7 +218,14 @@ single_request({Props}) ->
                              Obj = {_} when Version > 1 -> Obj;
                              _                          -> throw({invalid_req, ID, <<"\"params\" must be array or object">>})
                          end,
+                Namespace = case binary:split(Method, <<".">>) of
+                    [_] ->
+                        <<"">>;
+                    [Namespace1, _] ->
+                        Namespace1
+                end,
                 #request{reqid = ID,
+                         namespace = Namespace,
                          method = Method,
                          params = Params,
                          proto_mod = ?MODULE,

@@ -37,16 +37,12 @@
 %% -- hello2_binding callbacks
 listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
     Dispatch = [{'_', [{['...'], ?MODULE, []}]}],
-
-    %% Copied from cowboy.erl because it doesn't provide an API that
-    %% allows supervising the listener from the calling application yet.
     Acceptors = 30,
     Transport = cowboy_tcp_transport,
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     Protocol = cowboy_http_protocol,
     ProtocolOpts = [{dispatch, Dispatch}],
-    Args = [Acceptors, Transport, TransportOpts, Protocol, ProtocolOpts],
-    {ChildID, {cowboy_listener_sup, start_link, Args}, permanent, infinity, supervisor, [cowboy_listener_sup]}.
+    cowboy:child_spec(ChildID, Acceptors, Transport, TransportOpts, Protocol, ProtocolOpts).
 
 listener_key(#binding{ip = IP, port = Port}) ->
     hello2_registry:listener_key(IP, default_port(Port)).
@@ -71,7 +67,7 @@ handle(Req, State) ->
             {Host, Req5} = cowboy_http_req:raw_host(Req4),
             case lookup_binding(?MODULE, Host, Port, PathList) of
                 {ok, Binding} ->
-		    process(Binding, Req, State);
+                    process(Binding, Req, State);
                 {error, not_found} ->
                     {ok, Req6} = cowboy_http_req:reply(404, server_header(), Req5),
                     {ok, Req6, undefined}

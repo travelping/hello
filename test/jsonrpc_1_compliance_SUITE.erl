@@ -58,7 +58,7 @@ request({Method, Params}) ->
 request(Request) when is_list(Request) ->
     request(list_to_binary(Request));
 request(Request) ->
-    RespJSON = hello2:run_stateless_binary_request(hello2_test_jsonrpc_1_compliance__handler, Request, []),
+    RespJSON = hello2:run_stateless_binary_request(hello2_test_jsonrpc_1_compliance_handler, Request, []),
     case hello2_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}
@@ -71,7 +71,7 @@ field(Object, Field) ->
 			    end, Object, Flist).
 
 init_per_group(old_cb_info, Config) ->
-    Mod = hello2_test_jsonrpc_1_compliance__handler,
+    Mod = hello2_test_jsonrpc_1_compliance_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
     ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = subtract}]),
     ok = meck:expect(Mod, param_info,
@@ -86,7 +86,7 @@ init_per_group(old_cb_info, Config) ->
     [{cb_module, Mod}|Config];
 
 init_per_group(new_cb_info, Config) ->
-    Mod = hello2_test_jsonrpc_1_compliance__handler,
+    Mod = hello2_test_jsonrpc_1_compliance_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
     ok = meck:expect(Mod, hello2_info, fun hello2_test_jsonrpc_compliance_typespec/0),
     ok = meck:expect(Mod, handle_request,

@@ -134,66 +134,67 @@ group_config(zmq_tcp_error) ->
 	{"zmq-tcp://undefined.undefined:5555", false, []}.
 
 init_per_group(old_cb_info, Config) ->
-    hello2:start(),
-
     Mod = hello2_test_stateless_handler,
-
     ok = meck:new(Mod, [non_strict, no_link]),
     ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = M} || M <- [echo ,append, enum_test, return_error]]),
     ok = meck:expect(Mod, param_info,
-		     fun(echo) ->
-			     [#rpc_param{name = text, type = string, description = "the text to be echoed"}];
-			(append) ->
-			     [#rpc_param{name = str1, type = string, optional = true, default  = <<"">>},
-			      #rpc_param{name = str2, type = string, optional = true, default  = <<"">>}];
-			(enum_test) ->
-			     [#rpc_param{name = atom, type = {enum, [a, b, c]}, description = "the atom to be echoed, \"a\", \"b\", or \"c\""}];
-			(return_error) ->
-			     [#rpc_param{name = code, type = integer},
-			      #rpc_param{name = message, type = string, optional = true, default  = <<"">>}]
-		     end),
+        fun
+            (echo) ->
+                [#rpc_param{name = text, type = string, description = "the text to be echoed"}];
+            (append) ->
+                [#rpc_param{name = str1, type = string, optional = true, default  = <<"">>},
+                    #rpc_param{name = str2, type = string, optional = true, default  = <<"">>}];
+            (enum_test) ->
+                [#rpc_param{name = atom, type = {enum, [a, b, c]}, description = "the atom to be echoed, \"a\", \"b\", or \"c\""}];
+            (return_error) ->
+                [#rpc_param{name = code, type = integer},
+                    #rpc_param{name = message, type = string, optional = true, default  = <<"">>}]
+        end),
     ok = meck:expect(Mod, handle_request,
-		     fun(_Context, echo, [Str]) ->
-			     {ok, Str};
-			(_Context, append, [Str1, Str2]) ->
-			     {ok, <<Str1/binary, Str2/binary>>};
-			(_Context, enum_test, [Atom]) ->
-			     {ok, Atom};
-			(_Context, return_error, [Code, Message]) ->
-			     {error, Code, Message}
-		     end),
+        fun
+            (_Context, echo, [Str]) ->
+                {ok, Str};
+            (_Context, append, [Str1, Str2]) ->
+                {ok, <<Str1/binary, Str2/binary>>};
+            (_Context, enum_test, [Atom]) ->
+                {ok, Atom};
+            (_Context, return_error, [Code, Message]) ->
+                {error, Code, Message}
+        end),
     [{cb_module, Mod}|Config];
 
 init_per_group(new_cb_info, Config) ->
-    hello2:start(),
-
     Mod = hello2_test_stateless_ts_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
     ok = meck:expect(Mod, hello2_info, fun hello2_test_example_typespec/0),
     ok = meck:expect(Mod, handle_request,
-		     fun(_Context, <<"echo">>, [{_,Str}]) ->
-			     {ok, Str};
-			(_Context, <<"append">>, [{_,Str1}, {_,Str2}]) ->
-			     {ok, <<Str1/binary, Str2/binary>>};
-			(_Context, <<"enum_test">>, [{_,Atom}]) ->
-			     {ok, Atom};
-			(_Context, <<"return_error">>, [{<<"code">>, Code}, {<<"message">>, Message}]) ->
-			     {error, Code, Message}
-		     end),
+        fun
+            (_Context, <<"echo">>, [{_,Str}]) ->
+                {ok, Str};
+            (_Context, <<"append">>, [{_,Str1}, {_,Str2}]) ->
+                {ok, <<Str1/binary, Str2/binary>>};
+            (_Context, <<"enum_test">>, [{_,Atom}]) ->
+                {ok, Atom};
+            (_Context, <<"return_error">>, [{<<"code">>, Code}, {<<"message">>, Message}]) ->
+                {error, Code, Message}
+        end),
     [{cb_module, Mod}|Config];
 
-init_per_group(zmq_tcp_error, Config) ->
+init_per_group(zmq_tcp_error, _Config) ->
 	{skip, "libzmq name resolving is broken"};
 
 init_per_group(GroupName, Config) ->
+    hello2:start(),
 	{URI, StartServer, ClientOptions} = group_config(GroupName),
 	CbModule = proplists:get_value(cb_module, Config),
 	ct:pal("CB Module: ~p~n", [CbModule]),
 	ct:pal("URI: ~s, (~p)~n", [URI, ClientOptions]),
 	%%TODO: apply server method restriction
 	case StartServer of
-		false -> ok;
-		true  -> ok = hello2:bind_stateless(URI, CbModule)
+		false -> 
+            ok;
+		true -> 
+            ok = hello2:bind_stateless(URI, CbModule)
 	end,
 	ct:sleep(500),
 	{ok, Clnt} = hello2_client:start(URI, ClientOptions),
@@ -204,12 +205,12 @@ init_per_group(GroupName, Config) ->
 end_per_group(Group, Config) when Group == old_cb_info; Group == new_cb_info ->
     Mod = proplists:get_value(cb_module, Config),
     meck:unload(Mod),
-    application:stop(hello),
     ok;
 
 end_per_group(_GroupName, Config) ->
     Clnt = proplists:get_value(client, Config),
     hello2_client:stop(Clnt),
+    ok = application:stop(hello2),
     ok.
 
 init_per_suite(Config) ->

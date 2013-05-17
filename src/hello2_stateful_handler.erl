@@ -151,7 +151,9 @@ start_link(Binding, Peer, Transport, TransportParams) ->
 %% @hidden
 init({Binding, Peer, TransportPid, TransportParams}) ->
     link(TransportPid),
-    CallbackMod = Binding#binding.callback_mod,
+    #binding{callbacks=[Callback]} = Binding,
+    CallbackMod = Callback#callback.mod,
+    CallbackArgs = Callback#callback.args,
     Context = #context{protocol = hello2_proto_jsonrpc,
                        peer = Peer,
                        transport = TransportPid,
@@ -161,7 +163,7 @@ init({Binding, Peer, TransportPid, TransportParams}) ->
                     context = Context,
                     async_reply_map = gb_trees:empty()},
     State1 = start_idle_timeout(State0),
-    case CallbackMod:init(Context, Binding#binding.callback_args) of
+    case CallbackMod:init(Context, CallbackArgs) of
         {ok, HandlerState} ->
             {ok, State1#state{mod_state = HandlerState}}
     end.

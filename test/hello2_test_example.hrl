@@ -1,5 +1,5 @@
-hello_test_example_typespec() -> 
-{<<"hello_example">>,
+hello2_test_example_typespec() -> 
+{<<"hello_example">>, <<"">>,
  [#typedef{
    name = <<"Status">>,description = undefined,
    type = {enumeration,[<<"ok">>,<<"error">>]},
