@@ -23,8 +23,7 @@
 -behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 
--behaviour(cowboy_http_handler).
--export([init/3, handle/2, terminate/2]).
+-export([init/3, handle/2, terminate/3]).
 
 -export([session_init/4]).
 
@@ -37,17 +36,13 @@
 %% ----------------------------------------------------------------------------------------------------
 %% -- hello_binding callbacks
 listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
-    Dispatch = [{'_', [{['...'], ?MODULE, []}]}],
-
+    Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, []}]}]),
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
     Acceptors = 100,
-    Transport = cowboy_tcp_transport,
     TransportOpts = [{port, hello_http_listener:default_port(Port)}, {ip, IP}],
-    Protocol = cowboy_http_protocol,
-    ProtocolOpts = [{dispatch, Dispatch}],
-    Args = [Acceptors, Transport, TransportOpts, Protocol, ProtocolOpts],
-    {ChildID, {cowboy_listener_sup, start_link, Args}, permanent, infinity, supervisor, [cowboy_listener_sup]}.
+    ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
+    {ChildID, {cowboy, start_http, [?MODULE, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
 
 listener_key(#binding{ip = IP, port = Port}) ->
     hello_registry:listener_key(IP, hello_http_listener:default_port(Port)).
@@ -64,19 +59,19 @@ init({tcp, http}, Req, _) ->
     {ok, Req, undefined}.
 
 handle(Req, _State) ->
-    {Method, Req1} = cowboy_http_req:method(Req),
-    {Port, Req2} = cowboy_http_req:port(Req1),
-    {PathList, Req3} = cowboy_http_req:path_info(Req2),
-    {Host, Req4} = cowboy_http_req:raw_host(Req3),
+    {Method, Req1} = cowboy_req:method(Req),
+    {Port, Req2} = cowboy_req:port(Req1),
+    {PathList, Req3} = cowboy_req:path_info(Req2),
+    {Host, Req4} = cowboy_req:raw_host(Req3),
     case find_binding(Host, Port, lists:reverse(PathList), [], 4) of
         not_found ->
-            {ok, ReplyReq} = cowboy_http_req:reply(404, hello_http_listener:server_header(), Req4),
+            {ok, ReplyReq} = cowboy_req:reply(404, hello_http_listener:server_header(), Req4),
             {ok, ReplyReq, undefined};
         {PathRest, Binding} ->
             dispatch(Binding, Req4, Method, PathRest)
     end.
 
-terminate(_Req, _State) ->
+terminate(_Reason, _Req, _State) ->
     ok.
 
 find_binding(_Host, _Port, _PathList, _Acc, 0) ->
@@ -95,18 +90,18 @@ find_binding(Host, Port, PathList, Acc, N) ->
             end
     end.
 
-dispatch(_Binding, Req, 'GET', []) ->
-    reply(200, [{'Content-Type', <<"text/plain; charset=UTF-8">>}], ?SOCKJS_WELCOME, Req);
-dispatch(_Binding, Req, 'GET', [<<"iframe", IFRest/binary>>]) ->
+dispatch(_Binding, Req, <<"GET">>, []) ->
+    reply(200, [{<<"content-type">>, <<"text/plain; charset=UTF-8">>}], ?SOCKJS_WELCOME, Req);
+dispatch(_Binding, Req, <<"GET">>, [<<"iframe", IFRest/binary>>]) ->
     %% TODO: caching headers
     %% TODO: serve correct script location
     case re:run(IFRest, ".*\\.html$", [{capture, none}]) of
         match ->
-            reply(200, [{'Content-Type', <<"text/html; charset=UTF-8">>}], ?SOCKJS_IFRAME, Req);
+            reply(200, [{<<"content-type">>, <<"text/html; charset=UTF-8">>}], ?SOCKJS_IFRAME, Req);
         nomatch ->
             reply(404, [], <<>>, Req)
     end;
-dispatch(Binding, Req, 'POST', [_Server, SessionID, <<"xhr">>]) ->
+dispatch(Binding, Req, <<"POST">>, [_Server, SessionID, <<"xhr">>]) ->
     {CORS, Req2} = cors_headers_and_jsessionid(Req),
     case lookup_session(SessionID) of
         {ok, SessionPid, _Handler} ->
@@ -122,15 +117,15 @@ dispatch(Binding, Req, 'POST', [_Server, SessionID, <<"xhr">>]) ->
             {ok, _SessionPid} = start_session(Binding, SessionID, TransportParams),
             xhr_reply(started, CORS, Req3)
     end;
-dispatch(_Binding, Req, 'POST', [_Server, SessionID, <<"xhr_send">>]) ->
+dispatch(_Binding, Req, <<"POST">>, [_Server, SessionID, <<"xhr_send">>]) ->
     case lookup_session(SessionID) of
         {ok, _Session, Handler} ->
-            {ok, Body, Req2} = cowboy_http_req:body(Req),
+            {ok, [{Body, _}], Req2} = cowboy_req:body_qs(Req),
             case hello_json:decode(Body) of
                 {ok, Text, _} when is_list(Text) ->
                     lists:foreach(fun (T) -> hello_binding:incoming_message(Handler, T) end, Text),
                     {CORS, Req3} = cors_headers_and_jsessionid(Req2),
-                    reply(204, [{'Content-Type', <<"text/plain">>} | CORS], <<>>, Req3);
+                    reply(204, [{<<"content-type">>, <<"text/plain">>} | CORS], <<>>, Req3);
                 _Other ->
                     {CORS, Req3} = cors_headers_and_jsessionid(Req2),
                     reply(400, CORS, <<>>, Req3)
@@ -138,39 +133,39 @@ dispatch(_Binding, Req, 'POST', [_Server, SessionID, <<"xhr_send">>]) ->
         {error, not_found} ->
             reply(404, [], <<>>, Req)
     end;
-dispatch(_Binding, Req, 'GET', _) ->
+dispatch(_Binding, Req, <<"GET">>, _) ->
     reply(404, [], <<>>, Req);
 dispatch(_Binding, Req, _, _) ->
     reply(404, [], <<>>, Req).
 
 xhr_reply({session_messages, _, Messages}, Headers, Req) ->
-    reply(200, [{'Content-Type', <<"application/javascript; charset=UTF-8">>} | Headers], ["a", hello_json:encode(Messages), "\n"], Req);
+    reply(200, [{<<"content-type">>, <<"application/javascript; charset=UTF-8">>} | Headers], ["a", hello_json:encode(Messages), "\n"], Req);
 xhr_reply({session_heartbeat, _}, Headers, Req) ->
-    reply(200, [{'Content-Type', <<"application/javascript; charset=UTF-8">>} | Headers], <<"h\n">>, Req);
+    reply(200, [{<<"content-type">>, <<"application/javascript; charset=UTF-8">>} | Headers], <<"h\n">>, Req);
 xhr_reply({session_closed, _}, Headers, Req) ->
-    reply(200, [{'Content-Type', <<"application/javascript; charset=UTF-8">>} | Headers], <<"c[9000,\"hello handler terminated\"]\n">>, Req);
+    reply(200, [{<<"content-type">>, <<"application/javascript; charset=UTF-8">>} | Headers], <<"c[9000,\"hello handler terminated\"]\n">>, Req);
 xhr_reply(started, Headers, Req) ->
-    reply(200, [{'Content-Type', <<"application/javascript; charset=UTF-8">>} | Headers], <<"o\n">>, Req);
+    reply(200, [{<<"content-type">>, <<"application/javascript; charset=UTF-8">>} | Headers], <<"o\n">>, Req);
 xhr_reply(already_connected, Headers, Req) ->
-    reply(200, [{'Content-Type', <<"application/javascript; charset=UTF-8">>} | Headers], <<"c[300,\"Go Away\"]\n">>, Req).
+    reply(200, [{<<"content-type">>, <<"application/javascript; charset=UTF-8">>} | Headers], <<"c[300,\"Go Away\"]\n">>, Req).
 
 reply(Code, Headers, Content, Req) ->
-    {ok, ReplyReq} = cowboy_http_req:reply(Code, hello_http_listener:server_header() ++ Headers, Content, Req),
+    {ok, ReplyReq} = cowboy_req:reply(Code, hello_http_listener:server_header() ++ Headers, Content, Req),
     {ok, ReplyReq, undefined}.
 
 cors_headers_and_jsessionid(Req) ->
-    case cowboy_http_req:header(<<"Origin">>, Req) of
+    case cowboy_req:header(<<"origin">>, Req) of
         {undefined, Req2} ->
-            {[{<<"Set-Cookie">>, <<"JSESSIONID=dummy;path=/">>}], Req2};
+            {[{<<"set-cookie">>, <<"JSESSIONID=dummy;path=/">>}], Req2};
         {Origin, Req2} ->
-            {[{<<"Access-Control-Allow-Origin">>, Origin},
-              {<<"Access-Control-Allow-Credentials">>, <<"true">>},
-              {<<"Set-Cookie">>, <<"JSESSIONID=dummy;path=/">>}], Req2}
+            {[{<<"access-control-allow-origin">>, Origin},
+              {<<"access-control-allow-credentials">>, <<"true">>},
+              {<<"set-cookie">>, <<"JSESSIONID=dummy;path=/">>}], Req2}
     end.
 
 cache_headers(ETag) ->
-    [{<<"Cache-Control">>, <<"public, max-age=31536000">>},
-     {<<"ETag">>, ETag}].
+    [{<<"cache-control">>, <<"public, max-age=31536000">>},
+     {<<"eTag">>, ETag}].
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Session Process API
