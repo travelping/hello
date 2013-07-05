@@ -25,10 +25,10 @@
 
 %% http utils used by other listeners
 -export([lookup_binding/4, unslash/1, default_port/1, server_header/0, req_transport_params/1]).
+
 -export([process/3]).
 
--behaviour(cowboy_http_handler).
--export([init/3, handle/2, terminate/2]).
+-export([init/3, handle/2, terminate/3]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -36,17 +36,14 @@
 %% --------------------------------------------------------------------------------
 %% -- hello_binding callbacks
 listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
-    Dispatch = [{'_', [{['...'], ?MODULE, []}]}],
-
+    % cowboy dispatch
+    Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, []}]}]),
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
     Acceptors = 30,
-    Transport = cowboy_tcp_transport,
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
-    Protocol = cowboy_http_protocol,
-    ProtocolOpts = [{dispatch, Dispatch}],
-    Args = [Acceptors, Transport, TransportOpts, Protocol, ProtocolOpts],
-    {ChildID, {cowboy_listener_sup, start_link, Args}, permanent, infinity, supervisor, [cowboy_listener_sup]}.
+    ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
+    {ChildID, {cowboy, start_http, [?MODULE, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
 
 listener_key(#binding{ip = IP, port = Port}) ->
     hello_registry:listener_key(IP, default_port(Port)).
@@ -64,14 +61,14 @@ init({tcp, http}, Req, _) ->
 
 handle(Req, State) ->
     {Method, Req1} = cowboy_req:method(Req),
-    case lists:member(Method, ['PUT', 'POST']) of
+    case lists:member(Method, [<<"PUT">>, <<"POST">>]) of
         true ->
             {Port, Req3} = cowboy_req:port(Req1),
             {PathList, Req4} = cowboy_req:path_info(Req3),
-            {Host, Req5} = cowboy_req:raw_host(Req4),
+            {Host, Req5} = cowboy_req:host(Req4),
             case lookup_binding(?MODULE, Host, Port, PathList) of
                 {ok, Binding} ->
-		    process(Binding, Req, State);
+            process(Binding, Req, State);
                 {error, not_found} ->
                     {ok, Req6} = cowboy_req:reply(404, server_header(), Req5),
                     {ok, Req6, undefined}
@@ -81,14 +78,14 @@ handle(Req, State) ->
             {ok, Req2, undefined}
     end.
 
-terminate(_Req, _State) ->
+terminate(_Reason, _Req, _State) ->
     ok.
 
 process(Binding, Req, State) ->
     {Peer, Req1} = cowboy_req:peer(Req),
     {TransportParams, Req6} = req_transport_params(Req1),
     Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
-    {ok, Body, Req7} = cowboy_req:body(Req6),
+    {ok, [{Body, _}], Req7} = cowboy_req:body_qs(Req6),
     hello_binding:incoming_message(Handler, Body),
     Req8 = cowboy_req:compact(Req7),
     {ok, Req9} = cowboy_req:chunked_reply(200, json_headers(), Req8),
@@ -115,7 +112,7 @@ server_header() ->
 
 req_transport_params(Req1) ->
     {{PeerIP, PeerPort}, Req2} = cowboy_req:peer(Req1),
-    {ProxyPeerIP, Req3} = cowboy_req:peer_addr(Req2),
+    {ProxyPeerIP, Req3} = peer_addr(Req2),
     {QSVals, Req4} = cowboy_req:qs_vals(Req3),
     {Cookies, Req5} = cowboy_req:cookies(Req4),
     TransportParams = [{peer_ip, PeerIP},
@@ -142,3 +139,24 @@ unslash(Path) ->
 
 default_port(undefined) -> 80;
 default_port(Port)      -> Port.
+
+peer_addr(Req) ->
+    {RealIp, Req1} = cowboy_req:header(<<"X-Real-Ip">>, Req),
+    {ForwardedForRaw, Req2} = cowboy_req:header(<<"X-Forwarded-For">>, Req1),
+    {{PeerIp, _PeerPort}, Req3} = cowboy_req:peer(Req2),
+    ForwardedFor = case ForwardedForRaw of
+        undefined ->
+            undefined;
+        ForwardedForRaw ->
+            case re:run(ForwardedForRaw, "^(?<first_ip>[^\\,]+)",
+                    [{capture, [first_ip], binary}]) of
+                {match, [FirstIp]} -> FirstIp;
+                _Any -> undefined
+            end
+    end,
+    {ok, PeerAddr} = if
+        is_binary(RealIp) -> inet_parse:address(binary_to_list(RealIp));
+        is_binary(ForwardedFor) -> inet_parse:address(binary_to_list(ForwardedFor));
+        true -> {ok, PeerIp}
+    end,
+    {PeerAddr, Req3}.
