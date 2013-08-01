@@ -108,7 +108,6 @@ cb_apply(Mod, Function) ->
 cb_apply({Mod, State}, Function, Args) ->
     erlang:apply(Mod, Function, Args ++ [State]);
 cb_apply(Mod, Function, Args) ->
-    ct:pal("Apply: ~p~n", [{Mod, Function, Args}]),
     erlang:apply(Mod, Function, Args).
 
 %% --------------------------------------------------------------------------------
