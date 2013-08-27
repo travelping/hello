@@ -62,7 +62,7 @@ handle(Req, _State) ->
     {Method, Req1} = cowboy_req:method(Req),
     {Port, Req2} = cowboy_req:port(Req1),
     {PathList, Req3} = cowboy_req:path_info(Req2),
-    {Host, Req4} = cowboy_req:raw_host(Req3),
+    {Host, Req4} = cowboy_req:host(Req3),
     case find_binding(Host, Port, lists:reverse(PathList), [], 4) of
         not_found ->
             {ok, ReplyReq} = cowboy_req:reply(404, hello_http_listener:server_header(), Req4),
