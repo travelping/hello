@@ -203,7 +203,6 @@ start_listener(BindingIn = #binding{listener_mod = Mod, callbacks = Callbacks}) 
     ModBindingKey = Mod:binding_key(Binding),
     BindingKey    = {binding, Mod, ModBindingKey},
     [{_, [NewCallback]} | _] = dict:to_list(Callbacks),
-
     case hello2_registry:lookup_listener(ListenerKey) of
         {error, not_found} ->
             %% no server running on Host:Port, we need to start a listener

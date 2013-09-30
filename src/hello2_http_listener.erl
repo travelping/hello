@@ -40,7 +40,7 @@ listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
     Acceptors = 30,
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
-    {ChildID, {cowboy, start_http, [?MODULE, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
+    {ChildID, {cowboy, start_http, [{ChildID, ?MODULE}, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
     
 listener_key(#binding{ip = IP, port = Port}) ->
     hello2_registry:listener_key(IP, default_port(Port)).
@@ -118,6 +118,8 @@ req_transport_params(Req1) ->
                        {cookie_params, Cookies}],
     {TransportParams, Req5}.
 
+lookup_binding(Module, Host, Port, undefined) ->
+    lookup_binding(Module, Host, Port, []);
 lookup_binding(Module, Host, Port, PathList) ->
     case hello2_registry:lookup_binding(Module, {Host, Port, PathList}) of
         {error, not_found} ->
