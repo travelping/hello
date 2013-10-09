@@ -174,14 +174,17 @@ run_binary_request(Protocol, CallbackModule, TransportParams, BinRequest) ->
             ignore
     end.
 
-do_single_request(Mod, Context, Req = #request{}) ->
+do_single_request(Mod, Context, Req = #request{method = MethodName}) ->
     try
-        case hello_validate:request(Mod, Req) of
-	    {error, ErrorMsg} ->
-		ErrorMsg;
-	    {ok, Method, Validated} when is_list(Validated) ->
-		run_callback_module(Req, Mod, Context, Method, Validated)
-	end
+        case hello_validate:find_method(Mod:method_info(), MethodName) of
+            undefined ->
+                hello_proto:error_response(Req, method_not_found);
+            Method ->
+                case hello_validate:request_params(Method, Mod, Req) of
+                    {ok, Validated} -> run_callback_module(Req, Mod, Context, Method, Validated);
+                    {error, Msg}    -> hello_proto:error_response(Req, invalid_params, Msg)
+                end
+        end
     catch
         Type:Error ->
             Report = io_lib:format("Error (~p) thrown by RPC handler '~p' while executing the method \"~s\":~n"
@@ -192,7 +195,7 @@ do_single_request(Mod, Context, Req = #request{}) ->
     end.
 
 run_callback_module(Req, Mod, Context, Method, ValidatedParams) ->
-    case Mod:handle_request(Context, Method, ValidatedParams) of
+    case Mod:handle_request(Context, Method#rpc_method.name, ValidatedParams) of
         {ok, Result} ->
             hello_proto:success_response(Req, Result);
         {error, Message} ->
