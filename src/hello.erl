@@ -23,7 +23,7 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 -export([start/0, run_stateless_binary_request/3, run_stateless_binary_request/4]).
--export([bind_stateful/3, bind_stateless/2, bindings/0]).
+-export([bind_uri/4, bind_stateful/3, bind_stateless/2, bindings/0]).
 -export_type([url/0, decoded_url/0, transport_params/0]).
 
 -include("internal.hrl").

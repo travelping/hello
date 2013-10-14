@@ -51,6 +51,10 @@ error_response(ProtoData, ReqId, Code, Message, Data) ->
             NumCode = -32602, MsgPrefix = <<"Invalid params">>;
         internal_error ->
             NumCode = -32603, MsgPrefix = <<"Internal Error">>;
+	invalid_response ->
+            NumCode = -32603, MsgPrefix = <<"invalid JSON-RPC response">>;
+        request_dropped ->
+            NumCode = 32005, MsgPrefix = <<"Request dropped">>;
         server_error ->
             NumCode = -32099, MsgPrefix = <<"Server Error">>;
         _ when is_integer(Code) ->
@@ -118,7 +122,7 @@ encode_json(R = #error{proto_data = #jsonrpc{version = 2}}) ->
         Data ->
             ErrorObj = {[{<<"data">>, Data}, {<<"message">>, maybe_null(R#error.message)}, {<<"code">>, maybe_null(R#error.code)}]}
     end,
-    {[{<<"error">>, ErrorObj}, {<<"id">>, R#error.reqid}, {<<"jsonrpc">>, <<"2.0">>}]};
+    {[{<<"error">>, ErrorObj}, {<<"id">>, maybe_null(R#error.reqid)}, {<<"jsonrpc">>, <<"2.0">>}]};
 encode_json(#batch_response{responses = Resps}) ->
     [encode_json(R) || R <- Resps];
 
@@ -170,7 +174,7 @@ decode_batch([First | Rest]) ->
 
 -spec decode_batch_request([hello_json:value()], [#request{}], [#error{}]) -> #batch_request{}.
 decode_batch_request([], ReqAcc, ErrorAcc) ->
-    #batch_request{proto_mod = ?MODULE, requests = ReqAcc, errors = ErrorAcc};
+    #batch_request{proto_mod = ?MODULE, requests = lists:reverse(ReqAcc), errors = ErrorAcc};
 decode_batch_request([Obj | Rest], ReqAcc, ErrorAcc) ->
     case single_request(Obj) of
         #error{reqid = Id, proto_data = Data} ->
@@ -231,11 +235,7 @@ single_request({Props}) ->
             {proto_reply, error_response(defaults(), ReqId, invalid_request, Reason, undefined)};
         throw:{invalid_resp, ReqId, Reason} ->
             %% decode invalid responses as 'internal_error' to satisfy waiting clients
-            #error{reqid = ReqId,
-                   code = -32603,
-                   message = <<"invalid JSON-RPC response: ", Reason/binary>>,
-                   proto_mod = ?MODULE,
-                   proto_data = defaults()}
+	    {proto_reply, error_response(defaults(), ReqId, invalid_response, Reason, undefined)}
     end;
 single_request(_Other) ->
     {proto_reply, error_response(defaults(), undefined, invalid_request, <<"non-object">>, undefined)}.

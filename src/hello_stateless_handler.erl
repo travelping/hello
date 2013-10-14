@@ -127,8 +127,6 @@ transport_param(Key, Context) ->
 %%   Please take this into consideration when designing your system.
 -spec transport_param(atom(), context(), any()) -> any().
 transport_param(Key, #stateless_context{transport_params = Params}, Default) ->
-    transport_param(Key, Params, Default);
-transport_param(Key, Params, Default) ->
     proplists:get_value(Key, Params, Default).
 
 %% ----------------------------------------------------------------------------------------------------
@@ -136,21 +134,16 @@ transport_param(Key, Params, Default) ->
 %% @private
 %% @doc stateless handler process function for hello_binding
 -spec handler(#binding{}, hello_binding:peer(), pid(), hello:transport_params()) -> any().
-handler(#binding{protocol = Protocol, log_url = Endpoint, callback_mod = CallbackModule}, Peer, Transport, TransportParams) ->
-    Context = #stateless_context{transport_params = TransportParams},
+handler(#binding{protocol = Protocol, log_url = Endpoint, callback_mod = CallbackModule} = Binding, Peer, Transport, TransportParams) ->
     receive
         {?INCOMING_MSG_MSG, Message} ->
-            case run_binary_request(Protocol, CallbackModule, Context, Message) of
-                {ok, Request, Response} ->
-                    hello_request_log:request(CallbackModule, self(), Endpoint, Request, Response),
-                    BinResp = hello_proto:encode(Response),
-                    Transport ! {hello_msg, self(), Peer, BinResp};
-                {proto_reply, Response} ->
-                    hello_request_log:bad_request(CallbackModule, self(), Endpoint, Message, Response),
-                    BinResp = hello_proto:encode(Response),
-                    Transport ! {hello_msg, self(), Peer, BinResp};
-                ignore ->
-                    ignore
+            case jobs:ask(CallbackModule) of
+                {ok, Opaque} ->
+                    run_request(Binding, Peer, Transport, TransportParams, Message),
+                    jobs:done(Opaque);
+                {error, _Reason} ->
+                    Response = Protocol:error_response(Protocol:defaults(), null, request_dropped, undefined, undefined),
+                    do_response(Transport, Peer, Response)
             end,
             Transport ! {hello_closed, self(), Peer}
     after
@@ -158,10 +151,28 @@ handler(#binding{protocol = Protocol, log_url = Endpoint, callback_mod = Callbac
             Transport ! {hello_closed, self(), Peer}
     end.
 
+run_request(#binding{protocol = Protocol, log_url = Endpoint, callback_mod = CallbackModule} = Binding, Peer, Transport, TransportParams, Message) ->
+    case run_binary_request(Protocol, CallbackModule, TransportParams, Message) of
+        {ok, Request, Response} ->
+            hello_request_log:request(CallbackModule, self(), Endpoint, Request, Response),
+            do_response(Transport, Peer, Response);
+        {proto_reply, Response} ->
+            hello_request_log:bad_request(CallbackModule, self(), Endpoint, Message, Response),
+            do_response(Transport, Peer, Response);
+        ignore ->
+            ignore
+    end.
+
+do_response(Transport, Peer, Response) ->
+    BinResp = hello_proto:encode(Response),
+    Transport ! {hello_msg, self(), Peer, BinResp}.
+
+
 %% @private
--spec run_binary_request(module(), module(), #stateless_context{}, binary()) ->
+-spec run_binary_request(module(), module(), hello:transport_params(), binary()) ->
         {ok, hello_proto:request(), hello_proto:response()} | {error, hello_proto:response()}.
-run_binary_request(Protocol, CallbackModule, Context, BinRequest) ->
+run_binary_request(Protocol, CallbackModule, TransportParams, BinRequest) ->
+    Context = #stateless_context{transport_params = TransportParams},
     case hello_proto:decode(Protocol, BinRequest) of
         Req = #request{} ->
             {ok, Req, do_single_request(CallbackModule, Context, Req)};
@@ -182,7 +193,7 @@ do_single_request(Mod, Context, Req = #request{method = MethodName}) ->
             undefined ->
                 hello_proto:error_response(Req, method_not_found);
             Method ->
-                case hello_validate:request_params(Method, Mod:param_info(Method#rpc_method.name), Req) of
+                case hello_validate:request_params(Method, Mod, Req) of
                     {ok, Validated} -> run_callback_module(Req, Mod, Context, Method, Validated);
                     {error, Msg}    -> hello_proto:error_response(Req, invalid_params, Msg)
                 end
