@@ -193,7 +193,7 @@ do_single_request(Mod, Context, Req = #request{method = MethodName}) ->
             undefined ->
                 hello_proto:error_response(Req, method_not_found);
             Method ->
-                case hello_validate:request_params(Method, Mod, Req) of
+                case hello_validate:request_params(Method, Mod:param_info(Method#rpc_method.name), Req) of
                     {ok, Validated} -> run_callback_module(Req, Mod, Context, Method, Validated);
                     {error, Msg}    -> hello_proto:error_response(Req, invalid_params, Msg)
                 end
