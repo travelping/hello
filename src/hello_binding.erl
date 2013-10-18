@@ -69,7 +69,7 @@ new(Pid, ListenerModule, URL, Protocol, CallbackModule, CallbackType, CallbackAr
 		       callback_type = CallbackType,
 		       callback_args = CallbackArgs},
     Binding#binding{log_url = ListenerModule:url_for_log(Binding)}.
-  
+
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
@@ -118,8 +118,16 @@ register_handler(BindingPid, Pid, Peer) ->
 start_link(ListenerModule, URL, CallbackModule, CallbackType, CallbackArgs) when is_list(URL) ->
     {ok, DecURL, _} = ex_uri:decode(URL),
     start_link(ListenerModule, DecURL, CallbackModule, CallbackType, CallbackArgs);
-start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, CallbackArgs) ->
-    Binding = new(self(), ListenerModule, URL, hello_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs),
+start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, CallbackArgs0) ->
+    {CallbackArgs1, RateConfig} = case lists:keytake(rate_config, 1, CallbackArgs0) of
+                                      false ->
+                                          {CallbackArgs0, approve};
+                                      {value, {rate_config, RateConfig0}, CallbackArgs} ->
+                                          {value, {limit, Limit}, RateConfig1} = lists:keytake(limit, 1, RateConfig0),
+                                          {CallbackArgs, [{regulators, [{counter, [{name, default}, {limit, Limit}]}]} | RateConfig1] }
+                                  end,
+    jobs:add_queue(CallbackModule, RateConfig),
+    Binding = new(self(), ListenerModule, URL, hello_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs1),
     StarterRef = make_ref(),
     case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of
         {ok, Pid} ->

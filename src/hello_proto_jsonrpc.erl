@@ -53,6 +53,8 @@ error_response(ProtoData, ReqId, Code, Message, Data) ->
             NumCode = -32603, MsgPrefix = <<"Internal Error">>;
 	invalid_response ->
             NumCode = -32603, MsgPrefix = <<"invalid JSON-RPC response">>;
+        request_dropped ->
+            NumCode = -32005, MsgPrefix = <<"Request dropped">>;
         server_error ->
             NumCode = -32099, MsgPrefix = <<"Server Error">>;
         _ when is_integer(Code) ->
