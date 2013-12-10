@@ -174,12 +174,24 @@ run_binary_request(Protocol, Callbacks, TransportParams, BinRequest) ->
             ignore
     end.
 
-do_single_request(Callbacks, Context, Req = #request{namespace=Namespace}) when not is_atom(Callbacks) ->
-    case dict:find(Namespace, Callbacks) of
-        error ->
+do_single_request(Callbacks, Context, Req = #request{namespaces=Namespaces}) when not is_atom(Callbacks) ->
+    Cb = lists:foldl(
+           fun
+               (Ns, undefined) ->
+                   case dict:find(Ns, Callbacks) of
+                       error ->
+                           undefined;
+                       {ok, [Callback]} ->
+                           Callback
+                   end;
+               (_, Callback) ->
+                   Callback
+           end, undefined, Namespaces),
+    case Cb of
+        undefined ->
             hello_proto:error_response(Req, method_not_found);
-        {ok, [Callback]} ->
-            #callback{mod=Mod} = Callback,
+        _ ->
+            #callback{mod=Mod} = Cb,
             do_single_request(Mod, Context, Req)
     end;
  do_single_request(Mod, Context, Req = #request{method=Method0}) ->

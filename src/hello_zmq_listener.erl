@@ -59,7 +59,7 @@ url_for_log(#binding{url = URL}) ->
 -record(state, {
     context :: erlzmq:erlzmq_context(),
     socket  :: erlzmq:erlzmq_socket(),
-    binding :: #binding{},
+    binding_key :: term(),
     lastmsg_peer :: binary()
 }).
 
@@ -70,7 +70,7 @@ init(Binding = #binding{url = URL}) ->
     {ok, Socket}  = erlzmq:socket(Context, [router, {active, true}]),
     case erlzmq:bind(Socket, Endpoint) of
         ok ->
-            State = #state{binding = Binding, socket = Socket, context = Context},
+            State = #state{binding_key = binding_key(Binding), socket = Socket, context = Context},
             {ok, State};
         {error, Error} ->
             {stop, Error}
@@ -82,15 +82,20 @@ handle_info({zmq, Socket, Message, [rcvmore]}, State = #state{socket = Socket, l
 handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = Peer}) when is_binary(Peer) ->
     %% empty message part separates envelope from data
     {noreply, State};
-handle_info({zmq, Socket, Message, []}, State = #state{binding = Binding, socket = Socket, lastmsg_peer = Peer}) ->
+handle_info({zmq, Socket, Message, []}, State = #state{binding_key=BindingKey, socket = Socket, lastmsg_peer = Peer}) ->
     %% second message part is the actual request
-    case hello_binding:lookup_handler(Binding, Peer) of
+    case hello_registry:lookup_binding(?MODULE, BindingKey) of
         {error, not_found} ->
-            TransportParams = [{peer_identity, Peer}],
-            HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self(), TransportParams),
-            hello_binding:incoming_message(HandlerPid, Message);
-        {ok, HandlerPid} ->
-            hello_binding:incoming_message(HandlerPid, Message)
+            ok; % should never happen
+        {ok, Binding} ->
+            case hello_binding:lookup_handler(Binding, Peer) of
+                {error, not_found} ->
+                    TransportParams = [{peer_identity, Peer}],
+                    HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self(), TransportParams),
+                    hello_binding:incoming_message(HandlerPid, Message);
+                {ok, HandlerPid} ->
+                    hello_binding:incoming_message(HandlerPid, Message)
+            end
     end,
     {noreply, State#state{lastmsg_peer = undefined}};
 
