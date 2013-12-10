@@ -218,14 +218,9 @@ single_request({Props}) ->
                              Obj = {_} when Version > 1 -> Obj;
                              _                          -> throw({invalid_req, ID, <<"\"params\" must be array or object">>})
                          end,
-                Namespace = case binary:split(Method, <<".">>) of
-                    [_] ->
-                        <<"">>;
-                    [Namespace1, _] ->
-                        Namespace1
-                end,
+                Namespaces = collect_namespaces(Method),
                 #request{reqid = ID,
-                         namespace = Namespace,
+                         namespaces = Namespaces,
                          method = Method,
                          params = Params,
                          proto_mod = ?MODULE,
@@ -302,3 +297,19 @@ property(Plist, Key, Default) ->
 maybe_null(undefined) -> null;
 maybe_null(null)      -> null;
 maybe_null(Term)      -> Term.
+
+collect_namespaces(Method) ->
+    Parts0 = binary:split(Method, <<".">>, [global]),
+    case Parts0 of
+        [_] ->
+            [<<"">>];
+        _ ->
+            {Parts1, _} = lists:split(length(Parts0)-1, Parts0),
+            lists:foldl(
+                fun
+                    (P, []) ->
+                        [P];
+                    (P, [L|_]=Acc) ->
+                        [binary:list_to_bin([L, ".", P]) | Acc]
+                end, [], Parts1)
+    end.

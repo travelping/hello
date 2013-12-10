@@ -2,7 +2,7 @@
 -record(request,  {
     reqid      :: hello_json:value(),
     method     :: binary(),
-    namespace  :: binary(),
+    namespaces :: list(binary()),
     params     :: hello_json:json_object() | list(hello_json:value()),
     proto_mod  :: module(),
     proto_data :: term()
