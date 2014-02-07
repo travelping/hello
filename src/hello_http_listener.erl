@@ -85,7 +85,7 @@ process(Binding, Req, State) ->
     {Peer, Req1} = cowboy_req:peer(Req),
     {TransportParams, Req6} = req_transport_params(Req1),
     Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
-    {ok, [{Body, _}], Req7} = cowboy_req:body_qs(Req6),
+    {ok, Body, Req7} = cowboy_req:body(Req6),
     hello_binding:incoming_message(Handler, Body),
     Req8 = cowboy_req:compact(Req7),
     {ok, Req9} = cowboy_req:chunked_reply(200, json_headers(), Req8),
