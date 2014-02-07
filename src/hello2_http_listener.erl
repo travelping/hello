@@ -41,7 +41,7 @@ listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
     {ChildID, {cowboy, start_http, [{ChildID, ?MODULE}, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
-    
+
 listener_key(#binding{ip = IP, port = Port}) ->
     hello2_registry:listener_key(IP, default_port(Port)).
 
@@ -82,7 +82,7 @@ process(Binding, Req, State) ->
     {Peer, Req1} = cowboy_req:peer(Req),
     {TransportParams, Req6} = req_transport_params(Req1),
     Handler = hello2_binding:start_handler(Binding, Peer, self(), TransportParams),
-    {ok, [{Body, _}], Req7} = cowboy_req:body_qs(Req6),
+    {ok, Body, Req7} = cowboy_req:body(Req6),
     hello2_binding:incoming_message(Handler, Body),
     Req8 = cowboy_req:compact(Req7),
     {ok, Req9} = cowboy_req:chunked_reply(200, json_headers(), Req8),
