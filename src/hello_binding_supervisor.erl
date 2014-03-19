@@ -19,28 +19,20 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello2_listener_supervisor).
+-module(hello_binding_supervisor).
 -behaviour(supervisor).
--export([start_link/0, start_child/1, stop_child/1]).
+-export([start_link/0, start_binding/5]).
 -export([init/1]).
 
--define(SERVER, hello2_listener_supervisor).
+-define(SERVER, hello_binding_supervisor).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, {}).
 
-start_child(ChildSpec) ->
-    supervisor:start_child(?SERVER, ChildSpec).
-
-stop_child(ID) ->
-    case supervisor:terminate_child(?SERVER, ID) of
-        ok ->
-            supervisor:delete_child(?SERVER, ID);
-        {error, not_found} ->
-            {error, not_found}
-    end.
+start_binding(ListenerMod, URL, CallbackMod, CallbackType, CallbackArgs) ->
+    supervisor:start_child(?SERVER, [ListenerMod, URL, CallbackMod, CallbackType, CallbackArgs]).
 
 init({}) ->
-    Children = [],
-    RestartStrategy = {one_for_one, 5, 10},
-    {ok, {RestartStrategy, Children}}.
+    ChildSpec = {binding, {hello_binding, start_link, []}, transient, 10000, worker, [hello_binding]},
+    RestartStrategy = {simple_one_for_one, 5, 10},
+    {ok, {RestartStrategy, [ChildSpec]}}.

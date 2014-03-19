@@ -1,12 +1,12 @@
-hello_test_example_typespec() -> 
-{<<"hello_example">>,
+hello_test_example_typespec() ->
+{<<"hello_example">>, <<"">>,
  [#typedef{
    name = <<"Status">>,description = undefined,
    type = {enumeration,[<<"ok">>,<<"error">>]},
    default = undefined,opts = []},
   #object{
    name = <<"rpc_error">>,description = undefined,
-   fields = 
+   fields =
     [#field{
       name = <<"code">>,description = undefined,
       type = {<<"int16">>,[]},
@@ -18,17 +18,17 @@ hello_test_example_typespec() ->
    'when' = undefined,opts = []},
   #object{
    name = <<"result">>,description = undefined,
-   fields = 
+   fields =
     [#field{
       name = <<"Status">>,description = <<"Result of this operation">>,
       type = {enumeration,[<<"ok">>,<<"error">>]},
       'when' = undefined,default = null,mandatory = false,opts = []},
      #choice{
       name = <<"result">>,description = undefined,
-      cases = 
+      cases =
        [#'case'{
          name = <<"error">>,description = undefined,
-         fields = 
+         fields =
           [#field{
             name = <<"code">>,description = undefined,
             type = {<<"int16">>,[]},
@@ -37,7 +37,7 @@ hello_test_example_typespec() ->
             name = <<"message">>,description = undefined,
             type = {string,undefined,[]},
             'when' = undefined,default = null,mandatory = false,opts = []}],
-         'when' = 
+         'when' =
           {comp,'=',
            {path,rel,
             {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -45,13 +45,13 @@ hello_test_example_typespec() ->
          opts = []},
         #'case'{
          name = <<"ok">>,description = undefined,
-         fields = 
+         fields =
           [#choice{
             name = <<"Data">>,description = undefined,
-            cases = 
+            cases =
              [#'case'{
                name = <<"Boolean">>,description = undefined,
-               fields = 
+               fields =
                 [#field{
                   name = <<"Ok">>,description = undefined,
                   type = {<<"boolean">>,[]},
@@ -60,14 +60,14 @@ hello_test_example_typespec() ->
                'when' = undefined,opts = []},
               #'case'{
                name = <<"Items">>,description = undefined,
-               fields = 
+               fields =
                 [#object{
                   name = <<"Result">>,description = undefined,fields = [],
                   'when' = undefined,opts = []}],
                'when' = undefined,opts = []}],
             'when' = undefined,default = undefined,mandatory = false,
             opts = []}],
-         'when' = 
+         'when' =
           {comp,'=',
            {path,rel,
             {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -77,29 +77,29 @@ hello_test_example_typespec() ->
    'when' = undefined,opts = []},
   #rpc{
    name = <<"echo">>,description = undefined,
-   input = 
+   input =
     #object{
      name = input,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"text">>,description = undefined,
         type = {string,undefined,[]},
         'when' = undefined,default = <<>>,mandatory = false,opts = []}],
      'when' = undefined,opts = []},
-   output = 
+   output =
     #object{
      name = output,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"Status">>,description = <<"Result of this operation">>,
         type = {enumeration,[<<"ok">>,<<"error">>]},
         'when' = undefined,default = null,mandatory = false,opts = []},
        #choice{
         name = <<"result">>,description = undefined,
-        cases = 
+        cases =
          [#'case'{
            name = <<"error">>,description = undefined,
-           fields = 
+           fields =
             [#field{
               name = <<"code">>,description = undefined,
               type = {<<"int16">>,[]},
@@ -108,7 +108,7 @@ hello_test_example_typespec() ->
               name = <<"message">>,description = undefined,
               type = {string,undefined,[]},
               'when' = undefined,default = null,mandatory = false,opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -116,13 +116,13 @@ hello_test_example_typespec() ->
            opts = []},
           #'case'{
            name = <<"ok">>,description = undefined,
-           fields = 
+           fields =
             [#choice{
               name = <<"Data">>,description = undefined,
-              cases = 
+              cases =
                [#'case'{
                  name = <<"Boolean">>,description = undefined,
-                 fields = 
+                 fields =
                   [#field{
                     name = <<"Ok">>,description = undefined,
                     type = {<<"boolean">>,[]},
@@ -131,14 +131,14 @@ hello_test_example_typespec() ->
                  'when' = undefined,opts = []},
                 #'case'{
                  name = <<"Items">>,description = undefined,
-                 fields = 
+                 fields =
                   [#object{
                     name = <<"Result">>,description = undefined,fields = [],
                     'when' = undefined,opts = []}],
                  'when' = undefined,opts = []}],
               'when' = undefined,default = undefined,mandatory = false,
               opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -149,10 +149,10 @@ hello_test_example_typespec() ->
    fields = [],opts = []},
   #rpc{
    name = <<"append">>,description = undefined,
-   input = 
+   input =
     #object{
      name = input,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"str1">>,description = undefined,
         type = {string,undefined,[]},
@@ -162,20 +162,20 @@ hello_test_example_typespec() ->
         type = {string,undefined,[]},
         'when' = undefined,default = <<>>,mandatory = false,opts = []}],
      'when' = undefined,opts = []},
-   output = 
+   output =
     #object{
      name = output,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"Status">>,description = <<"Result of this operation">>,
         type = {enumeration,[<<"ok">>,<<"error">>]},
         'when' = undefined,default = null,mandatory = false,opts = []},
        #choice{
         name = <<"result">>,description = undefined,
-        cases = 
+        cases =
          [#'case'{
            name = <<"error">>,description = undefined,
-           fields = 
+           fields =
             [#field{
               name = <<"code">>,description = undefined,
               type = {<<"int16">>,[]},
@@ -184,7 +184,7 @@ hello_test_example_typespec() ->
               name = <<"message">>,description = undefined,
               type = {string,undefined,[]},
               'when' = undefined,default = null,mandatory = false,opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -192,13 +192,13 @@ hello_test_example_typespec() ->
            opts = []},
           #'case'{
            name = <<"ok">>,description = undefined,
-           fields = 
+           fields =
             [#choice{
               name = <<"Data">>,description = undefined,
-              cases = 
+              cases =
                [#'case'{
                  name = <<"Boolean">>,description = undefined,
-                 fields = 
+                 fields =
                   [#field{
                     name = <<"Ok">>,description = undefined,
                     type = {<<"boolean">>,[]},
@@ -207,14 +207,14 @@ hello_test_example_typespec() ->
                  'when' = undefined,opts = []},
                 #'case'{
                  name = <<"Items">>,description = undefined,
-                 fields = 
+                 fields =
                   [#object{
                     name = <<"Result">>,description = undefined,fields = [],
                     'when' = undefined,opts = []}],
                  'when' = undefined,opts = []}],
               'when' = undefined,default = undefined,mandatory = false,
               opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -225,29 +225,29 @@ hello_test_example_typespec() ->
    fields = [],opts = []},
   #rpc{
    name = <<"enum_test">>,description = undefined,
-   input = 
+   input =
     #object{
      name = input,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"atom">>,description = undefined,
         type = {enumeration,[<<"a">>,<<"b">>,<<"c">>]},
         'when' = undefined,default = null,mandatory = false,opts = []}],
      'when' = undefined,opts = []},
-   output = 
+   output =
     #object{
      name = output,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"Status">>,description = <<"Result of this operation">>,
         type = {enumeration,[<<"ok">>,<<"error">>]},
         'when' = undefined,default = null,mandatory = false,opts = []},
        #choice{
         name = <<"result">>,description = undefined,
-        cases = 
+        cases =
          [#'case'{
            name = <<"error">>,description = undefined,
-           fields = 
+           fields =
             [#field{
               name = <<"code">>,description = undefined,
               type = {<<"int16">>,[]},
@@ -256,7 +256,7 @@ hello_test_example_typespec() ->
               name = <<"message">>,description = undefined,
               type = {string,undefined,[]},
               'when' = undefined,default = null,mandatory = false,opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -264,13 +264,13 @@ hello_test_example_typespec() ->
            opts = []},
           #'case'{
            name = <<"ok">>,description = undefined,
-           fields = 
+           fields =
             [#choice{
               name = <<"Data">>,description = undefined,
-              cases = 
+              cases =
                [#'case'{
                  name = <<"Boolean">>,description = undefined,
-                 fields = 
+                 fields =
                   [#field{
                     name = <<"Ok">>,description = undefined,
                     type = {<<"boolean">>,[]},
@@ -279,14 +279,14 @@ hello_test_example_typespec() ->
                  'when' = undefined,opts = []},
                 #'case'{
                  name = <<"Items">>,description = undefined,
-                 fields = 
+                 fields =
                   [#object{
                     name = <<"Result">>,description = undefined,fields = [],
                     'when' = undefined,opts = []}],
                  'when' = undefined,opts = []}],
               'when' = undefined,default = undefined,mandatory = false,
               opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -297,10 +297,10 @@ hello_test_example_typespec() ->
    fields = [],opts = []},
   #rpc{
    name = <<"return_error">>,description = undefined,
-   input = 
+   input =
     #object{
      name = input,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"code">>,description = undefined,
         type = {<<"int16">>,[]},
@@ -310,20 +310,20 @@ hello_test_example_typespec() ->
         type = {string,undefined,[]},
         'when' = undefined,default = null,mandatory = false,opts = []}],
      'when' = undefined,opts = []},
-   output = 
+   output =
     #object{
      name = output,description = undefined,
-     fields = 
+     fields =
       [#field{
         name = <<"Status">>,description = <<"Result of this operation">>,
         type = {enumeration,[<<"ok">>,<<"error">>]},
         'when' = undefined,default = null,mandatory = false,opts = []},
        #choice{
         name = <<"result">>,description = undefined,
-        cases = 
+        cases =
          [#'case'{
            name = <<"error">>,description = undefined,
-           fields = 
+           fields =
             [#field{
               name = <<"code">>,description = undefined,
               type = {<<"int16">>,[]},
@@ -332,7 +332,7 @@ hello_test_example_typespec() ->
               name = <<"message">>,description = undefined,
               type = {string,undefined,[]},
               'when' = undefined,default = null,mandatory = false,opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},
@@ -340,13 +340,13 @@ hello_test_example_typespec() ->
            opts = []},
           #'case'{
            name = <<"ok">>,description = undefined,
-           fields = 
+           fields =
             [#choice{
               name = <<"Data">>,description = undefined,
-              cases = 
+              cases =
                [#'case'{
                  name = <<"Boolean">>,description = undefined,
-                 fields = 
+                 fields =
                   [#field{
                     name = <<"Ok">>,description = undefined,
                     type = {<<"boolean">>,[]},
@@ -355,14 +355,14 @@ hello_test_example_typespec() ->
                  'when' = undefined,opts = []},
                 #'case'{
                  name = <<"Items">>,description = undefined,
-                 fields = 
+                 fields =
                   [#object{
                     name = <<"Result">>,description = undefined,fields = [],
                     'when' = undefined,opts = []}],
                  'when' = undefined,opts = []}],
               'when' = undefined,default = undefined,mandatory = false,
               opts = []}],
-           'when' = 
+           'when' =
             {comp,'=',
              {path,rel,
               {step,{child,{name,{<<"Status">>,<<>>,<<"Status">>}},[]}}},

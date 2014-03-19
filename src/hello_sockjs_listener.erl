@@ -19,8 +19,8 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello2_sockjs_listener).
--behaviour(hello2_binding).
+-module(hello_sockjs_listener).
+-behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 
 -export([init/3, handle/2, terminate/3]).
@@ -34,24 +34,24 @@
 -define(SOCKJS_HEARTBEAT_DELAY, 25000).
 
 %% ----------------------------------------------------------------------------------------------------
-%% -- hello2_binding callbacks
+%% -- hello_binding callbacks
 listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
     Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, []}]}]),
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
     Acceptors = 100,
-    TransportOpts = [{port, hello2_http_listener:default_port(Port)}, {ip, IP}],
+    TransportOpts = [{port, hello_http_listener:default_port(Port)}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
     {ChildID, {cowboy, start_http, [?MODULE, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
 
 listener_key(#binding{ip = IP, port = Port}) ->
-    hello2_registry:listener_key(IP, hello2_http_listener:default_port(Port)).
+    hello_registry:listener_key(IP, hello_http_listener:default_port(Port)).
 
 binding_key(#binding{host = Host, port = Port, path = Path}) ->
-    {list_to_binary(Host), hello2_http_listener:default_port(Port), hello2_http_listener:unslash(Path)}.
+    {list_to_binary(Host), hello_http_listener:default_port(Port), hello_http_listener:unslash(Path)}.
 
 url_for_log(Binding) ->
-    hello2_http_listener:url_for_log(Binding).
+    hello_http_listener:url_for_log(Binding).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
@@ -65,7 +65,7 @@ handle(Req, _State) ->
     {Host, Req4} = cowboy_req:host(Req3),
     case find_binding(Host, Port, lists:reverse(PathList), [], 4) of
         not_found ->
-            {ok, ReplyReq} = cowboy_req:reply(404, hello2_http_listener:server_header(), Req4),
+            {ok, ReplyReq} = cowboy_req:reply(404, hello_http_listener:server_header(), Req4),
             {ok, ReplyReq, undefined};
         {PathRest, Binding} ->
             dispatch(Binding, Req4, Method, PathRest)
@@ -78,7 +78,7 @@ find_binding(_Host, _Port, _PathList, _Acc, 0) ->
     not_found;
 find_binding(Host, Port, PathList, Acc, N) ->
     RevPath = lists:reverse(PathList),
-    case hello2_http_listener:lookup_binding(?MODULE, Host, Port, RevPath) of
+    case hello_http_listener:lookup_binding(?MODULE, Host, Port, RevPath) of
         {ok, Binding} ->
             {Acc, Binding};
         {error, not_found} ->
@@ -113,7 +113,7 @@ dispatch(Binding, Req, <<"POST">>, [_Server, SessionID, <<"xhr">>]) ->
                     xhr_reply(already_connected, CORS, Req2)
             end;
         {error, not_found} ->
-            {TransportParams, Req3} = hello2_http_listener:req_transport_params(Req2),
+            {TransportParams, Req3} = hello_http_listener:req_transport_params(Req2),
             {ok, _SessionPid} = start_session(Binding, SessionID, TransportParams),
             xhr_reply(started, CORS, Req3)
     end;
@@ -121,9 +121,9 @@ dispatch(_Binding, Req, <<"POST">>, [_Server, SessionID, <<"xhr_send">>]) ->
     case lookup_session(SessionID) of
         {ok, _Session, Handler} ->
             {ok, Body, Req2} = cowboy_req:body(Req),
-            case hello2_json:decode(Body) of
+            case hello_json:decode(Body) of
                 {ok, Text, _} when is_list(Text) ->
-                    lists:foreach(fun (T) -> hello2_binding:incoming_message(Handler, T) end, Text),
+                    lists:foreach(fun (T) -> hello_binding:incoming_message(Handler, T) end, Text),
                     {CORS, Req3} = cors_headers_and_jsessionid(Req2),
                     reply(204, [{<<"Content-Type">>, <<"text/plain">>} | CORS], <<>>, Req3);
                 _Other ->
@@ -139,7 +139,7 @@ dispatch(_Binding, Req, _, _) ->
     reply(404, [], <<>>, Req).
 
 xhr_reply({session_messages, _, Messages}, Headers, Req) ->
-    reply(200, [{<<"Content-Type">>, <<"application/javascript; charset=UTF-8">>} | Headers], ["a", hello2_json:encode(Messages), "\n"], Req);
+    reply(200, [{<<"Content-Type">>, <<"application/javascript; charset=UTF-8">>} | Headers], ["a", hello_json:encode(Messages), "\n"], Req);
 xhr_reply({session_heartbeat, _}, Headers, Req) ->
     reply(200, [{<<"Content-Type">>, <<"application/javascript; charset=UTF-8">>} | Headers], <<"h\n">>, Req);
 xhr_reply({session_closed, _}, Headers, Req) ->
@@ -150,7 +150,7 @@ xhr_reply(already_connected, Headers, Req) ->
     reply(200, [{<<"Content-Type">>, <<"application/javascript; charset=UTF-8">>} | Headers], <<"c[300,\"Go Away\"]\n">>, Req).
 
 reply(Code, Headers, Content, Req) ->
-    {ok, ReplyReq} = cowboy_req:reply(Code, hello2_http_listener:server_header() ++ Headers, Content, Req),
+    {ok, ReplyReq} = cowboy_req:reply(Code, hello_http_listener:server_header() ++ Headers, Content, Req),
     {ok, ReplyReq, undefined}.
 
 cors_headers_and_jsessionid(Req) ->
@@ -179,7 +179,7 @@ start_session(Binding, SessionID, TransportParams) ->
     end.
 
 lookup_session(SessionID) ->
-    hello2_registry:lookup({sockjs_session, SessionID}).
+    hello_registry:lookup({sockjs_session, SessionID}).
 
 session_connect(SessionPid, Conn) ->
     SessionPid ! {connect, Conn},
@@ -202,11 +202,11 @@ session_get_final_message(SessionPid) ->
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Session Process Implementation
--record(session_state, {handler :: hello2_binding:handler(), queue = queue:new()}).
+-record(session_state, {handler :: hello_binding:handler(), queue = queue:new()}).
 
 session_init(Binding, Conn, SessionID, TransportParams) ->
-    Handler = hello2_binding:start_handler(Binding, SessionID, self(), TransportParams),
-    case hello2_registry:register({sockjs_session, SessionID}, Handler, self()) of
+    Handler = hello_binding:start_handler(Binding, SessionID, self(), TransportParams),
+    case hello_registry:register({sockjs_session, SessionID}, Handler, self()) of
         ok ->
             Conn ! {started, self()},
             session_loop_queueing(#session_state{handler = Handler});
@@ -217,9 +217,9 @@ session_init(Binding, Conn, SessionID, TransportParams) ->
 
 session_loop_queueing(State = #session_state{queue = Queue}) ->
     receive
-        {hello2_msg, _Handler, _Peer, Message} ->
+        {hello_msg, _Handler, _Peer, Message} ->
             session_loop_queueing(State#session_state{queue = queue:in(Message, Queue)});
-        {hello2_closed, _Handler, _Peer} ->
+        {hello_closed, _Handler, _Peer} ->
             session_loop_queueing(State#session_state{queue = queue:in(closed, Queue)});
         {connect, Conn} ->
             Conn ! {session_connected, self(), false},
@@ -239,9 +239,9 @@ session_exit_connected(HeartbeatTimer, ConnMref, State, NextStateFun) ->
 
 session_loop_connected(HeartbeatTimer, ConnMref, Conn, State) ->
     receive
-        {hello2_msg, _Handler, _Peer, Message} ->
+        {hello_msg, _Handler, _Peer, Message} ->
             session_send_ackd(HeartbeatTimer, ConnMref, Conn, State, {session_messages, self(), [Message]});
-        {hello2_closed, _Handler, _Peer} ->
+        {hello_closed, _Handler, _Peer} ->
             session_send_ackd(HeartbeatTimer, ConnMref, Conn, State, {session_closed, self()});
         {connect, Conn} ->
             Conn ! {session_connected, self(), true},

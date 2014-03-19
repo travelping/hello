@@ -19,8 +19,8 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello2_http_client).
--behaviour(hello2_client).
+-module(hello_http_client).
+-behaviour(hello_client).
 -export([validate_options/1, init/2, send_request/3, handle_info/3, terminate/3]).
 
 %% internal
@@ -70,9 +70,9 @@ terminate(_ClientCtx, _Reason, _State) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- Helpers
 http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts}) ->
-    EncRequest = hello2_proto:encode(Request),
-    {ok, Vsn} = application:get_key(hello2, vsn),
-    MimeType = hello2_proto:mime_type(Request),
+    EncRequest = hello_proto:encode(Request),
+    {ok, Vsn} = application:get_key(hello, vsn),
+    MimeType = hello_proto:mime_type(Request),
     Headers = [{"Content-Type", binary_to_list(MimeType)},
                {"Accept", binary_to_list(MimeType)},
                {"User-Agent", "hello/" ++ Vsn}],
@@ -87,10 +87,10 @@ http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts
 
             %% gotcha, those clauses don't return
             {ok, HttpCode, _, _} ->
-                hello2_client:client_ctx_reply(ClientCtx, {error, {transport, list_to_integer(HttpCode)}}),
+                hello_client:client_ctx_reply(ClientCtx, {error, {transport, list_to_integer(HttpCode)}}),
                 exit(normal);
             {error, Reason} ->
-                hello2_client:client_ctx_reply(ClientCtx, {error, {transport, Reason}}),
+                hello_client:client_ctx_reply(ClientCtx, {error, {transport, Reason}}),
                 exit(normal)
         end,
     ClientReply =
@@ -98,22 +98,22 @@ http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts
             #request{reqid = undefined} ->
                 ok;
             #request{} ->
-                case hello2_proto:decode(Request, ResponseBody) of
+                case hello_proto:decode(Request, ResponseBody) of
                     #response{result = Result} ->
                         {ok, Result};
                     Error = #error{} ->
-                        {error, hello2_proto:error_resp_to_error_reply(Error)};
+                        {error, hello_proto:error_resp_to_error_reply(Error)};
                     _ ->
                         {error, bad_response}
                 end;
             #batch_request{} ->
-                case hello2_proto:decode(Request, ResponseBody) of
+                case hello_proto:decode(Request, ResponseBody) of
                     #batch_response{responses = BatchResps} ->
                         lists:map(fun (#response{result = Result}) -> {ok, Result};
-                                      (Error = #error{}) -> {error, hello2_proto:error_resp_to_error_reply(Error)}
+                                      (Error = #error{}) -> {error, hello_proto:error_resp_to_error_reply(Error)}
                                   end, BatchResps);
                     _ ->
                         {error, {http, bad_response}}
                 end
         end,
-    hello2_client:client_ctx_reply(ClientCtx, ClientReply).
+    hello_client:client_ctx_reply(ClientCtx, ClientReply).

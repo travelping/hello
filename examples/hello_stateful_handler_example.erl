@@ -19,16 +19,16 @@
 % DEALINGS IN THE SOFTWARE.
 
 %% @private
--module(hello2_stateful_handler_example).
+-module(hello_stateful_handler_example).
 -export([bind/0]).
 
--behaviour(hello2_stateful_handler).
+-behaviour(hello_stateful_handler).
 -export([method_info/1, param_info/2, init/2, handle_request/4, handle_info/3, terminate/3]).
 
--include("hello2.hrl").
+-include("hello.hrl").
 
 bind() ->
-    hello2:bind_stateful("zmq-ipc://hello-events.ipc", ?MODULE, []).
+    hello:bind_stateful("zmq-ipc://hello-events.ipc", ?MODULE, []).
 
 method_info(_State) ->
     [#rpc_method{name = subscribe},
@@ -41,7 +41,7 @@ param_info(_, _State) ->
     [].
 
 init(_Context, []) ->
-    hello2_stateful_handler:set_idle_timeout(5000),
+    hello_stateful_handler:set_idle_timeout(5000),
     {ok, undefined}.
 
 handle_request(_From, echo, [Text], State) ->
@@ -55,12 +55,12 @@ handle_request(From, ping, _Args, State) ->
 
 handle_info(Context, {event, timer}, State) ->
     Stamp = calendar:datetime_to_gregorian_seconds(calendar:now_to_datetime(os:timestamp())),
-    hello2_stateful_handler:notify_np(Context, event, [{'type', timer}, {'stamp', Stamp}]),
+    hello_stateful_handler:notify_np(Context, event, [{'type', timer}, {'stamp', Stamp}]),
     {noreply, State};
 
 handle_info(_Context, {event, ping, From}, State) ->
-    hello2_stateful_handler:reply(From, {ok, <<"ok">>}),
+    hello_stateful_handler:reply(From, {ok, <<"ok">>}),
     {noreply, State}.
 
 terminate(Context, _Reason, _State) ->
-    hello2_stateful_handler:notify_np(Context, event, [{'type', 'quit'}]).
+    hello_stateful_handler:notify_np(Context, event, [{'type', 'quit'}]).

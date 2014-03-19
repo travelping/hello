@@ -1,44 +1,44 @@
--module(hello2_SUITE).
+-module(hello_SUITE).
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 
--include("../include/hello2.hrl").
+-include("../include/hello.hrl").
 
 % ---------------------------------------------------------------------
 % -- test cases
 bind_stateless_http_url_errors(_Config) ->
     URL = "http://127.0.0.1:5673/test",
-    ok = hello2:bind_stateless(URL, test_1),
+    ok = hello:bind_stateless(URL, test_1),
 
     %% binding the same module returns already_started
-    {error, already_started} = hello2:bind_stateless(URL, test_1),
+    {error, already_started} = hello:bind_stateless(URL, test_1),
 
     %% binding a different one returns occupied
-    {error, occupied} = hello2:bind_stateless(URL, test_2).
+    {error, occupied} = hello:bind_stateless(URL, test_2).
 
 bind_stateless_zmq_url(_Config) ->
-    ok = hello2:bind_stateless("zmq-tcp://127.0.0.1:6001", test_1).
+    ok = hello:bind_stateless("zmq-tcp://127.0.0.1:6001", test_1).
 
 bind_stateless_zmq_url_errors(_Config) ->
     URL = "zmq-tcp://127.0.0.1:6002",
-    ok = hello2:bind_stateless(URL, test_1),
+    ok = hello:bind_stateless(URL, test_1),
 
     %% binding the same module returns already_started
-    {error, already_started} = hello2:bind_stateless(URL, test_1),
+    {error, already_started} = hello:bind_stateless(URL, test_1),
 
     %% binding a different one returns occupied
-    {error, occupied} = hello2:bind_stateless(URL, test_2).
+    {error, occupied} = hello:bind_stateless(URL, test_2).
 
 bind_stateless_cross_protocol_checking(_Config) ->
-    ok = hello2:bind_stateless("http://localhost:6008", test_1),
-    {error, occupied} = hello2:bind_stateless("zmq-tcp://127.0.0.1:6008", test_2),
+    ok = hello:bind_stateless("http://localhost:6008", test_1),
+    {error, occupied} = hello:bind_stateless("zmq-tcp://127.0.0.1:6008", test_2),
 
-    ok = hello2:bind_stateless("zmq-tcp://*:6009", test_1),
-    {error, occupied} = hello2:bind_stateless("http://127.0.0.1:6009", test_2).
+    ok = hello:bind_stateless("zmq-tcp://*:6009", test_1),
+    {error, occupied} = hello:bind_stateless("http://127.0.0.1:6009", test_2).
 
 bindings(_Config) ->
-    OrigBindings = lists:sort(hello2:bindings()),
+    OrigBindings = lists:sort(hello:bindings()),
 
     IPCPath = filename:absname("/tmp/bindings_test.ipc"),
 
@@ -53,15 +53,15 @@ bindings(_Config) ->
     Bindings1 = lists:map(fun
             ({Url, Module}) ->
                 ct:log("Binding ~p to ~p", [Module, Url]),
-                ok = hello2:bind_stateless(Url, Module),
+                ok = hello:bind_stateless(Url, Module),
                 {Url, Module};
             ({Url, Module, Args}) ->
                 ct:log("Binding ~p to ~p with ~p", [Module, Url, Args]),
-                ok = hello2:bind_stateless(Url, Module, Args),
+                ok = hello:bind_stateless(Url, Module, Args),
                 {Url, Module}
         end, Bindings0),
 
-    Bindings1 = lists:sort(hello2:bindings() -- OrigBindings).
+    Bindings1 = lists:sort(hello:bindings() -- OrigBindings).
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
@@ -72,7 +72,7 @@ all() ->
      bind_stateless_cross_protocol_checking].
 
 init_per_suite(Config) ->
-    hello2:start(),
+    hello:start(),
     Mods = [test_1, test_2, test_3, test_4, test_5, test_6],
     setup_cb_mocks(Mods),
     [{cb_modules, Mods} | Config].
@@ -84,11 +84,11 @@ end_per_suite(Config) ->
 setup_cb_mocks([]) -> ok;
 setup_cb_mocks([Mod | Rest]) ->
     ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, hello2_info, 
+    ok = meck:expect(Mod, hello_info,
         fun() ->
             {Mod, atom_to_binary(Mod, utf8), []}
         end),
     setup_cb_mocks(Rest).
- 
+
 teardown_cb_mocks(Mods) ->
     [ok = meck:unload(Mod) || Mod <- Mods].

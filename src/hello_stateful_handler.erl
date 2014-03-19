@@ -20,7 +20,7 @@
 
 
 % -callback init(context(), InitArgs :: term()) -> {ok, State :: term()}
-%                                                | {error, hello2_proto:error_reply()}.
+%                                                | {error, hello_proto:error_reply()}.
 %
 % -callback handle_request(from(), method(), params(), State :: term()) -> {reply, reply(), NewState}
 %                                                                        | {noreply, NewState}
@@ -33,7 +33,7 @@
 % -callback terminate(context(), Reason :: term(), State :: term()) -> term().
 
 %% @doc Stateful RPC handler behaviour.
--module(hello2_stateful_handler).
+-module(hello_stateful_handler).
 -export([behaviour_info/1, set_idle_timeout/1, set_idle_timeout/2, notify/3,
          notify_np/3, reply/2, transport_param/2, transport_param/3]).
 -export_type([context/0, from_context/0]).
@@ -45,13 +45,13 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("internal.hrl").
--include("hello2.hrl").
+-include("hello.hrl").
 
 -record(context, {
     protocol  :: module(),
     peer      :: term(),
     transport :: pid(),
-    transport_params :: hello2:transport_params()
+    transport_params :: hello:transport_params()
 }).
 
 -record(from_context, {
@@ -85,12 +85,12 @@ set_idle_timeout(HandlerPid, Timeout) ->
     gen_server:cast(HandlerPid, {set_idle_timeout, Timeout}).
 
 %% @doc Send an RPC notification with positional parameters to the client.
--spec notify(context() | from_context(), hello2_client:method(), [hello2_json:value()]) -> ok.
+-spec notify(context() | from_context(), hello_client:method(), [hello_json:value()]) -> ok.
 notify(Context, Method, Args) when is_list(Args) ->
     send_notification(Context, Method, Args).
 
 %% @doc Send an RPC notification with named parameters to the client.
--spec notify_np(context() | from_context(), hello2_client:method(), [{string(), hello2_json:value()}] | hello2_json:json_object()) -> ok.
+-spec notify_np(context() | from_context(), hello_client:method(), [{string(), hello_json:value()}] | hello_json:json_object()) -> ok.
 notify_np(Context, Method, Args) when is_list(Args) ->
     notify_np(Context, Method, {Args});
 notify_np(Context, Method, Args = {_}) ->
@@ -101,11 +101,11 @@ notify_np(Context, Method, Args = {_}) ->
 %%   return ``{noreply, State}'' from ``handle_request/4''.
 %%   ``reply/2'' can be called from any process, not just the handler process.
 -spec reply(from_context(), Reply) -> ok
-    when Reply :: {ok, hello2_json:value()} | Error,
+    when Reply :: {ok, hello_json:value()} | Error,
          Error :: {error, ErrorCode} | {error, ErrorCode, ErrorMessage} | {error, ErrorCode, ErrorMessage, ErrorData},
          ErrorCode :: integer(),
          ErrorMessage :: binary(),
-         ErrorData :: hello2_json:value().
+         ErrorData :: hello_json:value().
 reply(#from_context{reqid = undefined}, _Result) ->
     ok;
 reply(#from_context{handler_pid = Pid, req_ref = ReqRef, reqid = ReqId}, Result) ->
@@ -129,13 +129,13 @@ transport_param(Key, #from_context{context = #context{transport_params = Params}
 %% ----------------------------------------------------------------------------------------------------
 %% -- for listener communication
 %% @private
--spec start_link(#binding{}, term(), pid(), hello2:transport_params()) -> {ok, pid()}.
+-spec start_link(#binding{}, term(), pid(), hello:transport_params()) -> {ok, pid()}.
 start_link(Binding, Peer, Transport, TransportParams) ->
     gen_server:start_link(?MODULE, {Binding, Peer, Transport, TransportParams}, []).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
--define(IDLE_TIMEOUT_MSG, '$hello2_idle_timeout').
+-define(IDLE_TIMEOUT_MSG, '$hello_idle_timeout').
 -record(state, {
     context                 :: #context{},
     mod                     :: module(),
@@ -155,7 +155,7 @@ init({Binding, Peer, TransportPid, TransportParams}) ->
     [{_, [Callback]} | _] = dict:to_list(Callbacks),
     CallbackMod = Callback#callback.mod,
     CallbackArgs = Callback#callback.args,
-    Context = #context{protocol = hello2_proto_jsonrpc,
+    Context = #context{protocol = hello_proto_jsonrpc,
                        peer = Peer,
                        transport = TransportPid,
                        transport_params = TransportParams},
@@ -181,7 +181,7 @@ handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map
         {value, {incomplete_batch, BatchReq = #batch_request{requests = Reqs}, Responses}} ->
             case lists:partition(fun (#request{reqid = Id}) -> Id == ReqId end, Reqs) of
                 {[LastReq], []} ->
-                    BatchResp = hello2_proto:batch_response(BatchReq, [to_response_record(Result, LastReq) | Responses]),
+                    BatchResp = hello_proto:batch_response(BatchReq, [to_response_record(Result, LastReq) | Responses]),
                     proto_send_log(BatchReq, BatchResp, State),
                     {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, ARMap)}};
                 {[Req], StillWaiting} ->
@@ -191,7 +191,7 @@ handle_cast({async_reply, ReqRef, ReqId, Result}, State = #state{async_reply_map
                     {noreply, State#state{async_reply_map = NewARMap}}
             end;
         none ->
-            error_logger:warning_report([{hello2_stateful_handler, State#state.mod},
+            error_logger:warning_report([{hello_stateful_handler, State#state.mod},
                                          {unknown_reply, ReqRef, ReqId, Result}]),
             {noreply, State}
     end.
@@ -208,7 +208,7 @@ handle_info({?IDLE_TIMEOUT_MSG, _OtherRef}, State) ->
     {noreply, State};
 handle_info({?INCOMING_MSG_MSG, Message}, State0) ->
     State = reset_idle_timeout(State0),
-    case hello2_proto:decode(hello2_proto_jsonrpc, Message) of
+    case hello_proto:decode(hello_proto_jsonrpc, Message) of
         Req = #request{} ->
             do_single_request(Req, State);
         Req = #batch_request{} ->
@@ -218,7 +218,7 @@ handle_info({?INCOMING_MSG_MSG, Message}, State0) ->
         #response{} ->
             {noreply, State};
         {proto_reply, Response} ->
-            hello2_request_log:bad_request(State#state.mod, self(), State#state.log_url, Message, Response),
+            hello_request_log:bad_request(State#state.mod, self(), State#state.log_url, Message, Response),
             proto_send(Response, State),
             {noreply, State}
     end;
@@ -249,7 +249,7 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
-    case hello2_validate:request(Mod, Req) of
+    case hello_validate:request(Mod, Req) of
 	{error, Error} ->
             proto_send_log(Req, Error, State),
             {noreply, State};
@@ -284,10 +284,10 @@ do_batch(BatchReq = #batch_request{requests = Requests}, State = #state{async_re
     BatchRef = make_ref(),
     case do_batch_requests(Requests, BatchRef, State, [], []) of
         {stop, Reason, Responses, NewState} ->
-            proto_send_log(BatchReq, hello2_proto:batch_response(BatchReq, Responses), NewState),
+            proto_send_log(BatchReq, hello_proto:batch_response(BatchReq, Responses), NewState),
             {stop, Reason, NewState};
         {reply, Responses, [], NewState} ->
-            proto_send_log(BatchReq, hello2_proto:batch_response(BatchReq, Responses), NewState),
+            proto_send_log(BatchReq, hello_proto:batch_response(BatchReq, Responses), NewState),
             {noreply, NewState};
         {reply, Responses, AsyncReplies, NewState} ->
             StoredReq = BatchReq#batch_request{requests = AsyncReplies},
@@ -304,7 +304,7 @@ do_batch_requests([], _BR, State, Responses, NeedAsyncReply) ->
     {reply, Responses, NeedAsyncReply, State};
 do_batch_requests([Req = #request{} | Rest], BatchRef, State = #state{mod = Mod}, Responses, AsyncReplies) ->
     ModState = State#state.mod_state,
-    case hello2_validate:request(Mod, Req) of
+    case hello_validate:request(Mod, Req) of
 	{error, ErrorResp} ->
             do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
 	{ok, Method, ValidatedParams} when is_list(ValidatedParams) ->
@@ -332,39 +332,39 @@ do_batch_requests([Req = #request{} | Rest], BatchRef, State = #state{mod = Mod}
 stop_in_batch(Reason, State, Responses, []) ->
     {stop, Reason, Responses, State};
 stop_in_batch(Reason, State, Responses, [LeftoverReq | Rest]) ->
-    ErrorResp = hello2_proto:error_response(LeftoverReq, server_error, <<"handler stopped">>),
+    ErrorResp = hello_proto:error_response(LeftoverReq, server_error, <<"handler stopped">>),
     stop_in_batch(Reason, State, [ErrorResp | Responses], Rest).
 
 to_response_record({ok, Reply}, Request) ->
-    hello2_proto:success_response(Request, Reply);
+    hello_proto:success_response(Request, Reply);
 to_response_record({error, Error}, Request) ->
-    hello2_proto:error_response(Request, Error);
+    hello_proto:error_response(Request, Error);
 to_response_record({error, Code, Message}, Request) ->
-    hello2_proto:error_response(Request, {Code, Message});
+    hello_proto:error_response(Request, {Code, Message});
 to_response_record({error, Code, Message, Data}, Request) ->
-    hello2_proto:error_response(Request, {Code, Message, Data}).
+    hello_proto:error_response(Request, {Code, Message, Data}).
 
--spec proto_send_log(#state{}, hello2_proto:request(), hello2_proto:response()) -> any().
+-spec proto_send_log(#state{}, hello_proto:request(), hello_proto:response()) -> any().
 proto_send_log(Req, Resp, State) ->
-    hello2_request_log:request(State#state.mod, self(), State#state.log_url, Req, Resp),
+    hello_request_log:request(State#state.mod, self(), State#state.log_url, Req, Resp),
     proto_send(Resp, State).
 
 proto_send(ignore, _State) ->
     ok;
 proto_send(Result, #state{context = Context}) ->
-    send_binary(Context, hello2_proto:encode(Result)).
+    send_binary(Context, hello_proto:encode(Result)).
 
 send_notification(#from_context{context = Context}, Method, Params) ->
     send_notification(Context, Method, Params);
 send_notification(Context = #context{protocol = Protocol}, Method, Params) ->
-    Request = hello2_proto:new_notification(Protocol, Method, Params),
-    send_binary(Context, hello2_proto:encode(Request)).
+    Request = hello_proto:new_notification(Protocol, Method, Params),
+    send_binary(Context, hello_proto:encode(Request)).
 
 send_binary(#context{transport = TPid, peer = Peer}, Message) when is_binary(Message) ->
-    TPid ! {hello2_msg, self(), Peer, Message}.
+    TPid ! {hello_msg, self(), Peer, Message}.
 
 send_closed(#context{transport = TPid, peer = Peer}) ->
-    TPid ! {hello2_closed, self(), Peer}.
+    TPid ! {hello_closed, self(), Peer}.
 
 -spec make_from_context(reference(), #request{}, #state{}) -> #from_context{}.
 make_from_context(_ReqRef, #request{reqid = undefined}, State) ->

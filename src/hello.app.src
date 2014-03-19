@@ -1,8 +1,8 @@
 % vim: filetype=erlang
-{application, hello2,
+{application, hello,
   [{description, "JSON-RPC API toolkit"},
    {applications, [kernel, stdlib, cowboy, ex_uri, erlzmq, ibrowse]},
-   {registered, [hello2_supervisor, hello2_stateless_zmq_supervisor]},
-   {mod, {hello2, []}},
+   {registered, [hello_supervisor, hello_stateless_zmq_supervisor]},
+   {mod, {hello, []}},
    {env, [{request_log_dir, "request-logs"}]}
 ]}.

@@ -1,11 +1,11 @@
--module(hello2_client_SUITE).
+-module(hello_client_SUITE).
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 
--include("../include/hello2.hrl").
+-include("../include/hello.hrl").
 -include_lib("yang/include/typespec.hrl").
--include("hello2_test_example.hrl").
+-include("hello_test_example.hrl").
 
 -define(UNKNOWN_HOST, "http://undefined.undefined:8888").
 
@@ -29,23 +29,23 @@
 % -- test cases
 call(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({ok,<<"abcdef">>}, hello2_client:call(Clnt, "append", [<<"abc">>,<<"def">>])),
+    ?match({ok,<<"abcdef">>}, hello_client:call(Clnt, "append", [<<"abc">>,<<"def">>])),
     ok.
 call_errors(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {method_not_found, _}}, hello2_client:call(Clnt, "nonamemethod", [<<"test">>])),
-    ?match({error, {invalid_params, _}}, hello2_client:call(Clnt, "append", [1])),
-    ?match({error, {30000, <<"test error message">>}}, hello2_client:call(Clnt, "return_error", [30000, <<"test error message">>])),
+    ?match({error, {method_not_found, _}}, hello_client:call(Clnt, "nonamemethod", [<<"test">>])),
+    ?match({error, {invalid_params, _}}, hello_client:call(Clnt, "append", [1])),
+    ?match({error, {30000, <<"test error message">>}}, hello_client:call(Clnt, "return_error", [30000, <<"test error message">>])),
     ok.
 
 notification(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match(ok, hello2_client:notification(Clnt, "echo", [<<"test">>])),
+    ?match(ok, hello_client:notification(Clnt, "echo", [<<"test">>])),
     ok.
 
 call_np(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({ok, <<"cdab">>}, hello2_client:call_np(Clnt, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ?match({ok, <<"cdab">>}, hello_client:call_np(Clnt, "append", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
     ok.
 
 batch_call(Config) ->
@@ -53,45 +53,45 @@ batch_call(Config) ->
     ?match([{error, {method_not_found, _}},
 	    {error, {invalid_params, _}},
 	    {ok, <<"abcd">>}],
-	   hello2_client:batch_call(Clnt, [{"nonamemethod", [<<"test">>]},
+	   hello_client:batch_call(Clnt, [{"nonamemethod", [<<"test">>]},
 					  {'append', [1]},
 					  {'append', {[{str1, <<"ab">>}, {str2, <<"cd">>}]}}])),
     ok.
 
 call_np_method_not_found(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {method_not_found, _}}, hello2_client:call_np(Clnt, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ?match({error, {method_not_found, _}}, hello_client:call_np(Clnt, "nonamemethod", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
     ok.
 
 call_http_error(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {transport, _Reason}}, hello2_client:call(Clnt, "foo", [])),
+    ?match({error, {transport, _Reason}}, hello_client:call(Clnt, "foo", [])),
     ok.
 
 notification_http_error(Config) ->
     Clnt = proplists:get_value(client, Config),
-    R = hello2_client:notification(Clnt, "foo", []),
+    R = hello_client:notification(Clnt, "foo", []),
     ?match({error, {transport, _Reason}}, R),
     ok.
 
 call_np_http_error(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {transport, _Reason}}, hello2_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ?match({error, {transport, _Reason}}, hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
     ok.
 
 call_zmq_tcp_error(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {zmq_tcp, _Reason}}, hello2_client:call(Clnt, "foo", [])),
+    ?match({error, {zmq_tcp, _Reason}}, hello_client:call(Clnt, "foo", [])),
     ok.
 
 notification_zmq_tcp_error(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {zmq_tcp, _Reason}}, hello2_client:notification(Clnt, "foo", [])),
+    ?match({error, {zmq_tcp, _Reason}}, hello_client:notification(Clnt, "foo", [])),
     ok.
 
 call_np_zmq_tcp_error(Config) ->
     Clnt = proplists:get_value(client, Config),
-    ?match({error, {zmq_tcp, _Reason}}, hello2_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
+    ?match({error, {zmq_tcp, _Reason}}, hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
     ok.
 
 % ---------------------------------------------------------------------
@@ -134,7 +134,7 @@ group_config(zmq_tcp_error) ->
 	{"zmq-tcp://undefined.undefined:5555", false, []}.
 
 init_per_group(old_cb_info, Config) ->
-    Mod = hello2_test_stateless_handler,
+    Mod = hello_test_stateless_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
     ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = M} || M <- [echo ,append, enum_test, return_error]]),
     ok = meck:expect(Mod, param_info,
@@ -164,9 +164,9 @@ init_per_group(old_cb_info, Config) ->
     [{cb_module, Mod}|Config];
 
 init_per_group(new_cb_info, Config) ->
-    Mod = hello2_test_stateless_ts_handler,
+    Mod = hello_test_stateless_ts_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, hello2_info, fun hello2_test_example_typespec/0),
+    ok = meck:expect(Mod, hello_info, fun hello_test_example_typespec/0),
     ok = meck:expect(Mod, handle_request,
         fun
             (_Context, <<"echo">>, [{_,Str}]) ->
@@ -184,20 +184,20 @@ init_per_group(zmq_tcp_error, _Config) ->
 	{skip, "libzmq name resolving is broken"};
 
 init_per_group(GroupName, Config) ->
-    hello2:start(),
+    hello:start(),
 	{URI, StartServer, ClientOptions} = group_config(GroupName),
 	CbModule = proplists:get_value(cb_module, Config),
 	ct:pal("CB Module: ~p~n", [CbModule]),
 	ct:pal("URI: ~s, (~p)~n", [URI, ClientOptions]),
 	%%TODO: apply server method restriction
 	case StartServer of
-		false -> 
+		false ->
             ok;
-		true -> 
-            ok = hello2:bind_stateless(URI, CbModule)
+		true ->
+            ok = hello:bind_stateless(URI, CbModule)
 	end,
 	ct:sleep(500),
-	{ok, Clnt} = hello2_client:start(URI, ClientOptions),
+	{ok, Clnt} = hello_client:start(URI, ClientOptions),
 	ct:pal("Clnt: ~w~n", [Clnt]),
 	ct:comment({URI, ClientOptions}),
 	[{client,Clnt}|Config].
@@ -209,8 +209,8 @@ end_per_group(Group, Config) when Group == old_cb_info; Group == new_cb_info ->
 
 end_per_group(_GroupName, Config) ->
     Clnt = proplists:get_value(client, Config),
-    hello2_client:stop(Clnt),
-    ok = application:stop(hello2),
+    hello_client:stop(Clnt),
+    ok = application:stop(hello),
     ok.
 
 init_per_suite(Config) ->

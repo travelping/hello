@@ -19,12 +19,12 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello2_registry).
+-module(hello_registry).
 
 -behaviour(gen_server).
 
 -export([
-    start/0, start_link/0, 
+    start/0, start_link/0,
     register/3, multi_register/2, unregister/1,
     lookup/1, lookup_pid/1,
     lookup_listener/1, lookup_listener/2, listener_key/2,
@@ -37,8 +37,8 @@
 
 -include("internal.hrl").
 
--define(TABLE, hello2_registry_tab).
--define(SERVER, hello2_registry).
+-define(TABLE, hello_registry_tab).
+-define(SERVER, hello_registry).
 
 %% --------------------------------------------------------------------------------
 %% -- API
@@ -51,12 +51,12 @@
 %% @doc Start the registry server
 -spec start() -> {ok, pid()}.
 start() ->
-    gen_server:start({local, hello2_registry}, ?MODULE, {}, []).
+    gen_server:start({local, hello_registry}, ?MODULE, {}, []).
 
 %% @doc Start the registry server
 -spec start_link() -> {ok, pid()}.
 start_link() ->
-    gen_server:start_link({local, hello2_registry}, ?MODULE, {}, []).
+    gen_server:start_link({local, hello_registry}, ?MODULE, {}, []).
 
 %% @doc Atomically register a pid under the given name
 %% @equiv multi_register([{Name, Data}], Pid)

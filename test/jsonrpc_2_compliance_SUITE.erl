@@ -4,9 +4,9 @@
 
 -include_lib("common_test/include/ct.hrl").
 
--include("../include/hello2.hrl").
+-include("../include/hello.hrl").
 -include_lib("yang/include/typespec.hrl").
--include("hello2_test_jsonrpc_compliance.hrl").
+-include("hello_test_jsonrpc_compliance.hrl").
 
 -define(REQ_ID, 1).
 
@@ -133,12 +133,12 @@ groups() ->
 %% -- utilities
 request({Method, Params}) ->
     Req = {[{jsonrpc, <<"2.0">>}, {id, ?REQ_ID}, {method, list_to_binary(Method)}, {params, Params}]},
-    request(hello2_json:encode(Req));
+    request(hello_json:encode(Req));
 request(Request) when is_list(Request) ->
     request(list_to_binary(Request));
 request(Request) ->
-    RespJSON = hello2:run_stateless_binary_request(hello2_test_jsonrpc_2_compliance_handler, Request, []),
-    case hello2_json:decode(RespJSON) of
+    RespJSON = hello:run_stateless_binary_request(hello_test_jsonrpc_2_compliance_handler, Request, []),
+    case hello_json:decode(RespJSON) of
         {ok, DecRespObj, _Rest} -> DecRespObj;
         {error, syntax_error}   -> {no_json, RespJSON}
     end.
@@ -150,7 +150,7 @@ field(Object, Field) ->
 			    end, Object, Flist).
 
 init_per_group(old_cb_info, Config) ->
-    Mod = hello2_test_jsonrpc_2_compliance_handler,
+    Mod = hello_test_jsonrpc_2_compliance_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
     ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = subtract}]),
     ok = meck:expect(Mod, param_info,
@@ -165,9 +165,9 @@ init_per_group(old_cb_info, Config) ->
     [{cb_module, Mod}|Config];
 
 init_per_group(new_cb_info, Config) ->
-    Mod = hello2_test_jsonrpc_2_compliance_handler,
+    Mod = hello_test_jsonrpc_2_compliance_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, hello2_info, fun hello2_test_jsonrpc_compliance_typespec/0),
+    ok = meck:expect(Mod, hello_info, fun hello_test_jsonrpc_compliance_typespec/0),
     ok = meck:expect(Mod, handle_request,
 		     fun(_Context, <<"subtract">>, [{_, Subtrahend}, {_, Minuend}]) ->
 			     {ok, Subtrahend - Minuend}

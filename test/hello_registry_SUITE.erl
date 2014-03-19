@@ -1,9 +1,9 @@
--module(hello2_registry_SUITE).
+-module(hello_registry_SUITE).
 -compile(export_all).
 
 -include("ct.hrl").
 -include_lib("proper/include/proper.hrl").
--define(Mod, hello2_registry).
+-define(Mod, hello_registry).
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
@@ -112,7 +112,7 @@ postcondition(_,_,_) ->
 prop_registry_works() ->
     ?FORALL(Cmds, commands(?MODULE),
             begin
-                {ok, Pid} = hello2_registry:start(),
+                {ok, Pid} = hello_registry:start(),
                 {History,State,Result} = run_commands(?MODULE, Cmds),
                 %% cleanup
                 exit(Pid, shutdown),

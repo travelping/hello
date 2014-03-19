@@ -1,11 +1,11 @@
-hello_test_jsonrpc_compliance_typespec() -> 
-{<<"hello_example">>,
+hello_test_jsonrpc_compliance_typespec() ->
+{<<"hello_example">>, <<"">>,
  [#rpc{
       name = <<"subtract">>,description = undefined,
-      input = 
+      input =
           #object{
               name = input,description = undefined,
-              fields = 
+              fields =
                   [#field{
                        name = <<"subtrahend">>,description = undefined,
                        type = {<<"int64">>,[]},
@@ -17,10 +17,10 @@ hello_test_jsonrpc_compliance_typespec() ->
                        'when' = undefined,default = null,mandatory = true,
                        opts = []}],
               'when' = undefined,opts = []},
-      output = 
+      output =
           #object{
               name = output,description = undefined,
-              fields = 
+              fields =
                   [#field{
                        name = <<"result">>,description = undefined,
                        type = {<<"int64">>,[]},

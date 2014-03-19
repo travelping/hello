@@ -19,10 +19,10 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello2_zmq_listener).
+-module(hello_zmq_listener).
 -export([start_link/1]).
 
--behaviour(hello2_binding).
+-behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 
 -behaviour(gen_server).
@@ -36,15 +36,15 @@ start_link(Binding) ->
     gen_server:start_link(?MODULE, Binding, []).
 
 %% --------------------------------------------------------------------------------
-%% -- hello2_binding
+%% -- hello_binding
 listener_childspec(ListenerID, Binding) ->
     StartFun = {?MODULE, start_link, [Binding]},
     {ListenerID, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]}.
 
 listener_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
-    hello2_registry:listener_key(IP, Port);
+    hello_registry:listener_key(IP, Port);
 listener_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, path = Path}) ->
-    hello2_registry:listener_key({ipc, ipc_path(Host, Path)}, undefined).
+    hello_registry:listener_key({ipc, ipc_path(Host, Path)}, undefined).
 
 binding_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
     {IP, Port};
@@ -84,28 +84,28 @@ handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, last
     {noreply, State};
 handle_info({zmq, Socket, Message, []}, State = #state{binding_key=BindingKey, socket = Socket, lastmsg_peer = Peer}) ->
     %% second message part is the actual request
-    case hello2_registry:lookup_binding(?MODULE, BindingKey) of
+    case hello_registry:lookup_binding(?MODULE, BindingKey) of
         {error, not_found} ->
             ok; % should never happen
         {ok, Binding} ->
-            case hello2_binding:lookup_handler(Binding, Peer) of
+            case hello_binding:lookup_handler(Binding, Peer) of
                 {error, not_found} ->
                     TransportParams = [{peer_identity, Peer}],
-                    HandlerPid = hello2_binding:start_registered_handler(Binding, Peer, self(), TransportParams),
-                    hello2_binding:incoming_message(HandlerPid, Message);
+                    HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self(), TransportParams),
+                    hello_binding:incoming_message(HandlerPid, Message);
                 {ok, HandlerPid} ->
-                    hello2_binding:incoming_message(HandlerPid, Message)
+                    hello_binding:incoming_message(HandlerPid, Message)
             end
     end,
     {noreply, State#state{lastmsg_peer = undefined}};
 
-handle_info({hello2_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
+handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
     ok = erlzmq:send(Socket, Peer, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
     ok = erlzmq:send(Socket, Message),
     {noreply, State};
 
-handle_info({hello2_closed, _HandlerPid, _Peer}, State) ->
+handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
     {noreply, State};
 
 handle_info({'EXIT', _HandlerPid, _Reason}, State) ->

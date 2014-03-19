@@ -19,8 +19,8 @@
 % DEALINGS IN THE SOFTWARE.
 
 % @private
--module(hello2_http_listener).
--behaviour(hello2_binding).
+-module(hello_http_listener).
+-behaviour(hello_binding).
 -export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
 
 %% http utils used by other listeners
@@ -33,7 +33,7 @@
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 %% --------------------------------------------------------------------------------
-%% -- hello2_binding callbacks
+%% -- hello_binding callbacks
 listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
     % cowboy dispatch
     Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, []}]}]),
@@ -43,7 +43,7 @@ listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
     {ChildID, {cowboy, start_http, [{ChildID, ?MODULE}, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
 
 listener_key(#binding{ip = IP, port = Port}) ->
-    hello2_registry:listener_key(IP, default_port(Port)).
+    hello_registry:listener_key(IP, default_port(Port)).
 
 binding_key(#binding{host = Host, port = Port, path = Path}) ->
     {list_to_binary(Host), default_port(Port), unslash(Path)}.
@@ -81,29 +81,29 @@ terminate(_Reason, _Req, _State) ->
 process(Binding, Req, State) ->
     {Peer, Req1} = cowboy_req:peer(Req),
     {TransportParams, Req6} = req_transport_params(Req1),
-    Handler = hello2_binding:start_handler(Binding, Peer, self(), TransportParams),
+    Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
     {ok, Body, Req7} = cowboy_req:body(Req6),
-    hello2_binding:incoming_message(Handler, Body),
+    hello_binding:incoming_message(Handler, Body),
     Req8 = cowboy_req:compact(Req7),
     {ok, Req9} = cowboy_req:chunked_reply(200, json_headers(), Req8),
     http_chunked_loop(Handler, Req9, State).
 
 http_chunked_loop(Handler, Request, State) ->
     receive
-        {hello2_closed, Handler, _Peer} ->
+        {hello_closed, Handler, _Peer} ->
             {ok, Request, State};
-        {hello2_msg, Handler, _, Message} ->
+        {hello_msg, Handler, _, Message} ->
             cowboy_req:chunk(Message, Request),
             http_chunked_loop(Handler, Request, State)
     end.
 
 json_headers() ->
-    {ok, Vsn} = application:get_key(hello2, vsn),
+    {ok, Vsn} = application:get_key(hello, vsn),
     [{<<"Content-Type">>, <<"application/json">>},
      {<<"Server">>, erlang:list_to_binary("hello/" ++ Vsn)}].
 
 server_header() ->
-    {ok, Vsn} = application:get_key(hello2, vsn),
+    {ok, Vsn} = application:get_key(hello, vsn),
     [{<<"Server">>, erlang:list_to_binary("hello/" ++ Vsn)}].
 
 req_transport_params(Req1) ->
@@ -121,9 +121,9 @@ req_transport_params(Req1) ->
 lookup_binding(Module, Host, Port, undefined) ->
     lookup_binding(Module, Host, Port, []);
 lookup_binding(Module, Host, Port, PathList) ->
-    case hello2_registry:lookup_binding(Module, {Host, Port, PathList}) of
+    case hello_registry:lookup_binding(Module, {Host, Port, PathList}) of
         {error, not_found} ->
-            hello2_registry:lookup_binding(Module, {<<"0.0.0.0">>, Port, PathList});
+            hello_registry:lookup_binding(Module, {<<"0.0.0.0">>, Port, PathList});
         Result ->
             Result
     end.
