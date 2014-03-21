@@ -189,7 +189,7 @@ terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_
         {ok, Pid, 0} -> catch hello_listener_supervisor:stop_child(ListenerID);
         _            -> ok
     end,
-    error_logger:info_msg("hello binding ~s stopped~n", [ex_uri:encode(Binding#binding.url)]).
+    error_logger:info_report([{hello_binding, ex_uri:encode(Binding#binding.url)}, {action, stopped}]).
 
 %% unused callbacks
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
