@@ -30,16 +30,12 @@
 -include_lib("ex_uri/include/ex_uri.hrl").
 -type url() :: string().
 -type decoded_url() :: #ex_uri{}.
+-define(APPS, [sasl, ranch, crypto, cowboy, ex_uri, erlzmq, ibrowse, hello]).
 
 % @doc Starts the application and all dependencies.
 % This is useful for debugging purposes.
 start() ->
-    application:start(sasl),
-    application:start(cowboy),
-    application:start(ex_uri),
-    application:start(ibrowse),
-    application:start(erlzmq),
-    application:start(hello).
+    [application:start(App) || App <- ?APPS].
 
 start(_Type, _StartArgs) ->
     %% create the log dir
