@@ -23,7 +23,7 @@
 -export([start_link/1]).
 
 -behaviour(hello_binding).
--export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
+-export([listener_specification/2, listener_key/1, binding_key/1, url_for_log/1, listener_termination/1]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -37,9 +37,10 @@ start_link(Binding) ->
 
 %% --------------------------------------------------------------------------------
 %% -- hello_binding
-listener_childspec(ListenerID, Binding) ->
+listener_specification(ListenerID, Binding) ->
     StartFun = {?MODULE, start_link, [Binding]},
-    {ListenerID, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]}.
+    Specs = {ListenerID, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]},
+    {child, Specs}.
 
 listener_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
     hello_registry:listener_key(IP, Port);
@@ -53,6 +54,9 @@ binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port
 
 url_for_log(#binding{url = URL}) ->
     url_for_log1(URL).
+
+listener_termination(ListenerID) ->
+    child.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks

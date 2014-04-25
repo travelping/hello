@@ -141,7 +141,8 @@ stop(BindingServer, Reason) ->
     gen_server:call(BindingServer, {stop, Reason}).
 
 behaviour_info(callbacks) ->
-    [{listener_key,1}, {binding_key,1}, {url_for_log,1}, {listener_childspec,2}];
+    [{listener_key,1}, {binding_key,1}, {url_for_log,1}, {listener_specification,2}, {listener_termination,1}];
+%% Listener termination will be used in hello_registry to terminate non hello supervised processes
 
 behaviour_info(_) ->
     undefined.
@@ -186,7 +187,7 @@ terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_
     [{_, [Callback]} | _] = dict:to_list(Callbacks),
     hello_request_log:close(Callback#callback.mod),
     case hello_registry:add_to_key(?REFC(ListenerID), -1) of
-        {ok, Pid, 0} -> catch hello_listener_supervisor:stop_child(ListenerID);
+        {ok, Pid, 0} -> catch stop_listener(Binding#binding.listener_mod, ListenerID);
         _            -> ok
     end,
     error_logger:info_report([{hello_binding, ex_uri:encode(Binding#binding.url)}, {action, stopped}]).
@@ -207,8 +208,7 @@ start_listener(BindingIn = #binding{listener_mod = Mod, callbacks = Callbacks}) 
         {error, not_found} ->
             %% no server running on Host:Port, we need to start a listener
             ListenerID = make_ref(),
-            ListenerChildSpec = Mod:listener_childspec(ListenerID, Binding),
-            case hello_listener_supervisor:start_child(ListenerChildSpec) of
+            case start_listener(Mod, ListenerID, Binding) of
                 {ok, ListenerPid} ->
                     ListenerMonitor = monitor(process, ListenerPid),
                     ListenerData = {ListenerID, Mod},
@@ -262,6 +262,22 @@ start_listener(BindingIn = #binding{listener_mod = Mod, callbacks = Callbacks}) 
         {ok, _ListenerPid, _Data} ->
             %% there is a listener, but the listener module is different
             {error, occupied}
+    end.
+
+start_listener(Mod, ListenerID, Binding) ->
+    case Mod:listener_specification(ListenerID, Binding) of
+        {child, ListenerChildSpec} ->
+            hello_listener_supervisor:start_child(ListenerChildSpec);
+        {started, Result} ->
+            Result
+    end.
+
+stop_listener(Mod, ListenerID) ->
+    case Mod:listener_termination(ListenerID) of
+        child ->
+            hello_listener_supervisor:stop_child(ListenerID);
+        _ ->
+            ok
     end.
 
 extract_ip_and_host(#ex_uri{authority = #ex_uri_authority{host = Host}}) ->

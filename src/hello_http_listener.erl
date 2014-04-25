@@ -21,7 +21,7 @@
 % @private
 -module(hello_http_listener).
 -behaviour(hello_binding).
--export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
+-export([listener_specification/2, listener_key/1, binding_key/1, url_for_log/1, listener_termination/1]).
 
 %% http utils used by other listeners
 -export([lookup_binding/4, unslash/1, default_port/1, server_header/0, req_transport_params/1]).
@@ -34,13 +34,14 @@
 
 %% --------------------------------------------------------------------------------
 %% -- hello_binding callbacks
-listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
+listener_specification(ChildID, #binding{ip = IP, port = Port}) ->
     % cowboy dispatch
     Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, []}]}]),
     Acceptors = 30,
     TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
-    {ChildID, {cowboy, start_http, [{ChildID, ?MODULE}, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
+    Result = cowboy:start_http({ChildID, ?MODULE}, Acceptors, TransportOpts, ProtocolOpts),
+    {started, Result}.
 
 listener_key(#binding{ip = IP, port = Port}) ->
     hello_registry:listener_key(IP, default_port(Port)).
@@ -51,6 +52,8 @@ binding_key(#binding{host = Host, port = Port, path = Path}) ->
 url_for_log(#binding{url = URL}) ->
     list_to_binary(ex_uri:encode(URL)).
 
+listener_termination(ChildID) ->
+    ranch:stop_listener({ChildID, ?MODULE}).
 %% --------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
 init({tcp, http}, Req, _) ->
