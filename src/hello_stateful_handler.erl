@@ -249,7 +249,7 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 do_single_request(Req, State = #state{mod_state = ModState, mod = Mod}) ->
-    case hello_validate:request(Mod, Req) of
+    case hello_validate:request({Mod, ModState}, Req) of
 	{error, Error} ->
             proto_send_log(Req, Error, State),
             {noreply, State};
@@ -304,7 +304,7 @@ do_batch_requests([], _BR, State, Responses, NeedAsyncReply) ->
     {reply, Responses, NeedAsyncReply, State};
 do_batch_requests([Req = #request{} | Rest], BatchRef, State = #state{mod = Mod}, Responses, AsyncReplies) ->
     ModState = State#state.mod_state,
-    case hello_validate:request(Mod, Req) of
+    case hello_validate:request({Mod, ModState}, Req) of
 	{error, ErrorResp} ->
             do_batch_requests(Rest, BatchRef, State, [ErrorResp | Responses], AsyncReplies);
 	{ok, Method, ValidatedParams} when is_list(ValidatedParams) ->
