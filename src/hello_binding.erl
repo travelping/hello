@@ -58,7 +58,7 @@ new(Pid, ListenerModule, URL = #ex_uri{}, Protocol, CallbackMod, CallbackType, C
         type = CallbackType,
         args = CallbackArgs1
     },
-    {_, Namespace, _} = hello_validate:find_hello_info(CallbackMod, <<"">>),
+    {_, Namespace, _} = hello_validate:find_hello_info(to_mod(CallbackMod, CallbackType), <<"">>),
     Callbacks0 = dict:new(),
     Callbacks1 = dict:append(Namespace, Callback, Callbacks0),
     Binding = #binding{pid = Pid,
@@ -293,3 +293,6 @@ extract_ip_and_host(#ex_uri{authority = #ex_uri_authority{host = Host}}) ->
                     {Address, Host}
             end
     end.
+
+to_mod(CallbackMod, stateful) -> {CallbackMod, default};
+to_mod(CallbackMod, _)        -> CallbackMod.
