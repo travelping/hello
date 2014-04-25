@@ -21,7 +21,7 @@
 % @private
 -module(hello_sockjs_listener).
 -behaviour(hello_binding).
--export([listener_childspec/2, listener_key/1, binding_key/1, url_for_log/1]).
+-export([listener_specification/2, listener_key/1, binding_key/1, url_for_log/1, listener_termination/1]).
 
 -export([init/3, handle/2, terminate/3]).
 
@@ -35,14 +35,15 @@
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- hello_binding callbacks
-listener_childspec(ChildID, #binding{ip = IP, port = Port}) ->
+listener_specification(ChildID, #binding{ip = IP, port = Port}) ->
     Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, []}]}]),
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
     Acceptors = 100,
     TransportOpts = [{port, hello_http_listener:default_port(Port)}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
-    {ChildID, {cowboy, start_http, [?MODULE, Acceptors, TransportOpts, ProtocolOpts]}, permanent, infinity, supervisor, []}.
+    Result = cowboy:start_http({ChildID, ?MODULE}, Acceptors, TransportOpts, ProtocolOpts),
+    {started, Result}.
 
 listener_key(#binding{ip = IP, port = Port}) ->
     hello_registry:listener_key(IP, hello_http_listener:default_port(Port)).
@@ -52,6 +53,9 @@ binding_key(#binding{host = Host, port = Port, path = Path}) ->
 
 url_for_log(Binding) ->
     hello_http_listener:url_for_log(Binding).
+
+listener_termination(ChildID) ->
+    ranch:stop_listener({ChildID, ?MODULE}).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
