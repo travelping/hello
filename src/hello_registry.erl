@@ -20,14 +20,23 @@
 
 % @private
 -module(hello_registry).
+
 -behaviour(gen_server).
--export([start/0,start_link/0, register/3, multi_register/2, add_to_key/2, unregister/1, lookup/1, lookup_pid/1]).
--export([lookup_listener/1, lookup_listener/2, listener_key/2]).
--export([bindings/0, lookup_binding/2]).
-%% internal
+
+-export([
+    start/0, start_link/0,
+    register/3, multi_register/2, unregister/1,
+    lookup/1, lookup_pid/1,
+    lookup_listener/1, lookup_listener/2, listener_key/2,
+    bindings/0, lookup_binding/2,
+    add_to_key/2, update/2
+]).
+
+%% gen_server Callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("internal.hrl").
+
 -define(TABLE, hello_registry_tab).
 -define(SERVER, hello_registry).
 
@@ -61,6 +70,11 @@ register(Name, Data, Pid) when is_pid(Pid) ->
 -spec multi_register(list({name(), data()}), pid()) -> ok | {already_registered, pid(), data()}.
 multi_register(RegSpecs, Pid) when is_pid(Pid) ->
     gen_server:call(?SERVER, {register, RegSpecs, Pid}).
+%%
+%% @doc Atomically update a already registered name.
+-spec update(name(), data()) -> ok | {error, not_found}.
+update(Name, Data) ->
+    gen_server:call(?SERVER, {update, Name, Data}).
 
 %% @doc Atomically add the given number to the data associated with a key
 -spec add_to_key(name(), number()) -> {ok, pid(), data()} | {error, not_found} | {error, badarg}.
@@ -142,6 +156,7 @@ listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 init({}) ->
+    process_flag(trap_exit, true),
     Table = ets:new(?TABLE, [protected, ordered_set, named_table, {read_concurrency, true}]),
     {ok, Table}.
 
@@ -171,7 +186,14 @@ handle_call({unregister, Name}, _From, Table) ->
             ets:delete(Table, {pid, Pid, Name}),
             {reply, ok, Table}
     end;
-
+handle_call({update, Name, Data}, _From, Table) ->
+    case ets:lookup(Table, {name, Name}) of
+        [] ->
+            {reply, {error, not_found}, Table};
+        [{{name, Name}, Pid, _OldData}] ->
+            ets:insert(Table, {{name, Name}, Pid, Data}),
+            {reply, ok, Table}
+    end;
 handle_call({add_to_key, Name, Number}, _From, Table) ->
     case ets:lookup(Table, {name, Name}) of
         [] ->
@@ -187,17 +209,22 @@ handle_call({add_to_key, Name, Number}, _From, Table) ->
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
+handle_info({'EXIT', _From, Reason}, Table) ->
+    {stop, Reason, Table};
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
     _DelCount = delete_pid(Table, Pid),
     {noreply, Table};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
 
+terminate(_Reason, Table) ->
+    ets:delete(Table),
+    ok.
+
 %% unused callbacks
 handle_cast(_Cast, State) ->
     {noreply, State}.
-terminate(_Reason, _State) ->
-    ok.
+
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 
