@@ -51,7 +51,7 @@ error_response(ProtoData, ReqId, Code, Message, Data) ->
             NumCode = -32602, MsgPrefix = <<"Invalid params">>;
         internal_error ->
             NumCode = -32603, MsgPrefix = <<"Internal Error">>;
-	invalid_response ->
+        invalid_response ->
             NumCode = -32603, MsgPrefix = <<"invalid JSON-RPC response">>;
         server_error ->
             NumCode = -32099, MsgPrefix = <<"Server Error">>;
@@ -218,7 +218,9 @@ single_request({Props}) ->
                              Obj = {_} when Version > 1 -> Obj;
                              _                          -> throw({invalid_req, ID, <<"\"params\" must be array or object">>})
                          end,
+                Namespaces = collect_namespaces(Method),
                 #request{reqid = ID,
+                         namespaces = Namespaces,
                          method = Method,
                          params = Params,
                          proto_mod = ?MODULE,
@@ -295,3 +297,19 @@ property(Plist, Key, Default) ->
 maybe_null(undefined) -> null;
 maybe_null(null)      -> null;
 maybe_null(Term)      -> Term.
+
+collect_namespaces(Method) ->
+    Parts0 = binary:split(Method, <<".">>, [global]),
+    case Parts0 of
+        [_] ->
+            [<<"">>];
+        _ ->
+            {Parts1, _} = lists:split(length(Parts0)-1, Parts0),
+            lists:foldl(
+                fun
+                    (P, []) ->
+                        [P];
+                    (P, [L|_]=Acc) ->
+                        [binary:list_to_bin([L, ".", P]) | Acc]
+                end, [], Parts1)
+    end.

@@ -1,11 +1,12 @@
 -module(jsonrpc_1_compliance_SUITE).
 
--behaviour(hello_stateless_handler).
--export([method_info/0, param_info/1, handle_request/3]).
 -compile(export_all).
 
--include("ct.hrl").
+-include_lib("common_test/include/ct.hrl").
+
 -include("../include/hello.hrl").
+-include_lib("yang/include/typespec.hrl").
+-include("hello_test_jsonrpc_compliance.hrl").
 
 -define(REQ_ID, 1).
 
@@ -39,22 +40,15 @@ notification(_Config) ->
     {no_json, <<"">>} = request("{\"id\": null, \"method\": \"subtract\", \"params\": [2, 1]}").
 
 % ---------------------------------------------------------------------
-% -- service callbacks
-method_info() ->
-    [#rpc_method{name = subtract}].
-
-param_info(subtract) ->
-    [#rpc_param{name = subtrahend,
-                type = number},
-     #rpc_param{name = minuend,
-                type = number}].
-
-handle_request(_Context, subtract, [Subtrahend, Minuend]) ->
-    {ok, Subtrahend - Minuend}.
-
-% ---------------------------------------------------------------------
 % -- common_test callbacks
-all() -> [param_structures, response_fields, notification].
+all() ->
+    [{group, old_cb_info},
+     {group, new_cb_info}].
+
+groups() ->
+    [{all_tests, [], [param_structures, response_fields, notification]},
+     {old_cb_info, [], [{group, all_tests}]},
+     {new_cb_info, [], [{group, all_tests}]}].
 
 % ---------------------------------------------------------------------
 % -- utilities
@@ -64,7 +58,7 @@ request({Method, Params}) ->
 request(Request) when is_list(Request) ->
     request(list_to_binary(Request));
 request(Request) ->
-    RespJSON = hello:run_stateless_binary_request(?MODULE, Request, []),
+    RespJSON = hello:run_stateless_binary_request(hello_test_jsonrpc_1_compliance_handler, Request, []),
     case hello_json:decode(RespJSON) of
         {ok, RespObj, _Rest}  -> RespObj;
         {error, syntax_error} -> {no_json, RespJSON}
@@ -75,3 +69,38 @@ field(Object, Field) ->
 	lists:foldl(fun (Name, {CurProps}) ->
                     proplists:get_value(Name, CurProps)
 			    end, Object, Flist).
+
+init_per_group(old_cb_info, Config) ->
+    Mod = hello_test_jsonrpc_1_compliance_handler,
+    ok = meck:new(Mod, [non_strict, no_link]),
+    ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = subtract}]),
+    ok = meck:expect(Mod, param_info,
+		     fun(subtract) ->
+			     [#rpc_param{name = subtrahend, type = number},
+			      #rpc_param{name = minuend, type = number}]
+		     end),
+    ok = meck:expect(Mod, handle_request,
+		     fun(_Context, subtract, [Subtrahend, Minuend]) ->
+			     {ok, Subtrahend - Minuend}
+		     end),
+    [{cb_module, Mod}|Config];
+
+init_per_group(new_cb_info, Config) ->
+    Mod = hello_test_jsonrpc_1_compliance_handler,
+    ok = meck:new(Mod, [non_strict, no_link]),
+    ok = meck:expect(Mod, hello_info, fun hello_test_jsonrpc_compliance_typespec/0),
+    ok = meck:expect(Mod, handle_request,
+		     fun(_Context, <<"subtract">>, [{_, Subtrahend}, {_, Minuend}]) ->
+			     {ok, Subtrahend - Minuend}
+		     end),
+    [{cb_module, Mod}|Config];
+
+init_per_group(_, Config) ->
+    Config.
+
+end_per_group(Group, Config) when Group == old_cb_info; Group == new_cb_info ->
+    Mod = proplists:get_value(cb_module, Config),
+    meck:unload(Mod),
+    ok;
+end_per_group(_, _) ->
+    ok.
