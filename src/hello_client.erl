@@ -151,22 +151,22 @@ stop_supervised(Client) ->
 %% @doc Perform an RPC method call with positional parameters
 -spec call(client(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call(Client, Method, ArgList) when is_list(ArgList) ->
-    timeout_call(Client, {call, Method, ArgList}, ?DEFAULT_TIMEOUT).
+    timeout_call(Client, {call, {Method, ArgList}}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link call/3}, but with a configurable timeout
 -spec call(client(), method(), [hello_json:value()], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call(Client, Method, ArgList, Timeout) when is_list(ArgList) ->
-    timeout_call(Client, {call, Method, ArgList}, Timeout).
+    timeout_call(Client, {call, {Method, ArgList}}, Timeout).
 
 %% @doc Perform an RPC method call with named parameters
 -spec call_np(client(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call_np(Client, Method, ArgProps) when is_list(ArgProps) ->
-    timeout_call(Client, {call, Method, {ArgProps}}, ?DEFAULT_TIMEOUT).
+    timeout_call(Client, {call, {Method, {ArgProps}}}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link call_np/3}, but with a configurable timeout
 -spec call_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
 call_np(Client, Method, ArgProps, Timeout) when is_list(ArgProps) ->
-    timeout_call(Client, {call, Method, {ArgProps}}, Timeout).
+    timeout_call(Client, {call, {Method, {ArgProps}}}, Timeout).
 
 %% @deprecated
 %% @doc Send an RPC notification
@@ -178,22 +178,22 @@ notification(Client, Method, ArgList) ->
 %% @doc Send an RPC notification with positional parameters
 -spec notify(client(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
 notify(Client, Method, Parameters) ->
-    timeout_call(Client, {notification, Method, Parameters}, ?DEFAULT_TIMEOUT).
+    timeout_call(Client, {notification, {Method, Parameters}}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link notify/3}, but with a configurable timeout
 -spec notify(client(), method(), [hello_json:value()], timeout()) -> ok | {error, rpc_error()}.
 notify(Client, Method, Parameters, Timeout) ->
-    timeout_call(Client, {notification, Method, Parameters}, Timeout).
+    timeout_call(Client, {notification, {Method, Parameters}}, Timeout).
 
 %% @doc Send an RPC notification with named parameters
 -spec notify_np(client(), method(), [{string(), hello_json:value()}]) -> ok | {error, rpc_error()}.
 notify_np(Client, Method, Parameters) ->
-    timeout_call(Client, {notification, Method, {Parameters}}, ?DEFAULT_TIMEOUT).
+    timeout_call(Client, {notification, {Method, {Parameters}}}, ?DEFAULT_TIMEOUT).
 
 %% @doc Like {@link notify_np/3}, but with a configurable timeout
 -spec notify_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> ok | {error, rpc_error()}.
 notify_np(Client, Method, Parameters, Timeout) ->
-    timeout_call(Client, {notification, Method, {Parameters}}, Timeout).
+    timeout_call(Client, {notification, {Method, {Parameters}}}, Timeout).
 
 %% @doc Send multiple RPC calls in one request.
 %%   The order of the results in the returned list matches the order of the
@@ -308,38 +308,17 @@ init({URI, Options}) ->
     end.
 
 %% @hidden
-handle_call({call, Method, ArgList}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
-    Request   = hello_proto:new_request(Opts#client_options.protocol, ReqId, Method, ArgList),
-    ClientCtx = make_reply_ctx(State, From),
-    SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
-    handle_reply_result(ReqId + 1, State, SendReply);
-handle_call({notification, Method, ArgList}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
-    Request = hello_proto:new_notification(Opts#client_options.protocol, Method, ArgList),
-    ClientCtx = make_reply_ctx(State, From),
-    SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
-    handle_reply_result(ReqId, State, SendReply);
-handle_call({batch_call, Batch}, From, State = #client_state{options = Opts, next_reqid = ReqId}) ->
-    Protocol = Opts#client_options.protocol,
-    {Reqs, NewReqId} = lists:mapfoldl(fun ({Method, Args}, ReqIdAcc) ->
-                                              Req = hello_proto:new_request(Protocol, ReqIdAcc, Method, Args),
-                                              {Req, ReqIdAcc + 1}
-                                      end, ReqId, Batch),
-    Request = hello_proto:new_batch_request(Protocol, Reqs),
-    ClientCtx = make_reply_ctx(State, From),
-    SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
-    handle_reply_result(NewReqId, State, SendReply);
+handle_call({Type, Data}, From, State)
+  when (Type == call) orelse (Type == notification) orelse (Type == batch_call) ->
+    send(State, Type, From, Data);
 
 handle_call(terminate, _From, State) ->
     {stop, normal, ok, State}.
 
 %% @hidden
 handle_info(Info, State = #client_state{mod = Module, mod_state = ModState}) ->
-    case Module:handle_info(make_notify_ctx(State), Info, ModState) of
-        {noreply, NewModState} ->
-            {noreply, State#client_state{mod_state = NewModState}};
-        {stop, Reason, NewModState} ->
-            {stop, Reason, State#client_state{mod_state = NewModState}}
-    end.
+    Reply = Module:handle_info(make_notify_ctx(State), Info, ModState),
+    set_reply_state(Reply, State#client_state{mod_state = get_reply_state(Reply)}).
 
 %% @hidden
 terminate(Reason, State = #client_state{mod = Module, mod_state = ModState}) ->
@@ -354,6 +333,25 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
+send(State = #client_state{next_reqid = ReqId, options = Opts}, Type, From, Data) ->
+    {NextReqId, Request} = build_request(Type, Opts#client_options.protocol, ReqId, Data),
+    ClientCtx = make_reply_ctx(State, From),
+    SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
+    set_reply_state(SendReply, State#client_state{next_reqid = NextReqId, mod_state = get_reply_state(SendReply)}).
+
+build_request(call, Protocol, ReqId, {Method, ArgList}) ->
+    {ReqId + 1, hello_proto:new_request(Protocol, ReqId, Method, ArgList)};
+build_request(notification, Protocol, ReqId, {Method, ArgList}) ->
+    {ReqId, hello_proto:new_notification(Protocol, Method, ArgList)};
+build_request(batch_call, Protocol, ReqId, Batch) ->
+    {Reqs, NextReqId} = lists:mapfoldl(fun ({Method, Args}, ReqIdAcc) ->
+                                               {hello_proto:new_request(Protocol, ReqIdAcc, Method, Args), ReqIdAcc + 1}
+                                       end, ReqId, Batch),
+    {NextReqId, hello_proto:new_batch_request(Protocol, Reqs)}.
+
+get_reply_state(Reply) -> element(size(Reply), Reply).
+set_reply_state(Reply, State) -> setelement(size(Reply), Reply, State).
+
 uri_client_module(URI = #ex_uri{scheme = "http"})    -> {URI, hello_http_client};
 uri_client_module(URI = #ex_uri{scheme = "https"})   -> {URI, hello_http_client};
 uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"}) -> {URI#ex_uri{scheme = "tcp"}, hello_zmq_client};
@@ -403,12 +401,3 @@ validate_generic_options([Term | _R], _Acc, _Opts) ->
     {error, {badoption, Term}};
 validate_generic_options([], Acc, Opts) ->
     {ok, Opts, Acc}.
-
-handle_reply_result(NewReqId, State, {reply, Reply, NewModState}) ->
-    {reply, Reply, State#client_state{next_reqid = NewReqId, mod_state = NewModState}};
-handle_reply_result(NewReqId, State, {noreply, NewModState}) ->
-    {noreply, State#client_state{next_reqid = NewReqId, mod_state = NewModState}};
-handle_reply_result(NewReqId, State, {stop, Reason, Reply, NewModState}) ->
-    {stop, Reason, Reply, State#client_state{next_reqid = NewReqId, mod_state = NewModState}};
-handle_reply_result(NewReqId, State, {stop, Reason, NewModState}) ->
-    {stop, Reason, State#client_state{next_reqid = NewReqId, mod_state = NewModState}}.
