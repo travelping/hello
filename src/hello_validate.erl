@@ -131,6 +131,11 @@ build_field(#rpc_param{name = Name, optional = Optional, description = Desc}, Ty
 	   mandatory = not Optional,
 	   opts = []
 	  }.
+build_array(#rpc_bulk{name = Name, description = Desc}, Fields) ->
+    #array{name = Name,
+           type = #struct{fields = Fields},
+           description = Desc
+          }.
 
 build_fields_spec(P = #rpc_param{type = string}) ->
     build_field(P, #string{});
@@ -145,10 +150,22 @@ build_rpc_opts(_) ->
     [{methods_as, atom}].
 
 build_rpc_typespec(Mod, M = #rpc_method{name = Name, description = Desc}) ->
-    Fields = [build_fields_spec(F) || F <- cb_apply(Mod, param_info, [Name])],
+    Fields = case cb_apply(Mod, param_info, [Name]) of
+        ListOfValues when is_list(ListOfValues) ->
+            fields(ListOfValues);
+        #rpc_bulk{reuse = Method,
+                  except = Except} = Bulk ->
+            ToReuse = cb_apply(Mod, param_info, [Method]),
+            {BulkInfo, SingleInfo} = lists:partition(fun(#rpc_param{name = PName}) ->
+                                                             not lists:member(PName, Except)
+                                                     end, ToReuse),
+            BulkInfo ++ [build_array(Bulk, fields(SingleInfo))]
+    end,
     #rpc{name = atom_to_binary(Name, utf8), description = Desc,
 	 input = #object{name = input, fields = Fields, opts = build_rpc_opts(M)}
 	}.
+
+fields(ListOfValues) -> [build_fields_spec(F) || F <- ListOfValues].
 
 build_hello_info(Mod, DefaultNamespace) ->
     {module_type(Mod), DefaultNamespace,

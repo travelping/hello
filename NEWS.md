@@ -6,6 +6,7 @@ JSON-RPC API toolkit
 Version 3.0.0 - xx May 2013
 ---------------------------
 
+* Add backward compatibility for no-yang hello bulk methods
 * Merge hello2 in hello:
     - Fixes for types in hello2_stateful_handler
     - Fix module prefix and add new callback record
