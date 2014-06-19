@@ -3,9 +3,10 @@ hello
 
 JSON-RPC API toolkit
 
-Version 3.0.0 - xx May 2013
+Version 2.2.0 - 20 Jun 2014
 ---------------------------
 
+* Add backward compatibility for optional not sent parameters
 * Add backward compatibility for no-yang hello bulk methods
 * Merge hello2 in hello:
     - Fixes for types in hello2_stateful_handler
