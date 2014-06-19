@@ -59,14 +59,19 @@ request(Mod, Req = #request{method = Method, params = Params}) ->
             hello_proto:error_response(Req, invalid_params, <<"">>)
     end.
 
-params_return(Return, []) ->
-    Return;
-params_return({ok, Method, Params}, [{methods_as, atom}|T]) ->
-    params_return({ok, binary_to_atom(Method, utf8), Params}, T);
-params_return({ok, Method, Params}, [{params_as, list}|T]) ->
-    params_return({ok, Method, strip_keys(Params)}, T);
+params_return({ok, Method, Params, _}, []) ->
+    {ok, Method, Params};
+params_return({ok, Method, Params, TypeSpec}, [{methods_as, atom}|T]) ->
+    params_return({ok, binary_to_atom(Method, utf8), Params, TypeSpec}, T);
+params_return({ok, Method, Params, {_, _, Spec} = TypeSpec}, [{params_as, list}|T]) ->
+    #rpc{input = Input} = lists:keyfind(m2b(Method), #rpc.name, Spec),
+    #object{fields = Fields} = Input,
+    params_return({ok, Method, strip_keys(Params, Fields, []), TypeSpec}, T);
 params_return(Return, [_|T]) ->
     params_return(Return, T).
+
+m2b(Method) when is_atom(Method) -> atom_to_binary(Method, utf8);
+m2b(Method) -> Method.
 
 validate_params(TypeSpec, Method, Params) ->
     validate_params(TypeSpec, Method, -1, Params).
@@ -77,7 +82,7 @@ validate_params(TypeSpec, Method, Depth, Params) ->
             Error;
         ParamsValidated when is_list(ParamsValidated) ->
             #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
-            params_return({ok, Method, ParamsValidated}, Opts)
+            params_return({ok, Method, ParamsValidated, TypeSpec}, Opts)
     catch
         throw:{error, Error} ->
             Msg = io_lib:format("Error: ~p", [Error]),
@@ -97,8 +102,14 @@ params_to_proplist(Fields,  Params) when is_list(Params) ->
     TooMany andalso throw({invalid, "superfluous parameters"}),
     lists:reverse(Proplist).
 
-strip_keys(Proplist) ->
-    [V || {_K, V} <- Proplist].
+strip_keys([{_K, V} | Proplists], [_ | Defs], Acc) ->
+    strip_keys(Proplists, Defs, [V | Acc]);
+strip_keys([], [#field{opts = Opts} | Defs], Acc) ->
+    strip_keys([], Defs, [proplists:get_value(default, Opts) | Acc]);
+strip_keys([], [#array{opts = Opts} | Defs], Acc) ->
+    strip_keys([], Defs, [proplists:get_value(default, Opts) | Acc]);
+strip_keys([], [], Acc) ->
+    lists:reverse(Acc).
 
 zip([], [], Result) ->
     Result;
@@ -124,12 +135,12 @@ module_type({Mod, _}) ->
 module_type(Mod) ->
     atom_to_binary(Mod, utf8).
 
-build_field(#rpc_param{name = Name, optional = Optional, description = Desc}, Type) ->
+build_field(#rpc_param{name = Name, optional = Optional, description = Desc, default = Default}, Type) ->
     #field{name = atom_to_binary(Name, utf8),
 	   description = Desc,
 	   type = Type,
 	   mandatory = not Optional,
-	   opts = []
+	   opts = [{default, Default}]
 	  }.
 build_array(#rpc_bulk{name = Name, description = Desc}, Fields) ->
     #array{name = Name,
@@ -141,6 +152,12 @@ build_fields_spec(P = #rpc_param{type = string}) ->
     build_field(P, #string{});
 build_fields_spec(P = #rpc_param{type = {enum, Enums}}) ->
     build_field(P, #enumeration{enum = Enums});
+build_fields_spec(_P = #rpc_param{name = Name, optional = Optional, description = Desc, type = list, default = Default}) ->
+    #array{name = Name,
+           description = Desc,
+           type = {<<"any">>,[]},
+           mandatory = not Optional,
+           opts = [{default, Default}]};
 build_fields_spec(P = #rpc_param{type = Type}) ->
     build_field(P, {atom_to_binary(Type, utf8), []}).
 
