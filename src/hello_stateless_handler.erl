@@ -138,8 +138,8 @@ handler(#binding{protocol = Protocol, log_url = Endpoint, callbacks = Callbacks}
     receive
         {?INCOMING_MSG_MSG, Message} ->
             case run_binary_request(Protocol, Callbacks, TransportParams, Message) of
-                {ok, Request, Response} ->
-                    hello_request_log:request(undefined, self(), Endpoint, Request, Response),
+                {ok, Mod, Request, Response} ->
+                    hello_request_log:request(Mod, self(), Endpoint, Request, Response),
                     BinResp = hello_proto:encode(Response),
                     Transport ! {hello_msg, self(), Peer, BinResp};
                 {proto_reply, Response} ->
@@ -162,16 +162,23 @@ run_binary_request(Protocol, Callbacks, TransportParams, BinRequest) ->
     Context = #stateless_context{transport_params = TransportParams},
     case hello_proto:decode(Protocol, BinRequest) of
         Req = #request{} ->
-            {ok, Req, do_single_request(Callbacks, Context, Req)};
+            {Mod, Response} = do_single_request_get_mod(Callbacks, Context, Req),
+            {ok, Mod, Req, Response};
         Req = #batch_request{requests = GoodReqs} ->
-            Resps = [do_single_request(Callbacks, Context, R) || R <- GoodReqs],
-            {ok, Req, hello_proto:batch_response(Req, Resps)};
+            {Mods, Resps} = lists:unzip([do_single_request_get_mod(Callbacks, Context, R) || R <- GoodReqs]),
+            {ok, get_batch_mod(Mods), Req, hello_proto:batch_response(Req, Resps)};
         ProtoReply = {proto_reply, _Resp} ->
             ProtoReply;
         #response{} ->
             ignore;
         #batch_response{} ->
             ignore
+    end.
+
+do_single_request_get_mod(Callbacks, Context, Req) ->
+    case do_single_request(Callbacks, Context, Req) of
+        {_, _} = Res -> Res;
+        Response -> {undefined, Response}
     end.
 
 do_single_request(Callbacks, Context, Req = #request{namespaces=Namespaces}) when not is_atom(Callbacks) ->
@@ -199,11 +206,11 @@ do_single_request(Callbacks, Context, Req = #request{namespaces=Namespaces}) whe
         Method1 = binary_to_atom(Method0, utf8),
         case hello_validate:request(Mod, Req) of
             {error, ErrorMsg} ->
-                ErrorMsg;
+                {Mod, ErrorMsg};
             {ok, Method0, Validated} when is_list(Validated) ->
-                run_callback_module(Req, Mod, Context, Method0, Validated);
+                {Mod, run_callback_module(Req, Mod, Context, Method0, Validated)};
             {ok, Method1, Validated} when is_list(Validated) ->
-                run_callback_module(Req, Mod, Context, Method1, Validated)
+                {Mod, run_callback_module(Req, Mod, Context, Method1, Validated)}
         end
     catch
         Type:Error ->
@@ -211,7 +218,7 @@ do_single_request(Callbacks, Context, Req = #request{namespaces=Namespaces}) whe
                 "Parameters: ~p~nReason: ~p~nTrace:~n~p~n",
                 [Type, Mod, Req#request.method, Req#request.params, Error, erlang:get_stacktrace()]),
             error_logger:error_report(Report),
-            hello_proto:error_response(Req, server_error)
+            {Mod, hello_proto:error_response(Req, server_error)}
     end.
 
 run_callback_module(Req, Mod, Context, Method, ValidatedParams) ->
@@ -227,3 +234,12 @@ run_callback_module(Req, Mod, Context, Method, ValidatedParams) ->
         Ret ->
             error({bad_return_value, Ret})
     end.
+
+get_batch_mod([]) -> undefined;
+get_batch_mod([Mod | Other]) -> get_batch_mod(Mod, Other).
+
+get_batch_mod(Mod, []) -> Mod;
+get_batch_mod(Mod, [Mod | Other]) -> get_batch_mod(Mod, Other);
+%% TODO: fix me, if batch use different modules, the request will not be logged
+get_batch_mod(_Mod, [_AnotherMod | _Other]) -> undefined.
+

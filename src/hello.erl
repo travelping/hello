@@ -125,7 +125,7 @@ run_stateless_binary_request(CallbackModule, Message, TransportContextParams) ->
 
 run_stateless_binary_request(Protocol, CallbackModule, Message, TransportProperties) ->
     case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, TransportProperties, Message) of
-        {ok, _Req, Resp} ->
+        {ok, _Mod, _Req, Resp} ->
             hello_proto:encode(Resp);
         {proto_reply, Resp} ->
             hello_proto:encode(Resp)
