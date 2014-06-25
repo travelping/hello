@@ -68,7 +68,7 @@
 %% -- Callback Module API
 -spec behaviour_info(callbacks) -> [{atom(), integer()}].
 behaviour_info(callbacks) ->
-    [{method_info,1}, {param_info,2}, {init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
+    [{init,2}, {handle_request,4}, {handle_info,3}, {terminate,3}];
 behaviour_info(_Other) ->
     undefined.
 

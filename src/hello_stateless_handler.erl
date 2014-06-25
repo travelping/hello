@@ -113,7 +113,7 @@
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for callback module
 -spec behaviour_info(callbacks) -> [{atom(), integer()}].
-behaviour_info(callbacks) -> [{handle_request,3}, {method_info,0}, {param_info,1}];
+behaviour_info(callbacks) -> [{handle_request,3}, {hello_info,0}];
 behaviour_info(_Other)    -> undefined.
 
 %% @equiv transport_param(Key, Context, undefined)
