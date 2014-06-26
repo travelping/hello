@@ -62,7 +62,7 @@ request(Mod, Req = #request{method = Method, params = Params}) ->
 params_return({ok, Method, Params, _}, []) ->
     {ok, Method, Params};
 params_return({ok, Method, Params, TypeSpec}, [{methods_as, atom}|T]) ->
-    params_return({ok, binary_to_atom(Method, utf8), Params, TypeSpec}, T);
+    params_return({ok, binary_to_atom(Method, utf8), [{binary_to_atom(K, utf8), V} || {K, V} <- Params], TypeSpec}, T);
 params_return({ok, Method, Params, {_, _, Spec} = TypeSpec}, [{params_as, list}|T]) ->
     #rpc{input = Input} = lists:keyfind(m2b(Method), #rpc.name, Spec),
     #object{fields = Fields} = Input,
