@@ -164,7 +164,8 @@ init({Binding, Peer, TransportPid, TransportParams}) ->
                     context = Context,
                     async_reply_map = gb_trees:empty()},
     State1 = start_idle_timeout(State0),
-    case CallbackMod:init(Context, CallbackArgs) of
+    %% TODO: As the namespaces will be no more exists in that form, may be there is no more action to do in this code
+    case CallbackMod:init(Context, proplists:delete(exclusive, CallbackArgs)) of
         {ok, HandlerState} ->
             {ok, State1#state{mod_state = HandlerState}}
     end.
