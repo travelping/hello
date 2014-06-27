@@ -61,8 +61,10 @@ request(Mod, Req = #request{method = Method, params = Params}) ->
 
 params_return({ok, Method, Params, _}, []) ->
     {ok, Method, Params};
+params_return({ok, Method, Params, TypeSpec}, [{params_name_as, atom}|T]) ->
+    params_return({ok, Method, [{binary_to_atom(K, utf8), V} || {K, V} <- Params], TypeSpec}, T);
 params_return({ok, Method, Params, TypeSpec}, [{methods_as, atom}|T]) ->
-    params_return({ok, binary_to_atom(Method, utf8), [{binary_to_atom(K, utf8), V} || {K, V} <- Params], TypeSpec}, T);
+    params_return({ok, binary_to_atom(Method, utf8), Params, TypeSpec}, T);
 params_return({ok, Method, Params, {_, _, Spec} = TypeSpec}, [{params_as, list}|T]) ->
     #rpc{input = Input} = lists:keyfind(m2b(Method), #rpc.name, Spec),
     #object{fields = Fields} = Input,
@@ -102,14 +104,19 @@ params_to_proplist(Fields,  Params) when is_list(Params) ->
     TooMany andalso throw({invalid, "superfluous parameters"}),
     lists:reverse(Proplist).
 
-strip_keys([{_K, V} | Proplists], [_ | Defs], Acc) ->
+strip_keys([{K, V} | Proplists], [#field{name = K} | Defs], Acc) ->
     strip_keys(Proplists, Defs, [V | Acc]);
-strip_keys([], [#field{opts = Opts} | Defs], Acc) ->
-    strip_keys([], Defs, [proplists:get_value(default, Opts) | Acc]);
-strip_keys([], [#array{opts = Opts} | Defs], Acc) ->
-    strip_keys([], Defs, [proplists:get_value(default, Opts) | Acc]);
+strip_keys([{K, V} | Proplists], [#array{name = K} | Defs], Acc) ->
+    strip_keys(Proplists, Defs, [V | Acc]);
+strip_keys(Args, [#field{opts = Opts} | Defs], Acc) ->
+    strip_keys(tail(Args), Defs, [proplists:get_value(default, Opts) | Acc]);
+strip_keys(Args, [#array{opts = Opts} | Defs], Acc) ->
+    strip_keys(tail(Args), Defs, [proplists:get_value(default, Opts) | Acc]);
 strip_keys([], [], Acc) ->
     lists:reverse(Acc).
+
+tail([_ | V]) -> V;
+tail([]) -> [].
 
 zip([], [], Result) ->
     Result;
@@ -153,7 +160,7 @@ build_fields_spec(P = #rpc_param{type = string}) ->
 build_fields_spec(P = #rpc_param{type = {enum, Enums}}) ->
     build_field(P, #enumeration{enum = Enums});
 build_fields_spec(_P = #rpc_param{name = Name, optional = Optional, description = Desc, type = list, default = Default}) ->
-    #array{name = Name,
+    #array{name = atom_to_binary(Name, utf8),
            description = Desc,
            type = {<<"any">>,[]},
            mandatory = not Optional,
@@ -164,7 +171,7 @@ build_fields_spec(P = #rpc_param{type = Type}) ->
 build_rpc_opts(#rpc_method{params_as = list}) ->
     [{methods_as, atom},{params_as, list}];
 build_rpc_opts(_) ->
-    [{methods_as, atom}].
+    [{methods_as, atom},{params_name_as, atom}].
 
 build_rpc_typespec(Mod, M = #rpc_method{name = Name, description = Desc}) ->
     Fields = case cb_apply(Mod, param_info, [Name]) of
