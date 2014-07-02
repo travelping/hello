@@ -5,7 +5,7 @@
 
 -include("../include/hello.hrl").
 -include_lib("yang/include/typespec.hrl").
--include("hello_test_example.hrl").
+-include("hrl/hello_test_example.hrl").
 
 -define(UNKNOWN_HOST, "http://undefined.undefined:8888").
 
@@ -166,7 +166,7 @@ init_per_group(old_cb_info, Config) ->
 init_per_group(new_cb_info, Config) ->
     Mod = hello_test_stateless_ts_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, hello_info, fun hello_test_example_typespec/0),
+    ok = meck:expect(Mod, hello_info, fun typespec/0),
     ok = meck:expect(Mod, handle_request,
         fun
             (_Context, <<"echo">>, [{_,Str}]) ->
