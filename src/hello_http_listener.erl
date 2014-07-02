@@ -92,7 +92,6 @@ process(Binding, Req, State) ->
     hello_binding:incoming_message(Handler, Body),
     Req8 = cowboy_req:compact(Req7),
     {ok, Req9} = cowboy_req:chunked_reply(200, json_headers(), Req8),
-    erlang:display(loop),
     http_chunked_loop(Handler, Req9, State).
 
 http_chunked_loop(Handler, Request, State) ->

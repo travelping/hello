@@ -5,6 +5,7 @@
 /status.ipc
 /dist/
 /doc/*
+/test/hrl/
 !/doc/overview.edoc
 !/doc/hello.html
 *.*~

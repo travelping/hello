@@ -1,6 +1,6 @@
 module hello_example {
     namespace "http://travelping.com/ns/hello/example";
-    prefix "ex";
+    prefix "";
 
     typedef Status {
          type enumeration {
