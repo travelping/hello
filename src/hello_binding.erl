@@ -126,10 +126,9 @@ start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, Callba
                                           {value, {limit, Limit}, RateConfig1} = lists:keytake(limit, 1, RateConfig0),
                                           {CallbackArgs, [{regulators, [{counter, [{name, default}, {limit, Limit}]}]} | RateConfig1] }
                                   end,
-    jobs:add_queue(CallbackModule, RateConfig),
     Binding = new(self(), ListenerModule, URL, hello_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs1),
     StarterRef = make_ref(),
-    case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of
+    case gen_server:start(?MODULE, {self(), StarterRef, Binding, RateConfig}, []) of
         {ok, Pid} ->
             link(Pid), {ok, Pid};
         {error, Reason} ->
@@ -158,7 +157,7 @@ behaviour_info(_) ->
 -define(REFC(ID), {listener_refc, ID}).
 -record(state, {binding, listener_pid, listener_id, listener_mref}).
 
-init({StarterPid, StarterRef, Binding}) ->
+init({StarterPid, StarterRef, Binding, RateConfig}) ->
     process_flag(trap_exit, true),
 
     case start_listener(Binding) of
@@ -168,6 +167,7 @@ init({StarterPid, StarterRef, Binding}) ->
                            listener_id = ListenerID,
                            listener_pid = ListenerPid,
                            listener_mref = ListenerMonitor},
+            jobs:add_queue(Binding#binding.callback_mod, RateConfig),
             {ok, State, hibernate};
         {error, Error} ->
             StarterPid ! {error, StarterRef, Error},
@@ -188,6 +188,7 @@ handle_info(_Info, State) ->
 
 terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_pid = Pid}) ->
     hello_request_log:close(Binding#binding.callback_mod),
+    jobs:delete_queue(Binding#binding.callback_mod),
     case hello_registry:add_to_key(?REFC(ListenerID), -1) of
         {ok, Pid, 0} -> catch hello_listener_supervisor:stop_child(ListenerID);
         _            -> ok
