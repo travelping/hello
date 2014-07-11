@@ -159,7 +159,8 @@ build_fields_spec(P = #rpc_param{type = string}) ->
     build_field(P, #string{});
 build_fields_spec(P = #rpc_param{type = {enum, Enums}}) ->
     build_field(P, #enumeration{enum = Enums});
-build_fields_spec(_P = #rpc_param{name = Name, optional = Optional, description = Desc, type = list, default = Default}) ->
+build_fields_spec(_P = #rpc_param{name = Name, optional = Optional, description = Desc, type = ArrayType, default = Default})
+  when (ArrayType == list) orelse (ArrayType == array) ->
     #array{name = atom_to_binary(Name, utf8),
            description = Desc,
            type = {<<"any">>,[]},
