@@ -232,7 +232,7 @@ start_listener(BindingIn = #binding{listener_mod = Mod, callbacks = Callbacks}) 
                     {ok, ListenerPid, ListenerID, ListenerMonitor};
                 {ok, _Pid, #binding{callbacks = Callbacks0}=ExistingBinding} ->
                     #callback{mod=NewCallbackMod, type=NewCallbackType} = NewCallback,
-                    {_, Namespace, _} = hello_validate:find_hello_info(NewCallbackMod, <<"">>),
+                    {_, Namespace, _} = hello_validate:find_hello_info(to_mod(NewCallbackMod, NewCallbackType), <<"">>),
                     case dict:find(Namespace, Callbacks0) of
                         {ok, _} ->
                             {error, already_started};
