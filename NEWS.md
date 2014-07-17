@@ -3,6 +3,11 @@ hello
 
 JSON-RPC API toolkit
 
+Version 2.2.2 - 08 Jul 2014
+---------------------------
+
+* update to be compatible with cowboy 0.9.0/0.10.0
+
 Version 2.2.0 - 20 Jun 2014
 ---------------------------
 
