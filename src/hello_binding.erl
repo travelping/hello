@@ -157,9 +157,6 @@ init({StarterPid, StarterRef, Binding}) ->
 
     case start_listener(Binding) of
         {ok, ListenerPid, ListenerID, ListenerMonitor} ->
-            #binding{callbacks=Callbacks} = Binding,
-            [{_, [Callback]} | _] = dict:to_list(Callbacks),
-            ok = hello_request_log:open(Callback#callback.mod, self()),
             State = #state{binding = Binding,
                            listener_id = ListenerID,
                            listener_pid = ListenerPid,
@@ -183,9 +180,6 @@ handle_info(_Info, State) ->
     {noreply, State, hibernate}.
 
 terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_pid = Pid}) ->
-    #binding{callbacks=Callbacks} = Binding,
-    [{_, [Callback]} | _] = dict:to_list(Callbacks),
-    hello_request_log:close(Callback#callback.mod),
     case hello_registry:add_to_key(?REFC(ListenerID), -1) of
         {ok, Pid, 0} -> catch stop_listener(Binding#binding.listener_mod, ListenerID);
         _            -> ok
