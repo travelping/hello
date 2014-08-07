@@ -162,7 +162,6 @@ init({StarterPid, StarterRef, Binding, RateConfig}) ->
 
     case start_listener(Binding) of
         {ok, ListenerPid, ListenerID, ListenerMonitor} ->
-            ok = hello_request_log:open(Binding#binding.callback_mod, self()),
             State = #state{binding = Binding,
                            listener_id = ListenerID,
                            listener_pid = ListenerPid,
@@ -187,7 +186,6 @@ handle_info(_Info, State) ->
     {noreply, State, hibernate}.
 
 terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_pid = Pid}) ->
-    hello_request_log:close(Binding#binding.callback_mod),
     jobs:delete_queue(Binding#binding.callback_mod),
     case hello_registry:add_to_key(?REFC(ListenerID), -1) of
         {ok, Pid, 0} -> catch hello_listener_supervisor:stop_child(ListenerID);

@@ -83,3 +83,30 @@ Connecting to a server can be as simple as:
 
 	{ok, Client} = hello_client:start_link("http://127.0.0.1:8080/example", []),
 	hello_client:call(Client, "my_method", [1, 2, <<"argument">>]).
+
+# Logging
+
+Hello log request and responses through lager on level INFO. Lager metadata fields
+'hello_request' and 'hello_handler' are set to support tracing.
+'hello_request' is set to 'api' for normal request and to 'error' for undecoded (bad)
+requests. 'hello_handler' is set to the name of the handler module.
+
+To write all bad request to a file use:
+
+  {lager, [
+    {handlers, [
+      {lager_file_backend, [{file, "bad_request.log"}, {level, none}]}
+    ]},
+    {traces, [
+      {{lager_file_backend, "bad_request.log"}, [{hello_request, error}], info}]}
+  ]}
+
+To write all requests for a module hello_stateful_handler_example to a file use:
+
+  {lager, [
+    {handlers, [
+      {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
+    ]},
+    {traces, [
+      {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_handler, hello_stateful_handler_example}], info}]}
+  ]}
