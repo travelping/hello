@@ -3,6 +3,11 @@ hello
 
 JSON-RPC API toolkit
 
+Version 2.2.3 - 14 Oct 2014
+---------------------------
+
+* fix stateless handler registration race on ZMQ transport
+
 Version 2.2.2 - 08 Jul 2014
 ---------------------------
 

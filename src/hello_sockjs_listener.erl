@@ -209,7 +209,7 @@ session_get_final_message(SessionPid) ->
 -record(session_state, {handler :: hello_binding:handler(), queue = queue:new()}).
 
 session_init(Binding, Conn, SessionID, TransportParams) ->
-    Handler = hello_binding:start_handler(Binding, SessionID, self(), TransportParams),
+    Handler = hello_binding:get_handler(Binding, SessionID, self(), TransportParams),
     case hello_registry:register({sockjs_session, SessionID}, Handler, self()) of
         ok ->
             Conn ! {started, self()},
