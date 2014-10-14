@@ -1,4 +1,5 @@
 {
   "project_id" : "hello",
-  "conduit_uri" : "https://review.tpip.net/"
+  "conduit_uri" : "https://review.tpip.net/",
+  "history.immutable" : true
 }
