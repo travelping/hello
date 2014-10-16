@@ -87,7 +87,7 @@ terminate(_Reason, _Req, _State) ->
 process(Binding, Req, State) ->
     {Peer, Req1} = cowboy_req:peer(Req),
     {TransportParams, Req6} = req_transport_params(Req1),
-    Handler = hello_binding:start_handler(Binding, Peer, self(), TransportParams),
+    Handler = hello_binding:get_handler(Binding, Peer, self(), TransportParams),
     {ok, Body, Req7} = cowboy_req:body(Req6),
     hello_binding:incoming_message(Handler, Body),
     Req8 = cowboy_req:compact(Req7),

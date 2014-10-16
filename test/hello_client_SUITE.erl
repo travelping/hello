@@ -25,6 +25,21 @@
                   end
           end)())).
 
+pmap(F, L) ->
+    pmap(F, L, infinity).
+
+pmap(F, L, Timeout) ->
+    Parent = self(),
+    Pids = [proc_lib:spawn(fun() -> Parent ! {self(), F(X)} end) || X <- L],
+    lists:map(
+        fun(Pid) ->
+            receive {Pid, Result} ->
+                    Result
+            after Timeout ->
+                      {error, timeout}
+            end
+        end, Pids).
+
 % ---------------------------------------------------------------------
 % -- test cases
 call(Config) ->
@@ -94,10 +109,18 @@ call_np_zmq_tcp_error(Config) ->
     ?match({error, {zmq_tcp, _Reason}}, hello_client:call_np(Clnt, "foo", [{str2, <<"ab">>}, {str1, <<"cd">>}])),
     ok.
 
+stateless_overlap(Config) ->
+    Clnt = proplists:get_value(client, Config),
+    Ids = [1,2,3],
+    Want = [{ok, true} || X <- Ids],
+    Got = pmap(fun(_Id) -> hello_client:call(Clnt, "delay", [100], 1000) end, Ids),
+    ?equal(Want, Got),
+    ok.
+
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all_ok_test() ->
-    [call, call_errors, notification,
+    [call, call_errors, notification, stateless_overlap,
      call_np, batch_call, call_np_method_not_found].
 
 all_testgroup() ->
@@ -136,11 +159,13 @@ group_config(zmq_tcp_error) ->
 init_per_group(old_cb_info, Config) ->
     Mod = hello_test_stateless_handler,
     ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = M} || M <- [echo ,append, enum_test, return_error]]),
+    ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = M} || M <- [echo, delay, append, enum_test, return_error]]),
     ok = meck:expect(Mod, param_info,
         fun
             (echo) ->
                 [#rpc_param{name = text, type = string, description = "the text to be echoed"}];
+            (delay) ->
+                [#rpc_param{name = delay, type = integer, description = "the delay"}];
             (append) ->
                 [#rpc_param{name = str1, type = string, optional = true, default  = <<"">>},
                     #rpc_param{name = str2, type = string, optional = true, default  = <<"">>}];
@@ -154,6 +179,9 @@ init_per_group(old_cb_info, Config) ->
         fun
             (_Context, echo, [Str]) ->
                 {ok, Str};
+            (_Context, delay, [Delay]) ->
+		timer:sleep(Delay),
+                {ok, true};
             (_Context, append, [Str1, Str2]) ->
                 {ok, <<Str1/binary, Str2/binary>>};
             (_Context, enum_test, [Atom]) ->
@@ -171,6 +199,9 @@ init_per_group(new_cb_info, Config) ->
         fun
             (_Context, <<"echo">>, [{_,Str}]) ->
                 {ok, Str};
+            (_Context, <<"delay">>, [{_, Delay}]) ->
+		timer:sleep(Delay),
+                {ok, true};
             (_Context, <<"append">>, [{_,Str1}, {_,Str2}]) ->
                 {ok, <<Str1/binary, Str2/binary>>};
             (_Context, <<"enum_test">>, [{_,Atom}]) ->

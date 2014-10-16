@@ -92,14 +92,9 @@ handle_info({zmq, Socket, Message, []}, State = #state{binding_key=BindingKey, s
         {error, not_found} ->
             ok; % should never happen
         {ok, Binding} ->
-            case hello_binding:lookup_handler(Binding, Peer) of
-                {error, not_found} ->
-                    TransportParams = [{peer_identity, Peer}],
-                    HandlerPid = hello_binding:start_registered_handler(Binding, Peer, self(), TransportParams),
-                    hello_binding:incoming_message(HandlerPid, Message);
-                {ok, HandlerPid} ->
-                    hello_binding:incoming_message(HandlerPid, Message)
-            end
+	    TransportParams = [{peer_identity, Peer}],
+	    HandlerPid = hello_binding:get_handler(Binding, Peer, self(), TransportParams),
+	    hello_binding:incoming_message(HandlerPid, Message)
     end,
     {noreply, State#state{lastmsg_peer = undefined}};
 

@@ -3,6 +3,12 @@ hello
 
 JSON-RPC API toolkit
 
+Version 2.2.3 - 16 Oct 2014
+---------------------------
+
+* fix stateless handler registration race on ZMQ transport
+* convert request log to lager
+
 Version 2.2.2 - 08 Jul 2014
 ---------------------------
 

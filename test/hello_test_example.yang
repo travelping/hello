@@ -55,6 +55,17 @@ module hello_example {
             uses result;
         }
     }
+    rpc delay {
+        input {
+            leaf delay {
+                type int64;
+                default 1000;
+            }
+        }
+        output {
+            uses result;
+        }
+    }
     rpc append {
         input {
             leaf str1 {

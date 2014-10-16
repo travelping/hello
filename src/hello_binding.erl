@@ -28,7 +28,7 @@
 % Binding process
 -export([start_link/5, stop/1, stop/2, behaviour_info/1]).
 % API for listeners
--export([start_registered_handler/4, start_handler/4, incoming_message/2, lookup_handler/2]).
+-export([get_handler/4, incoming_message/2, lookup_handler/2]).
 -export([new/7]).
 -export_type([peer/0, handler/0]).
 
@@ -75,13 +75,11 @@ new(Pid, ListenerModule, URL = #ex_uri{}, Protocol, CallbackMod, CallbackType, C
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- API for listeners
--spec start_registered_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
-start_registered_handler(Binding, Peer, Transport, TransportParams) ->
+-spec get_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
+get_handler(Binding, Peer, Transport, TransportParams) ->
     case lookup_handler(Binding, Peer) of
         {error, not_found} ->
-            Handler = start_handler(Binding, Peer, Transport, TransportParams),
-            register_handler(Binding#binding.pid, Handler, Peer),
-            Handler;
+            start_handler(Binding, Peer, Transport, TransportParams);
         {ok, Handler} ->
             Handler
     end.
@@ -92,6 +90,7 @@ start_handler(#binding{callbacks=Callbacks}=Binding, Peer, Transport, TransportP
     case Callback#callback.type of
         stateful ->
             {ok, Pid} = hello_stateful_handler:start_link(Binding, Peer, Transport, TransportParams),
+            register_handler(Binding#binding.pid, Pid, Peer),
             Pid;
         stateless ->
             spawn_link(hello_stateless_handler, handler, [Binding, Peer, Transport, TransportParams])
