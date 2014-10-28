@@ -8,24 +8,81 @@ The hello application provides an API to expose functionality through
 JSON-RPC protocol over various transports (such as HTTP and ZeroMQ).
 
 In order to build a server with hello, the first step would be to implement
-a callback module with the {@link hello_stateless_handler} behaviour.
+a callback module with the {@link hello_handler} behaviour.
 The callback module is made available on the network by <em>binding</em> it
-({@link hello:bind_stateless/2}) to a particular URL:
+({@link hello:bind_handler/3}) to a particular URL:
 
 ```
-    ok = hello:bind_stateless("zmq-tcp://127.0.0.1:5999", my_module).
+    ok = hello:bind_handler("zmq-tcp://127.0.0.1:6000", my_module).
 '''
 
 When you bind a server, hello will start a supervised listener
 for the given transport, which will handle RPC requests and call your module.
+
+== Writing Callback Modules ==
+The standard callback handler for hello is 'hello_handler'. Your callback has to use the 'hello_handler'-behaviour which is 
+essentially the gen_server behaviour. Examples are provided in the tests.
+
+You are forced to provide yang specs for your callback module. The yang specs can be compiled in a convenient way 
+with the tetrapak 'yang plugin'. You also have to include and export the resulting '.hrl' file from your callback module. 
+Hello will tell you immediately if something went wrong.
+
 Since hello servers adhere to the [http://groups.google.com/group/json-rpc/web/json-rpc-2-0 JSON-RPC 2.0 specification]
 (JSON-RPC 1.0 is transparently supported as well) any JSON-RPC client can be used to talk to a server.
 
-To communicate with the server from Erlang, use the {@link hello_simple_client} module,
+To communicate with the server from Erlang, use the {@link hello_client} module,
 as it supports all the transports and its interface is streamlined with the rest of the framework.
-The hello client will always use JSON-RPC 2.0.
+The hello client will always use JSON-RPC 2.0. The client is asynchronous which means you can make calls from different 
+processes with the same client without interfering with other calls. Starting a client (by default with JSON-RPC 2.0) and 
+calling some function works as following:
 
-Hello provides request logging.
-A separate request log is written for each callback module.
-By default, the request logs are placed in ``[current working directory]/request-logs/''
-but the request log directory can be changed through an application parameter.
+```
+    {ok, Client} = hello_client:start("zmq-tcp://127.0.0.1:6000", [], [], []),
+
+    %% jsonrpc-calls are organized as tuples {method, args, options}
+    Call1 = {<<"prefix.method1">>, [<<"arg1">>, <<"args2">>], []},
+    {ok, Result} = hello_client:call(Client, Call1),
+
+    %% jsonrpc-batch-calls are organized as list of those tuples
+    Call2 = {<<"prefix.method2">>, [<<"arg1">>], []},
+    BatchCall = [Call1, Call2],
+    {ok, [Result1, Result2]} = hello_client:call(Client, BatchCall). 
+'''
+
+It is crucial to provide unique prefixes for each callback module because hello will route messages according to them. 
+You can mix up every possible way of calling a function in a batch call, also with notifications and server-side 
+asynchronous functionalities (see {@link hello_handler:reply()}). It will respond in the following way:
+
+A batch response includes all responses and therefore each call has to be executed before. Eesponses to notifications 
+are not included (thus the list of responses can be shorter than the list of calls). The list of results has the same 
+order as the list of calls list consisting only of notification calls is answered just with 'ok' (like a normal notification).
+
+== Logging ==
+Hello logs request and responses through lager on level INFO. Lager metadata fields
+'hello_request' and 'hello_handler' are set to support tracing.
+'hello_request' is set to 'api' for normal requests and to 'error' for e.g. undecoded (bad)
+requests. 'hello_handler' is set to the name of the handler module.
+
+To write all bad request to a file use:
+
+```
+  {lager, [
+    {handlers, [
+      {lager_file_backend, [{file, "bad_request.log"}, {level, none}]}
+    ]},
+    {traces, [
+      {{lager_file_backend, "bad_request.log"}, [{hello_request, error}], info}]}
+  ]}
+'''
+
+To write all requests for a module hello_stateful_handler_example to a file use:
+
+```
+  {lager, [
+    {handlers, [
+      {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
+    ]},
+    {traces, [
+      {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_handler, hello_stateful_handler_example}], info}]}
+  ]}
+'''

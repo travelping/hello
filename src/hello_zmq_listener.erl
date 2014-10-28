@@ -23,7 +23,7 @@
 -export([start_link/1]).
 
 -behaviour(hello_binding).
--export([listener_specification/2, listener_key/1, binding_key/1, url_for_log/1, listener_termination/1]).
+-export([listener_specification/2, send_response/3, close/1, listener_termination/1]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -32,49 +32,43 @@
 -include("internal.hrl").
 -define(SHUTDOWN_TIMEOUT, 500).
 
-start_link(Binding) ->
-    gen_server:start_link(?MODULE, Binding, []).
-
 %% --------------------------------------------------------------------------------
 %% -- hello_binding
-listener_specification(ListenerID, Binding) ->
-    StartFun = {?MODULE, start_link, [Binding]},
-    Specs = {ListenerID, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]},
-    {child, Specs}.
+listener_specification(ExUriUrl, _TransportOpts) ->
+    StartFun = {?MODULE, start_link, [ExUriUrl]},
+    Specs = {{?MODULE, ExUriUrl}, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]},
+    {make_child, Specs}.
 
-listener_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
-    hello_registry:listener_key(IP, Port);
-listener_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, path = Path}) ->
-    hello_registry:listener_key({ipc, ipc_path(Host, Path)}, undefined).
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, EncInfo, BinResp) ->
+    gen_server:call(TPid, {hello_msg, TParams, Peer, EncInfo, BinResp}).
 
-binding_key(#binding{url = #ex_uri{scheme = "zmq-tcp"}, ip = IP, port = Port}) ->
-    {IP, Port};
-binding_key(#binding{url = #ex_uri{scheme = "zmq-ipc"}, host = Host, port = Port}) ->
-    ipc_path(Host, Port).
+close(_Context) ->
+    ok.
 
-url_for_log(#binding{url = URL}) ->
-    url_for_log1(URL).
-
-listener_termination(ListenerID) ->
+listener_termination(_ListenerID) ->
     child.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(state, {
+    url     :: #ex_uri{},
     context :: erlzmq:erlzmq_context(),
     socket  :: erlzmq:erlzmq_socket(),
-    binding_key :: term(),
-    lastmsg_peer :: binary()
+    lastmsg_peer :: binary(),
+    encode_info :: binary()
 }).
 
-init(Binding = #binding{url = URL}) ->
+start_link(ExUriUrl) ->
+    gen_server:start_link(?MODULE, ExUriUrl, []).
+
+init(ExUriUrl) ->
     process_flag(trap_exit, true),
-    Endpoint      = url_for_zmq(URL),
+    Endpoint      = url_for_zmq(ExUriUrl),
     {ok, Context} = erlzmq:context(),
     {ok, Socket}  = erlzmq:socket(Context, [router, {active, true}]),
     case erlzmq:bind(Socket, Endpoint) of
         ok ->
-            State = #state{binding_key = binding_key(Binding), socket = Socket, context = Context},
+            State = #state{socket = Socket, context = Context, url = ExUriUrl},
             {ok, State};
         {error, Error} ->
             {stop, Error}
@@ -86,55 +80,43 @@ handle_info({zmq, Socket, Message, [rcvmore]}, State = #state{socket = Socket, l
 handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = Peer}) when is_binary(Peer) ->
     %% empty message part separates envelope from data
     {noreply, State};
-handle_info({zmq, Socket, Message, []}, State = #state{binding_key=BindingKey, socket = Socket, lastmsg_peer = Peer}) ->
-    %% second message part is the actual request
-    case hello_registry:lookup_binding(?MODULE, BindingKey) of
-        {error, not_found} ->
-            ok; % should never happen
-        {ok, Binding} ->
-	    TransportParams = [{peer_identity, Peer}],
-	    HandlerPid = hello_binding:get_handler(Binding, Peer, self(), TransportParams),
-	    hello_binding:incoming_message(HandlerPid, Message)
-    end,
-    {noreply, State#state{lastmsg_peer = undefined}};
+handle_info({zmq, Socket, EncInfo, [rcvmore]}, State = #state{socket = Socket}) ->
+    %% first actual data frame is an info about the encoding of the message
+    {noreply, State#state{encode_info = EncInfo}};
+handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, encode_info = EncInfo, lastmsg_peer = Peer, url = ExUriUrl}) ->
+    %% second data part is the actual request
+    Context = #context{ transport=?MODULE,
+                        transport_pid = self(),
+                        transport_params = undefined,
+                        peer = Peer
+                        },
+    hello_binding:incoming_message(Context, ExUriUrl, binary_to_atom(EncInfo, latin1), Message),
+    {noreply, State#state{encode_info = undefined, lastmsg_peer = undefined}};
 
-handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
-    ok = erlzmq:send(Socket, Peer, [sndmore]),
-    ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, Message),
+handle_info(hello_closed, State) ->
     {noreply, State};
-
-handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
-    {noreply, State};
-
-handle_info({'EXIT', _HandlerPid, _Reason}, State) ->
+handle_info({'EXIT', _Reason}, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
     erlzmq:close(State#state.socket),
     erlzmq:term(State#state.context).
 
-%% unused callbacks
+handle_call({hello_msg, _TParams, Peer, EncInfo, Message}, _From, State = #state{socket = Socket}) ->
+    ok = erlzmq:send(Socket, Peer, [sndmore]),
+    ok = erlzmq:send(Socket, <<>>, [sndmore]),
+    ok = erlzmq:send(Socket, EncInfo, [sndmore]),
+    ok = erlzmq:send(Socket, Message),
+    {reply, ok, State};
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
+
+%% unused callbacks
 handle_cast(_Cast, State) ->
     {noreply, State}.
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 
-%% --------------------------------------------------------------------------------
-%% -- helpers
+%% helpers
 url_for_zmq(URI = #ex_uri{scheme = "zmq-tcp"}) -> ex_uri:encode(URI#ex_uri{scheme = "tcp"});
 url_for_zmq(URI = #ex_uri{scheme = "zmq-ipc"}) -> ex_uri:encode(URI#ex_uri{scheme = "ipc"}).
-
-url_for_log1(URI = #ex_uri{scheme = "zmq-ipc", authority = #ex_uri_authority{host = Host}, path = Path}) ->
-    WithFullPath = URI#ex_uri{path = ipc_path(Host, Path), authority = #ex_uri_authority{host = ""}},
-    list_to_binary(ex_uri:encode(WithFullPath));
-url_for_log1(URI) ->
-    list_to_binary(ex_uri:encode(URI)).
-
-ipc_path(Host, Path) ->
-    case Host of
-        undefined -> Path;
-        _         -> filename:absname(filename:join(Host, Path))
-    end.

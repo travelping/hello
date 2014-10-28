@@ -1,58 +1,74 @@
-%% RPC records
+%% ----------------------------------------------------------------------------------------------------
+%% -- these records are used for abstraction of request and responses independent of the used protocol
+-record(context, {
+    connection_pid          :: pid(),
+    transport               :: module(),
+    transport_pid           :: pid(),
+    transport_params        :: term(),
+    peer                    :: term()
+    }).
+
 -record(request,  {
-    reqid      :: hello_json:value(),
-    method     :: binary(),
-    namespaces :: list(binary()),
-    params     :: hello_json:json_object() | list(hello_json:value()),
-    proto_mod  :: module(),
-    proto_data :: term()
+    proto_request           :: term(),
+    proto_mod               :: module(),
+    context                 :: #context{}
 }).
 
 -record(response, {
-    reqid      :: hello_json:value(),
-    result     :: hello_json:value(),
-    proto_mod  :: module(),
-    proto_data :: term()
+    proto_response          :: term(),
+    proto_mod               :: module(),
+    context                 :: #context{}
 }).
 
--record(error, {
-    reqid      :: hello_json:value(),
-    code       :: integer() | atom(),
-    data       :: hello_json:value(),
-    message    :: iodata(),
-    proto_mod  :: module(),
-    proto_data :: term()
-}).
-
--record(batch_request, {
-    proto_mod  :: module(),
-    errors     :: list(#error{}), %% hack?
-    requests   :: list(#request{})
-}).
-
--record(batch_response, {
-    proto_mod  :: module(),
-    responses  :: list(#response{} | #error{})
-}).
-
--record(callback, {
-    mod  :: module(),
-    type :: stateful | stateless,
-    args :: term()
-}).
-
-%% TODO: get rid of some of those fields
 -record(binding, {
-    pid           :: pid(),
-    url           :: hello:decoded_url(),
-    log_url       :: binary(),
-    host          :: string(),
-    port          :: pos_integer(),
-    ip            :: inet:ip_address(),
-    path          :: [binary()],
-    protocol      :: module(),
-    listener_mod  :: module(),
-    callbacks     :: [#callback{}]
+    namespace               :: binary(),
+    callback                :: module(),
+    handler_type            :: module(),
+    handler_args            :: term(),
+    protocol                :: module(),
+    protocol_args           :: term(),
+    url                     :: term()
 }).
 
--define(INCOMING_MSG_MSG, '$hello_incoming_message').
+%% ----------------------------------------------------------------------------------------------------
+%% -- internal records used by hello_handler
+-record(request_context, {
+    req_ref                 :: reference(),
+    handler_pid             :: pid(),
+    protocol_info           :: term(),
+    context                 :: #context{}
+    }).
+-record(timer, {
+    idle_timer              :: term(), %% the current timer
+    idle_timeout_ref        :: reference(),
+    idle_timeout = infinity :: timeout(),
+    stopped_because_idle = false :: boolean()
+    }).
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- type definitions
+-type request()             :: #request{}.
+-type response()            :: #response{}.
+-type binding()             :: #binding{}.
+-type request_context()     :: #request_context{}.
+-type timer()               :: #timer{}.
+-type callback()            :: module().
+-type handler()             :: hello_handler.
+-type protocol()            :: hello_proto_jsonrpc.
+-type trans_opts()          :: [{term(), term()}].
+-type handler_opts()        :: [{term(), term()}].
+-type protocol_opts()       :: [{term(), term()}].
+-type url_string()          :: string().
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- internal definitions
+-define(IDLE_TIMEOUT_MSG, '$hello_idle_timeout').
+-define(INCOMING_MSG, '$hello_incoming_message').
+
+%% will b transmitted by transport to identify encoding
+-define(INTERNAL, '$hello_internal').
+-define(JSONRPC, '$hello_jsonrpc').
+
+%% for keep alive initiated by a client
+-define(PING, '$PING').
+-define(PONG, '$PONG').

@@ -20,194 +20,65 @@
 
 %% @doc This module contains an RPC client.
 -module(hello_client).
-%% public API
--export([start/2, start_link/2, start/3, start_link/3, stop/1, validate_options/2,
-         start_supervised/2, start_supervised/3, stop_supervised/1,
-         call/3, call/4, call_np/3, call_np/4, batch_call/2, batch_call/3,
-         notify/3, notify/4, notify_np/3, notify_np/4]).
-%% deprecated
--export([notification/3]).
-
-%% client transport implementation API
--export([behaviour_info/1]).
--export([client_ctx_reply/2, client_ctx_notify/2]).
-%% internal
--export([run_notification_sink_function/4]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--export_type([client/0, method/0, options/0, error_code/0, rpc_error/0]).
--export_type([server_name/0]).
+-export([start_link/2, start_link/3,
+         start/4, start/5, stop/1,
+         start_supervised/4, start_supervised/5, stop_supervised/1,
+         call/2, call/3]
+         ).
+
+%% for tests
+-export([handle_internal/2]).
+
+%% client transport implementation API
+-export([behaviour_info/1]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 -define(DEFAULT_TIMEOUT, 10000).
 
--type client() :: pid() | atom().
-
--type method() :: atom() | string() | binary().
--type notification_sink() :: undefined | pid() | atom()
-                           | fun((pid(), Method::binary(), hello_json:json_array() | hello_json:json_object()) -> any()).
--type generic_options() :: {protocol, module()} | {notification_sink, notification_sink()}.
--type options() :: [generic_options() | {atom(), any()}].
--type start_error() :: {invalid_options, any()} | badscheme | badurl.
--type standard_error() :: parse_error | invalid_request | method_not_found | invalid_params | internal_error | server_error.
--type error_code() :: standard_error() | integer().
--type rpc_error() :: timeout | {transport, term()} | {error_code(), binary()}.
-
-%% @private
 behaviour_info(callbacks) ->
-    [{validate_options,1}, {init,2}, {send_request,3}, {handle_info,3}, {terminate,3}];
+    [{init_transport,2},
+     {send_request,2},
+     {terminate_transport,2}];
 behaviour_info(_) ->
     undefined.
 
-%% --------------------------------------------------------------------------------
-%% -- Client API
-%% @doc create and link a client process.
-%%   The ``Options'' argument, a property list, configures the client. The list of
-%%   valid options depends on the transport that is used. The following options are supported
-%%   for all listeners:
-%%   <ul style="list-style-type: none;">
-%%     <li>
-%%       <b>{protocol, module()}</b><br/>
-%%       Selects the RPC protocol implementation. The default is <tt>hello_proto_jsonrpc</tt>.<br/><br/>
-%%     </li>
-%%     <li>
-%%       <b>{notification_sink, function() | pid() | atom()}</b><br/>
-%%       This option configures the handling of RPC notifications sent by the server.<br/>
-%%       <ul>
-%%         <li>
-%%           If a function is given, it will be called with 3 arguments for each notification.
-%%           The first argument is the pid of the client process, the second argument is the notification's
-%%           RPC method name (as a binary) and the third is the argument list. For protocols that
-%%           support named parameters, the third parameter can also be a value of type hello_json:json_object().
-%%         </li>
-%%         <li>
-%%           If the notification sink is the atom <tt>undefined</tt>, notifications are dropped.<br/>
-%%           This is the default behaviour.
-%%         </li>
-%%         <li>
-%%           If the notification sink is a pid or any atom except <tt>undefined</tt>, notifications will be sent
-%%           as an Erlang message to the process with the given pid or to a named process with the given name.
-%%           Notification messages obey the following format:
-%%           <pre>{rpc_notification, Client::pid(), Method::binary(), Parameters}</pre>
-%%           As with notification sink functions, the Parameters are either sent as a list
-%%           or as a <tt>hello_json:json_object()</tt>.
-%%         </li>
-%%       </ul>
-%%     </li>
-%%   </ul>
--spec start_link(hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
-start_link(URI, Options) ->
-    gen_server:start_link(?MODULE, {URI, Options}, []).
+%% API to start without supervisor
+start(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
-%% @doc create a client process
-%%   For a description of the parameters, see {@link start_link/2}.
--spec start(hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
-start(URI, Options) ->
-    gen_server:start(?MODULE, {URI, Options}, []).
+start(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
-%% A registered server name as in gen_server.
--type server_name() :: {local, atom()} | {global, atom()}.
-
-%% @doc create and link a named client client
-%%   For a description of the parameters, see {@link start_link/2}.
--spec start_link(server_name(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
-start_link(Name, URI, Options) ->
-    gen_server:start_link(Name, ?MODULE, {URI, Options}, []).
-
-%% @doc create a named client
-%%   For a description of the parameters, see {@link start_link/2}.
--spec start(server_name(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
-start(Name, URI, Options) ->
-    gen_server:start(Name, ?MODULE, {URI, Options}, []).
-
-% @doc stop a running client
--spec stop(client()) -> ok.
 stop(Client) ->
     gen_server:call(Client, terminate).
 
-%% @doc create client that is supervised by hello
-%%   For a description of the parameters, see {@link start_link/2}.
--spec start_supervised(hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
-start_supervised(URI, Options) ->
-    hello_client_sup:start_client(URI, Options).
+%% callbacks for supervisor
+start_link(URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
+    start(URI, TransportOpts, ProtocolOpts, ClientOpts).
 
-%% @doc create a named client that is supervised by hello
-%%   This function is used to create a client as part of the hello supervisor tree.
-%%   It is intended to be used by applications that do not have supervisor trees
-%%   on their own, and for scripts.
-%%   For a description of the parameters, see {@link start_link/2}.
--spec start_supervised(atom(), hello:url(), options()) -> {ok, pid()} | {error, start_error()}.
-start_supervised(Name, URI, Options) ->
-    hello_client_sup:start_named_client(Name, URI, Options).
+start_link(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
+    start(Name, URI, TransportOpts, ProtocolOpts, ClientOpts).
 
-%% @doc terminate a client process that is supervised by hello
--spec stop_supervised(client()) -> ok.
+%% API to start with hello supervisor
+start_supervised(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    hello_client_sup:start_client(URI, {TransportOpts, ProtocolOpts, ClientOpts}).
+
+start_supervised(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    hello_client_sup:start_named_client(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}).
+
 stop_supervised(Client) ->
     hello_client_sup:stop_client(Client).
 
-%% @doc Perform an RPC method call with positional parameters
--spec call(client(), method(), [hello_json:value()]) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call(Client, Method, ArgList) when is_list(ArgList) ->
-    timeout_call(Client, {call, {Method, ArgList}}, ?DEFAULT_TIMEOUT).
+call(Client, Call) ->
+    timeout_call(Client, {call, Call}, ?DEFAULT_TIMEOUT).
 
-%% @doc Like {@link call/3}, but with a configurable timeout
--spec call(client(), method(), [hello_json:value()], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call(Client, Method, ArgList, Timeout) when is_list(ArgList) ->
-    timeout_call(Client, {call, {Method, ArgList}}, Timeout).
-
-%% @doc Perform an RPC method call with named parameters
--spec call_np(client(), method(), [{string(), hello_json:value()}]) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call_np(Client, Method, ArgProps) when is_list(ArgProps) ->
-    timeout_call(Client, {call, {Method, {ArgProps}}}, ?DEFAULT_TIMEOUT).
-
-%% @doc Like {@link call_np/3}, but with a configurable timeout
--spec call_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> {ok, hello_json:value()} | {error, rpc_error()}.
-call_np(Client, Method, ArgProps, Timeout) when is_list(ArgProps) ->
-    timeout_call(Client, {call, {Method, {ArgProps}}}, Timeout).
-
-%% @deprecated
-%% @doc Send an RPC notification
-%%   This function is deprecated and will be removed in hello 0.3. Use {@link notify/3} instead.
--spec notification(client(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
-notification(Client, Method, ArgList) ->
-    notify(Client, Method, ArgList).
-
-%% @doc Send an RPC notification with positional parameters
--spec notify(client(), method(), [hello_json:value()]) -> ok | {error, rpc_error()}.
-notify(Client, Method, Parameters) ->
-    timeout_call(Client, {notification, {Method, Parameters}}, ?DEFAULT_TIMEOUT).
-
-%% @doc Like {@link notify/3}, but with a configurable timeout
--spec notify(client(), method(), [hello_json:value()], timeout()) -> ok | {error, rpc_error()}.
-notify(Client, Method, Parameters, Timeout) ->
-    timeout_call(Client, {notification, {Method, Parameters}}, Timeout).
-
-%% @doc Send an RPC notification with named parameters
--spec notify_np(client(), method(), [{string(), hello_json:value()}]) -> ok | {error, rpc_error()}.
-notify_np(Client, Method, Parameters) ->
-    timeout_call(Client, {notification, {Method, {Parameters}}}, ?DEFAULT_TIMEOUT).
-
-%% @doc Like {@link notify_np/3}, but with a configurable timeout
--spec notify_np(client(), method(), [{string(), hello_json:value()}], timeout()) -> ok | {error, rpc_error()}.
-notify_np(Client, Method, Parameters, Timeout) ->
-    timeout_call(Client, {notification, {Method, {Parameters}}}, Timeout).
-
-%% @doc Send multiple RPC calls in one request.
-%%   The order of the results in the returned list matches the order of the
-%%   calls in the given Batch.
--spec batch_call(client(), [Call]) -> timeout | [{ok, hello_json:value()} | {error, rpc_error()}] when
-    Call :: {method(), hello_json:json_object() | hello_json:json_array()}.
-batch_call(Client, Batch) ->
-    timeout_call(Client, {batch_call, Batch}, ?DEFAULT_TIMEOUT).
-
-%% @doc Like {@link batch_call/2}, but with a configurable timeout
--spec batch_call(client(), [Call], timeout()) -> {error, timeout} | [{ok, hello_json:value()} | {error, rpc_error()}] when
-    Call :: {method(), hello_json:json_object() | hello_json:json_array()}.
-batch_call(Client, Batch, Timeout) ->
-    timeout_call(Client, {batch_call, Batch}, Timeout).
+call(Client, Call, Timeout) ->
+    timeout_call(Client, {call, Call}, Timeout).
 
 timeout_call(Client, Call, infinity) ->
     gen_server:call(Client, Call, infinity);
@@ -219,86 +90,46 @@ timeout_call(Client, Call, Timeout) ->
             {error, timeout}
     end.
 
-%% @doc validate the options for a given client URL
--spec validate_options(hello:url(), list()) -> ok | {error, string()}.
-validate_options(URL, Options) ->
-    case (catch ex_uri:decode(URL)) of
-        {ok, URIRec = #ex_uri{}, _} ->
-            case uri_client_module(URIRec) of
-                {_NewURIRec, Module} ->
-                    do_validate_options(Module, Options);
-                badscheme ->
-                    {error, "unknown URL scheme"}
-            end;
-        _Other ->
-            {error, "malformed URL"}
-    end.
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- client transport API
--record(client_reply_ctx, {
-    client :: pid(),
-    from   :: {reference(), pid()},
-    notification_sink :: function() | pid() | atom()
-}).
-
--record(client_notify_ctx, {
-    client :: pid(),
-    notification_sink :: function() | pid() | atom()
-}).
-
-%% @private
-%% @doc transport implementations use this function to deliver a reply back to the caller
-client_ctx_reply(#client_reply_ctx{from = From}, Reply) ->
-    gen_server:reply(From, Reply).
-
-%% @private
-%% @doc transport implementations use this function to deliver incoming notifications
-client_ctx_notify(#client_reply_ctx{client = Client, notification_sink = Sink}, Notification) ->
-    ctx_notify1(Client, Sink, Notification);
-client_ctx_notify(#client_notify_ctx{client = Client, notification_sink = Sink}, Notification) ->
-    ctx_notify1(Client, Sink, Notification).
-
-ctx_notify1(_Client, undefined, _Notification) ->
-    ok;
-ctx_notify1(Client, Pid, #request{method = Method, params = Params}) when is_pid(Pid) orelse is_atom(Pid) ->
-    catch (Pid ! {rpc_notification, Client, Method, Params});
-ctx_notify1(Client, Function, #request{method = Method, params = Params}) when is_function(Function) ->
-    spawn(?MODULE, run_notification_sink_function, [Function, Client, Method, Params]).
-
-%% @hidden
-run_notification_sink_function(Function, Client, Method, Params) ->
-    Function(Client, Method, Params).
-
 %% ----------------------------------------------------------------------------------------------------
 %% -- gen_server callbacks
--record(client_options, {
-    protocol = hello_proto_jsonrpc :: module(),
-    notification_sink :: function() | pid() | atom()
-}).
-
 -record(client_state, {
-    mod :: module(),
-    mod_state :: term(),
-    options :: #client_options{},
-    next_reqid = 0 :: non_neg_integer()
-}).
+    transport_mod :: module(),
+    transport_state :: term(),
+    protocol_mod :: atom(),
+    protocol_state ::term(),
+    async_request_map :: gb_tree(),
+    keep_alive_interval :: number(),
+    keep_alive_ref :: term()
+    }).
 
 %% @hidden
-init({URI, Options}) ->
+init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
     case (catch ex_uri:decode(URI)) of
         {ok, URIRec = #ex_uri{}, _} ->
             case uri_client_module(URIRec) of
-                {NewURIRec, Module} ->
-                    case do_validate_options(Module, Options) of
-                        {ok, ClientOptions, ModOptionData} ->
-                            {ok, InitialModState} = Module:init(NewURIRec, ModOptionData),
-                            State = #client_state{mod = Module,
-                                                  options = ClientOptions,
-                                                  mod_state = InitialModState},
-                            {ok, State};
-                        {error, Error} ->
-                            {stop, {invalid_options, Error}}
+                {NewURIRec, TransportModule} ->
+                    case TransportModule:init_transport(NewURIRec, TransportOpts) of
+                        {ok, TransportState} ->
+                            ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
+                            case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
+                                {ok, ProtocolState} ->
+                                    State = #client_state{  transport_mod = TransportModule,
+                                                            transport_state = TransportState,
+                                                            protocol_mod = ProtocolMod,
+                                                            protocol_state = ProtocolState,
+                                                            async_request_map = gb_trees:empty()
+                                                            },
+                                    case evaluate_client_options(ClientOpts, State) of
+                                        {ok, State1} ->
+                                            {ok, State1};
+                                        {error, Reason} ->
+                                            {error, Reason}
+                                    end;
+                                {error, Reason} ->
+                                    {stop, Reason}
+                            end;
+                        {error, Reason} ->
+                            {stop, Reason}
                     end;
                 badscheme ->
                     {stop, badscheme}
@@ -308,21 +139,40 @@ init({URI, Options}) ->
     end.
 
 %% @hidden
-handle_call({Type, Data}, From, State)
-  when (Type == call) orelse (Type == notification) orelse (Type == batch_call) ->
-    send(State, Type, From, Data);
-
+handle_call({call, Call}, From, State = #client_state{protocol_mod = ProtocolMod, protocol_state = ProtocolState}) ->
+    case hello_proto:new_request(Call, ProtocolMod, ProtocolState) of
+        {ok, ProtoRequest, NewProtocolState} ->
+            State1 = State#client_state{protocol_state = NewProtocolState},
+            Request = hello_proto:build_request(ProtoRequest, ProtocolMod),
+            case outgoing_message(Request, From, State1) of
+                {ok, State2} ->
+                    {noreply, State2};
+                {ok, Reply, State2} ->
+                    {reply, Reply, State2};
+                {error, Reason, State2} ->
+                    {reply, Reason, State2}
+            end;
+        {error, Reason, NewProtocolState} ->
+            {reply, Reason, State#client_state{protocol_state = NewProtocolState}}
+    end;
 handle_call(terminate, _From, State) ->
     {stop, normal, ok, State}.
 
 %% @hidden
-handle_info(Info, State = #client_state{mod = Module, mod_state = ModState}) ->
-    Reply = Module:handle_info(make_notify_ctx(State), Info, ModState),
-    set_reply_state(Reply, State#client_state{mod_state = get_reply_state(Reply)}).
+handle_info({?INCOMING_MSG, Message}, State) ->
+    incoming_message(Message, State);
+handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
+    EncodeInfo = hello_proto:encoding_info(hello_proto),
+    BinaryPing = list_to_binary(atom_to_list(?PING)),
+    {ok, NewTransportState} = TransportModule:send_request({BinaryPing, EncodeInfo}, TransportState),
+    {noreply, State#client_state{transport_state = NewTransportState}};
+handle_info(_Message, State) ->
+    {noreply, State}.
 
 %% @hidden
-terminate(Reason, State = #client_state{mod = Module, mod_state = ModState}) ->
-    Module:terminate(make_notify_ctx(State), Reason, ModState).
+terminate(Reason, #client_state{transport_mod = TransportModule, transport_state = TransportState, keep_alive_ref = TimerRef}) ->
+    timer:cancel(TimerRef),
+    TransportModule:terminate_transport(Reason, TransportState).
 
 %% @hidden
 handle_cast(_Cast, State) ->
@@ -333,24 +183,79 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
-send(State = #client_state{next_reqid = ReqId, options = Opts}, Type, From, Data) ->
-    {NextReqId, Request} = build_request(Type, Opts#client_options.protocol, ReqId, Data),
-    ClientCtx = make_reply_ctx(State, From),
-    SendReply = (State#client_state.mod):send_request(ClientCtx, Request, State#client_state.mod_state),
-    set_reply_state(SendReply, State#client_state{next_reqid = NextReqId, mod_state = get_reply_state(SendReply)}).
+incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
+    {noreply, State#client_state{transport_state = NewTransportState}};
+incoming_message({ok, EncodeInfo, BinResponse, NewTransportState},
+                 State = #client_state{protocol_mod = ProtocolMod, protocol_state = ProtocolState, async_request_map = AsyncMap}) ->
+    ProtoMod = hello_proto:encoding_protocol(EncodeInfo),
+    case hello_proto:decode(ProtoMod, BinResponse) of
+        {ok, ProtoResponse} when ProtoMod == ProtocolMod ->
+            case ProtocolMod:do_response(ProtoResponse, ProtocolState) of
+                {noreply, NewProtocolState} ->
+                    {noreply, State#client_state{transport_state = NewTransportState, protocol_state = NewProtocolState}};
+                {reply, RequestId, Result, NewProtocolState} ->
+                    case gb_trees:lookup(RequestId, AsyncMap) of
+                        {value, {CallRef, _Request}} ->
+                            gen_server:reply(CallRef, {ok, Result}),
+                            NewAsyncMap = gb_trees:delete(RequestId, AsyncMap),
+                            {noreply, State#client_state{   transport_state = NewTransportState,
+                                                            protocol_state = NewProtocolState, async_request_map = NewAsyncMap}};
+                        none ->
+                            {noreply, State#client_state{transport_state = NewTransportState, protocol_state = NewProtocolState}}
+                    end
+            end;
+        {error, _Reason} ->
+            {noreply, State#client_state{transport_state = NewTransportState}};
+        ignore ->
+            {noreply, State#client_state{transport_state = NewTransportState}};
+        {internal, Message} ->
+            {ok, State1} = ?MODULE:handle_internal(Message, State),
+            {noreply, State1}
+    end.
 
-build_request(call, Protocol, ReqId, {Method, ArgList}) ->
-    {ReqId + 1, hello_proto:new_request(Protocol, ReqId, Method, ArgList)};
-build_request(notification, Protocol, ReqId, {Method, ArgList}) ->
-    {ReqId, hello_proto:new_notification(Protocol, Method, ArgList)};
-build_request(batch_call, Protocol, ReqId, Batch) ->
-    {Reqs, NextReqId} = lists:mapfoldl(fun ({Method, Args}, ReqIdAcc) ->
-                                               {hello_proto:new_request(Protocol, ReqIdAcc, Method, Args), ReqIdAcc + 1}
-                                       end, ReqId, Batch),
-    {NextReqId, hello_proto:new_batch_request(Protocol, Reqs)}.
+outgoing_message(Request, From, State = #client_state{transport_mod=TransportModule, transport_state=TransportState, async_request_map=AsyncMap}) ->
+    case hello_proto:encode(Request) of
+        {ok, BinRequest} ->
+            EncodeInfo = hello_proto:encoding_info(Request#request.proto_mod),
+            case hello_proto:generate_request_id(Request) of
+                {ok, RequestId} ->
+                    case TransportModule:send_request({BinRequest, EncodeInfo}, TransportState) of
+                        {ok, NewTransportState} ->
+                            NewAsyncMap = gb_trees:enter(RequestId, {From, Request}, AsyncMap),
+                            {ok, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
+                        {error, Reason, RequestId, NewTransportState} ->
+                            {error, Reason, State#client_state{transport_state = NewTransportState}}
+                    end;
+                ignore ->
+                    case TransportModule:send_request({BinRequest, EncodeInfo}, TransportState) of
+                        {ok, NewTransportState} ->
+                            {ok, ok, State#client_state{transport_state = NewTransportState}};
+                        {error, Reason, NewTransportState} ->
+                            {error, Reason, State#client_state{transport_state = NewTransportState}}
+                    end
+            end;
+        {error, Reason, State} ->
+            {error, Reason, State};
+        ignore ->
+            {ok, State}
+    end.
 
-get_reply_state(Reply) -> element(size(Reply), Reply).
-set_reply_state(Reply, State) -> setelement(size(Reply), Reply, State).
+evaluate_client_options(ClientOpts, State) ->
+    KeepAliveInterval = proplists:get_value(keep_alive_interval, ClientOpts, -1),
+    if
+        KeepAliveInterval =< 0 ->
+            {ok, State#client_state{keep_alive_interval = -1}};
+        KeepAliveInterval > 0 ->
+            timer:send_after(KeepAliveInterval, self(), ?PING),
+            {ok, State#client_state{keep_alive_interval = KeepAliveInterval}}
+    end.
+
+
+handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInterval}) ->
+    {ok, TimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
+    {ok, State#client_state{keep_alive_ref = TimerRef}};
+handle_internal(Message, State) ->
+    ?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
 
 uri_client_module(URI = #ex_uri{scheme = "http"})    -> {URI, hello_http_client};
 uri_client_module(URI = #ex_uri{scheme = "https"})   -> {URI, hello_http_client};
@@ -358,46 +263,3 @@ uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"}) -> {URI#ex_uri{scheme = "tc
 uri_client_module(URI = #ex_uri{scheme = "zmq-ipc"}) -> {URI#ex_uri{scheme = "ipc"}, hello_zmq_client};
 uri_client_module(_) ->
     badscheme.
-
-make_reply_ctx(#client_state{options = #client_options{notification_sink = Sink}}, From) ->
-    #client_reply_ctx{client = self(), from = From, notification_sink = Sink}.
-
-make_notify_ctx(#client_state{options = #client_options{notification_sink = Sink}}) ->
-    #client_notify_ctx{client = self(), notification_sink = Sink}.
-
-do_validate_options(Module, OptionList) ->
-    case validate_generic_options(OptionList, [], #client_options{}) of
-        {ok, GenericOptions, StrippedRest} ->
-            case Module:validate_options(StrippedRest) of
-                {ok, ValidModOptions} ->
-                    {ok, GenericOptions, ValidModOptions};
-                Error ->
-                    Error
-            end;
-        Error ->
-            Error
-    end.
-
-validate_generic_options([{protocol, Protocol} | R], Acc, Opts) when is_atom(Protocol) ->
-    case code:ensure_loaded(Protocol) of
-        {module, ProtocolMod} ->
-            validate_generic_options(R, Acc, Opts#client_options{protocol = ProtocolMod});
-        {error, _Error} ->
-            {error, {protocol, load_module}}
-    end;
-validate_generic_options([{protocol, _} | _R], _Acc, _Opts) ->
-    {error, {protocol, not_atom}};
-validate_generic_options([{notification_sink, Fun} | R], Acc, Opts) when is_function(Fun) ->
-    validate_generic_options(R, Acc, Opts#client_options{notification_sink = Fun});
-validate_generic_options([{notification_sink, Pid} | R], Acc, Opts) when is_pid(Pid) ->
-    validate_generic_options(R, Acc, Opts#client_options{notification_sink = Pid});
-validate_generic_options([{notification_sink, ProcessName} | R], Acc, Opts) when is_atom(ProcessName) ->
-    validate_generic_options(R, Acc, Opts#client_options{notification_sink = ProcessName});
-validate_generic_options([{notification_sink, _} | _R], _Acc, _Opts) ->
-    {error, {notification_sink, not_function_or_process}};
-validate_generic_options([Option = {Key, _Value} | R], Acc, Opts) when is_atom(Key) ->
-    validate_generic_options(R, [Option | Acc], Opts);
-validate_generic_options([Term | _R], _Acc, _Opts) ->
-    {error, {badoption, Term}};
-validate_generic_options([], Acc, Opts) ->
-    {ok, Opts, Acc}.

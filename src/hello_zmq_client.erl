@@ -20,77 +20,71 @@
 
 % @private
 -module(hello_zmq_client).
+
 -behaviour(hello_client).
--export([validate_options/1, init/2, send_request/3, handle_info/3, terminate/3]).
+-export([init_transport/2, send_request/2, terminate_transport/2]).
+
+-behaviour(gen_server).
+-export([init/1, handle_call/3, handle_info/2, terminate/2, handle_cast/2, code_change/3]).
 
 -include("internal.hrl").
-
 -record(zmq_state, {
-    context :: erlzmq:erlzmq_context(),
-    socket  :: erlzmq:erlzmq_socket(),
-    pending :: gb_tree()
+    client          :: pid(),
+    encode_info     :: binary(),
+    context         :: erlzmq:erlzmq_context(),
+    socket          :: erlzmq:erlzmq_socket()
 }).
 
--record(zmq_options, {
-    socket_options :: list({atom(), term()})
-}).
+%% hello_cllient callbacks
+init_transport(URIRec, _Options) ->
+    gen_server:start_link(?MODULE, {self(), URIRec}, []).
 
-validate_options([_|R]) ->
-    validate_options(R);
-validate_options([]) ->
-    {ok, #zmq_options{}}.
+send_request(Message = {_Request, _EncodeInfo}, TransportPid) ->
+    gen_server:call(TransportPid, Message),
+    {ok, TransportPid};
+send_request(_, TransportPid) ->
+    {error, no_valid_request, TransportPid}.
 
-init(URLRec, Options) ->
+terminate_transport(_Reason, TransportPid) ->
+    gen_server:cast(TransportPid, stop).
+
+%% gen_server callbacks
+init({Client, URLRec}) ->
     URL = ex_uri:encode(URLRec),
     {ok, Context} = erlzmq:context(),
     {ok, Socket} = erlzmq:socket(Context, [dealer, {active, true}]),
-    ok = erlzmq:connect(Socket, URL),
-    {ok, #zmq_state{pending = gb_trees:empty(), context = Context, socket = Socket}}.
+    case erlzmq:connect(Socket, URL) of
+        ok ->
+            State = #zmq_state{client = Client, context = Context, socket = Socket},
+            {ok, State};
+        {error, Error} ->
+            {stop, Error}
+    end.
 
-send_request(ClientCtx, Request, State = #zmq_state{socket = Socket, pending = Pending}) ->
+handle_call({Request, EncodeInfo}, _From, State = #zmq_state{socket = Socket}) ->
     erlzmq:send(Socket, <<>>, [sndmore]),
-    erlzmq:send(Socket, hello_proto:encode(Request)),
-    case Request of
-        #request{reqid = undefined} ->
-            {reply, ok, State};
-        #request{reqid = ReqId} ->
-            {noreply, State#zmq_state{pending = gb_trees:enter(ReqId, ClientCtx, Pending)}};
-        #batch_request{requests = [FirstReq | _R]} ->
-            {noreply, State#zmq_state{pending = gb_trees:enter(FirstReq#request.reqid, ClientCtx, Pending)}}
-    end.
+    erlzmq:send(Socket, EncodeInfo, [sndmore]),
+    erlzmq:send(Socket, Request),
+    {reply, ok, State}.
 
-handle_info(_ClientCtx, {zmq, _Socket, _Msgpart, [rcvmore]}, State) ->
+handle_info({zmq, _Socket, <<>>, [rcvmore]}, State) ->
     {noreply, State};
-handle_info(ClientCtx, {zmq, _Socket, Msg, []}, State) ->
-    case hello_proto:decode(hello_proto_jsonrpc, Msg) of
-        #response{reqid = ReqId, result = Result} ->
-            {noreply, reply_pending_req([ReqId], {ok, Result}, State)};
-        Resp = #error{reqid = ReqId} ->
-            {noreply, reply_pending_req([ReqId], {error, hello_proto:error_resp_to_error_reply(Resp)}, State)};
-        #batch_response{responses = Resps} ->
-            {ReqIds, Results} = lists:unzip(lists:keysort(1, lists:map(
-                fun (#response{reqid = Id, result = Result}) -> {Id, {ok, Result}};
-                    (Error = #error{reqid = Id}) -> {Id, {error, hello_proto:error_resp_to_error_reply(Error)}}
-                end, Resps))),
-            {noreply, reply_pending_req(ReqIds, Results, State)};
-        Notification = #request{reqid = undefined} ->
-            hello_client:client_ctx_notify(ClientCtx, Notification),
-            {noreply, State};
-        _ ->
-            {noreply, State}
-    end.
+handle_info({zmq, _Socket, EncInfo, [rcvmore]}, State) ->
+    {noreply, State#zmq_state{encode_info = EncInfo}};
+handle_info({zmq, _Socket, BinResponse, []}, State = #zmq_state{client = Client, encode_info = EncInfo}) ->
+    Client ! {?INCOMING_MSG, {ok, binary_to_atom(EncInfo, latin1), BinResponse, self()}},
+    {noreply, State#zmq_state{encode_info = undefined}};
+handle_info(_, State) ->
+    {noreply, State}.
 
-terminate(_ClientCtx, _Reason, #zmq_state{context = Context, socket = Socket}) ->
+handle_cast(stop, State) ->
+    {stop, normal, State};
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State = #zmq_state{socket = Socket, context = Context}) ->
     erlzmq:close(Socket),
     erlzmq:term(Context).
 
-reply_pending_req([], _Resp, State) ->
-    State;
-reply_pending_req([ReqId | Rest], Resp, State = #zmq_state{pending = Pending}) ->
-    case gb_trees:lookup(ReqId, Pending) of
-        none ->
-            reply_pending_req(Rest, Resp, State);
-        {value, FromCtx} ->
-            hello_client:client_ctx_reply(FromCtx, Resp),
-            State#zmq_state{pending = gb_trees:delete(ReqId, Pending)}
-    end.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

@@ -21,271 +21,231 @@
 % @private
 -module(hello_binding).
 
--behaviour(gen_server).
-
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-
-% Binding process
--export([start_link/5, stop/1, stop/2, behaviour_info/1]).
-% API for listeners
--export([get_handler/4, incoming_message/2, lookup_handler/2]).
--export([new/7]).
--export_type([peer/0, handler/0]).
+-export([incoming_message/4, outgoing_message/1, send/1, close/1]).
+-export([do_binding/7, undo_binding/2, bindings/0,
+         start_handler/1, stop_handler/1,
+         start_listener/2, stop_listener/1
+         ]).
+-export([handle_incoming_message/4]).
+-export([send_pong/1]).
+-export([behaviour_info/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
-
 -include("internal.hrl").
 
--type peer() :: term().
--type handler() :: pid().
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- Contruct a new binding
--spec new(pid(), module(), string() | #ex_uri{}, module(), module(), stateful | stateless, term()) -> #binding{}.
-new(Pid, ListenerModule, URL, Protocol, CallbackMod, CallbackType, CallbackArgs) when is_list(URL) ->
-    {ok, DecURL, _} = ex_uri:decode(URL),
-    new(Pid, ListenerModule, DecURL, Protocol, CallbackMod, CallbackType, CallbackArgs);
-new(Pid, ListenerModule, URL = #ex_uri{}, Protocol, CallbackMod, CallbackType, CallbackArgs0) ->
-    {IP, Host} = extract_ip_and_host(URL),
-    CallbackArgs1 = case lists:keymember(exclusive, 1, CallbackArgs0) of
-        true ->
-            CallbackArgs0;
-        false ->
-            [{exclusive, true} | CallbackArgs0]
-    end,
-    Callback = #callback{
-        mod = CallbackMod,
-        type = CallbackType,
-        args = CallbackArgs1
-    },
-    {_, Namespace, _} = hello_validate:find_hello_info(to_mod(CallbackMod, CallbackType), <<"">>),
-    Callbacks0 = dict:new(),
-    Callbacks1 = dict:append(Namespace, Callback, Callbacks0),
-    Binding = #binding{pid = Pid,
-        url = URL,
-        ip = IP,
-        host = Host,
-        port = (URL#ex_uri.authority)#ex_uri_authority.port,
-        path = URL#ex_uri.path,
-        protocol = Protocol,
-        listener_mod = ListenerModule,
-        callbacks = Callbacks1
-    },
-    Binding#binding{log_url = ListenerModule:url_for_log(Binding)}.
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- API for listeners
--spec get_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
-get_handler(Binding, Peer, Transport, TransportParams) ->
-    case lookup_handler(Binding, Peer) of
-        {error, not_found} ->
-            start_handler(Binding, Peer, Transport, TransportParams);
-        {ok, Handler} ->
-            Handler
-    end.
-
--spec start_handler(#binding{}, peer(), pid(), hello:transport_params()) -> handler().
-start_handler(#binding{callbacks=Callbacks}=Binding, Peer, Transport, TransportParams) ->
-    [{_, [Callback]} | _] = dict:to_list(Callbacks),
-    case Callback#callback.type of
-        stateful ->
-            {ok, Pid} = hello_stateful_handler:start_link(Binding, Peer, Transport, TransportParams),
-            register_handler(Binding#binding.pid, Pid, Peer),
-            Pid;
-        stateless ->
-            spawn_link(hello_stateless_handler, handler, [Binding, Peer, Transport, TransportParams])
-    end.
-
--spec incoming_message(handler(), binary()) -> ok.
-incoming_message(Pid, Message) ->
-    Pid ! {?INCOMING_MSG_MSG, Message}, ok.
-
--spec lookup_handler(#binding{}, peer()) -> {ok, handler()} | {error, not_found}.
-lookup_handler(Binding, Peer) ->
-    case hello_registry:lookup({listener_peer, Binding#binding.pid, Peer}) of
-        {ok, Pid, _Data} ->
-            {ok, Pid};
-        Error ->
-            Error
-    end.
-
--spec register_handler(pid(), handler(), peer()) -> ok | {already_registered, pid(), peer()}.
-register_handler(BindingPid, Pid, Peer) ->
-    hello_registry:register({listener_peer, BindingPid, Peer}, undefined, Pid).
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- Binding process
-start_link(ListenerModule, URL, CallbackModule, CallbackType, CallbackArgs) when is_list(URL) ->
-    {ok, DecURL, _} = ex_uri:decode(URL),
-    start_link(ListenerModule, DecURL, CallbackModule, CallbackType, CallbackArgs);
-start_link(ListenerModule, URL = #ex_uri{}, CallbackModule, CallbackType, CallbackArgs) ->
-    Binding = new(self(), ListenerModule, URL, hello_proto_jsonrpc, CallbackModule, CallbackType, CallbackArgs),
-    StarterRef = make_ref(),
-    case gen_server:start(?MODULE, {self(), StarterRef, Binding}, []) of
-        {ok, Pid} ->
-            link(Pid), {ok, Pid};
-        {error, Reason} ->
-            {error, Reason};
-        ignore ->
-            receive
-                {error, StarterRef, Error} ->
-                    {error, Error}
-            end
-    end.
-
-stop(BindingServer) ->
-    stop(BindingServer, normal).
-
-stop(BindingServer, Reason) ->
-    gen_server:call(BindingServer, {stop, Reason}).
-
 behaviour_info(callbacks) ->
-    [{listener_key,1}, {binding_key,1}, {url_for_log,1}, {listener_specification,2}, {listener_termination,1}];
-%% Listener termination will be used in hello_registry to terminate non hello supervised processes
-
+    [{listener_specification, 2},
+     {send_response, 3},
+     {close, 1},
+     {listener_termination, 1}
+     ];
 behaviour_info(_) ->
     undefined.
 
-%% --------------------------------------------------------------------------------
-%% -- gen_server callbacks
--define(REFC(ID), {listener_refc, ID}).
--record(state, {binding, listener_pid, listener_id, listener_mref}).
+incoming_message(Context, ExUriURL, EncInfo, Binary) ->
+    spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, EncInfo, Binary]).
 
-init({StarterPid, StarterRef, Binding}) ->
-    process_flag(trap_exit, true),
+outgoing_message(Response = #response{context = Context}) ->
+    ConnectionPid = Context#context.connection_pid,
+    ConnectionPid ! {?INCOMING_MSG, Response}.
 
-    case start_listener(Binding) of
-        {ok, ListenerPid, ListenerID, ListenerMonitor} ->
-            State = #state{binding = Binding,
-                           listener_id = ListenerID,
-                           listener_pid = ListenerPid,
-                           listener_mref = ListenerMonitor},
-            {ok, State, hibernate};
-        {error, Error} ->
-            StarterPid ! {error, StarterRef, Error},
-            ignore
+handle_incoming_message(Context1, ExUriURL, EncInfo, Binary) ->
+    Context = Context1#context{connection_pid = self()},
+    ProtocolMod = hello_proto:encoding_protocol(EncInfo),
+    case hello_proto:decode(ProtocolMod, Binary) of
+        {ok, DecodedRequest} ->
+            BuildRequest1 = hello_proto:build_request(DecodedRequest, ProtocolMod),
+            BuildRequest = BuildRequest1#request{context = Context},
+            {ProtocolInfo, ExtractedRequests} = hello_proto:extract_requests(BuildRequest),
+            ct:log("test1"),
+            proceed_incoming_message(ProtocolInfo, ExtractedRequests, Context, ExUriURL, []);
+        {error, parse_error} ->
+            ErrorResponse = hello_proto:error_response(parse_error, <<"invalid encoding">>, undefined, undefined),
+            hello_proto:log(ProtocolMod, Binary, ErrorResponse, undefined, ExUriURL),
+            send(ErrorResponse),
+            close(Context);
+        {error, ignore} ->
+            hello_proto:log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
+            close(Context);
+        {error, ProtoResponse} ->
+            Response = #response{proto_response = ProtoResponse, proto_mod = ProtocolMod},
+            hello_proto:log(ProtocolMod, Binary, Response, undefined, ExUriURL),
+            send(Response),
+            close(Context);
+        {internal, Message} ->
+            handle_internal(Context, Message)
     end.
 
-handle_call({stop, Reason}, _From, State) ->
-    {stop, Reason, ok, State};
-handle_call(_Call, _From, State) ->
-    {noreply, State, hibernate}.
-
-handle_info({'EXIT', _Pid, Reason}, State) ->
-    {stop, Reason, State};
-handle_info({'DOWN', MRef, process, Pid, Reason}, State = #state{listener_mref = MRef, listener_pid = Pid}) ->
-    {stop, Reason, State};
-handle_info(_Info, State) ->
-    {noreply, State, hibernate}.
-
-terminate(_Reason, #state{binding = Binding, listener_id = ListenerID, listener_pid = Pid}) ->
-    case hello_registry:add_to_key(?REFC(ListenerID), -1) of
-        {ok, Pid, 0} -> catch stop_listener(Binding#binding.listener_mod, ListenerID);
-        _            -> ok
-    end,
-    error_logger:info_report([{hello_binding, ex_uri:encode(Binding#binding.url)}, {action, stopped}]).
-
-%% unused callbacks
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
-handle_cast(_Cast, State)           -> {noreply, State, hibernate}.
-
-%% --------------------------------------------------------------------------------
-%% -- helpers
-start_listener(BindingIn = #binding{listener_mod = Mod, callbacks = Callbacks}) ->
-    Binding       = BindingIn#binding{log_url = Mod:url_for_log(BindingIn)},
-    ListenerKey   = Mod:listener_key(BindingIn),
-    ModBindingKey = Mod:binding_key(Binding),
-    BindingKey    = {binding, Mod, ModBindingKey},
-    [{_, [NewCallback]} | _] = dict:to_list(Callbacks),
-
-    case hello_registry:lookup_listener(ListenerKey) of
-        {error, not_found} ->
-            %% no server running on Host:Port, we need to start a listener
-            ListenerID = make_ref(),
-            case start_listener(Mod, ListenerID, Binding) of
-                {ok, ListenerPid} ->
-                    ListenerMonitor = monitor(process, ListenerPid),
-                    ListenerData = {ListenerID, Mod},
-                    ok = hello_registry:multi_register([{?REFC(ListenerID), 1}, {ListenerKey, ListenerData}], ListenerPid),
-                    ok = hello_registry:register(BindingKey, Binding, self()),
-                    {ok, ListenerPid, ListenerID, ListenerMonitor};
-                {error, {StartError, _Child}} ->
-                    {error, {transport, StartError}}
-            end;
-        {ok, ListenerPid, {ListenerID, Mod}} ->
-            %% listener (with same listener module) already running, do binding checks
-            case hello_registry:lookup(BindingKey) of
+proceed_incoming_message(ProtocolInfo, [], Context, _ExUriURL, Responses) ->
+    Response = hello_proto:handle_response(ProtocolInfo, Responses),
+    case Response of
+        undefined ->
+            close(Context);
+        _NotUndef ->
+            send(Response),
+            close(Context)
+    end;
+proceed_incoming_message(ProtocolInfo, [{Status, Namespace, Request} | ExtractedRequests], Context, ExUriURL, Responses) ->
+    case hello_registry:lookup_binding(Namespace, ExUriURL) of
+        {ok, Binding} ->
+            case hello_registry:lookup_handler(Binding) of
+                {ok, Handler} ->
+                    Handler ! {?INCOMING_MSG, Request},
+                    case Status of
+                        reply ->
+                            receive
+                                {?INCOMING_MSG, Response} ->
+                                    proceed_incoming_message(ProtocolInfo, ExtractedRequests, Context, ExUriURL, Responses ++ [Response]);
+                                _ ->
+                                    throw("Got invalid response")
+                            end;
+                        noreply ->
+                            proceed_incoming_message(ProtocolInfo, ExtractedRequests, Context, ExUriURL, Responses)
+                    end;
                 {error, not_found} ->
-                    %% nobody is on that path yet, let's register the Module
-                    %% this is only relevant to http listeners because there can
-                    %% be N bindings per HTTP listener.
-                    ok = hello_registry:register(BindingKey, Binding, self()),
-                    {ok, ListenerPid, _} = hello_registry:add_to_key(?REFC(ListenerID), 1),
-                    ListenerMonitor = monitor(process, ListenerPid),
-                    {ok, ListenerPid, ListenerID, ListenerMonitor};
-                {ok, _Pid, #binding{callbacks = Callbacks0}=ExistingBinding} ->
-                    #callback{mod=NewCallbackMod, type=NewCallbackType} = NewCallback,
-                    {_, Namespace, _} = hello_validate:find_hello_info(to_mod(NewCallbackMod, NewCallbackType), <<"">>),
-                    case dict:find(Namespace, Callbacks0) of
-                        {ok, _} ->
-                            {error, already_started};
-                        error ->
-                            Exclusive = dict:fold(
-                                    fun
-                                        (_, _, true) ->
-                                            true;
-                                        (_, [#callback{args=CallbackArgs, type=CallbackType}], false) when
-                                                NewCallbackType =:= CallbackType ->
-                                            {exclusive, Exclusive0} = lists:keyfind(exclusive, 1, CallbackArgs),
-                                            Exclusive0;
-                                        (_, _, false) ->
-                                            true
-                                    end, false, Callbacks0),
-                            case Exclusive of
-                                true ->
-                                    {error, occupied};
-                                false ->
-                                    Callbacks1 = dict:append(Namespace, NewCallback, Callbacks0),
-                                    NewBinding = ExistingBinding#binding{callbacks=Callbacks1},
-                                    ok = hello_registry:update(BindingKey, NewBinding),
-                                    ListenerMonitor = monitor(process, ListenerPid),
-                                    {ok, ListenerPid, ListenerID, ListenerMonitor}
-                            end
+                    ErrorResponse = hello_proto:error_response(internal_error, <<"handler_is_dead">>, undefined, Request),
+                    proceed_incoming_message(ProtocolInfo, ExtractedRequests, Context, ExUriURL, Responses ++ [ErrorResponse])
+            end;
+        {error, not_found} ->
+            ct:log("test6"),
+            ErrorResponse = hello_proto:error_response(binding_not_found, undefined, undefined, Request),
+            proceed_incoming_message(ProtocolInfo, ExtractedRequests, Context, ExUriURL, Responses ++ [ErrorResponse])
+    end.
+
+send(Response = #response{proto_mod = Protocol, context = Context}) ->
+    {ok, BinResp} = hello_proto:encode(Response),
+    EncInfo = hello_proto:encoding_info(Protocol),
+    #context{transport = TransportMod} = Context,
+    TransportMod:send_response(Context, EncInfo, BinResp).
+
+close(Context = #context{transport = TransportMod}) ->
+    TransportMod:close(Context).
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- Create a new binding and start the handler and listener (if necessary)
+do_binding(ExUriURL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts) ->
+    case start_listener(ExUriURL, TransportOpts) of
+        {ok, _ListenerRef} ->
+            NewBinding = new_binding(ExUriURL, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts),
+            case hello_registry:lookup_binding(NewBinding#binding.namespace, ExUriURL) of
+                {ok, _OldBinding} ->
+                    {error, callback_already_defined};
+                {error, not_found} ->
+                    case start_handler(NewBinding) of
+                        {ok, NewHandler} ->
+                            hello_registry:register_binding({NewBinding#binding.namespace, ExUriURL}, NewBinding),
+                            {ok, NewHandler};
+                        {error, already_started} ->
+                            {error, handler_already_started}
                     end
             end;
-        {ok, _ListenerPid, _Data} ->
-            %% there is a listener, but the listener module is different
-            {error, occupied}
+        {error, Reason} ->
+            {error, {transport, Reason}}
     end.
 
-start_listener(Mod, ListenerID, Binding) ->
-    case Mod:listener_specification(ListenerID, Binding) of
-        {child, ListenerChildSpec} ->
-            hello_listener_supervisor:start_child(ListenerChildSpec);
-        {started, Result} ->
-            Result
+undo_binding(Url, CallbackMod) ->
+    case (catch ex_uri:decode(Url)) of
+        {ok, ExUriURL, _} ->
+            case hello_validate:get_namespace(CallbackMod) of
+                {ok, Namespace} ->
+                    hello_registry:unregister_binding({Namespace, ExUriURL});
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        Other ->
+            {error, {badurl, Other}}
     end.
 
-stop_listener(Mod, ListenerID) ->
-    case Mod:listener_termination(ListenerID) of
-        child ->
-            hello_listener_supervisor:stop_child(ListenerID);
+new_binding(ExUriURL, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts) ->
+    case hello_validate:get_namespace(CallbackMod) of
+        {ok, Namespace} ->
+            #binding{
+                namespace = Namespace,
+                callback = CallbackMod,
+                handler_type = HandlerMod,
+                handler_args = HandlerOpts,
+                protocol = Protocol,
+                protocol_args = ProtocolOpts,
+                url = ExUriURL
+            };
+        {error, Reason} ->
+            erlang:error(Reason)
+    end.
+
+bindings() ->
+    hello_registry:bindings().
+%% ----------------------------------------------------------------------------------------------------
+%% -- Start and register a handler for a callback module.
+start_handler(Binding) ->
+    case hello_handler_supervisor:start_handler(Binding) of
+        {ok, Handler} ->
+            hello_registry:register_handler(Binding, Handler),
+            {ok, Handler};
+        {error, _ } ->
+            {error, already_started}
+    end.
+
+stop_handler(Binding) ->
+    case hello_registry:lookup_handler(Binding) of
+        {ok, _Handler} ->
+            hello_handler_supervisor:stop_handler(Binding);
         _ ->
             ok
     end.
 
-extract_ip_and_host(#ex_uri{authority = #ex_uri_authority{host = Host}}) ->
-    case Host of
-        "*"  ->
-            {{0,0,0,0}, "0.0.0.0"};
-        Host ->
-            case inet_parse:address(Host) of
-                {error, einval} ->
-                    {{0,0,0,0}, Host};
-                {ok, Address} ->
-                    {Address, Host}
-            end
+%% --------------------------------------------------------------------------------
+%% -- start and stop a listener
+start_listener(ExUriURL, TransportOpts) ->
+    case hello_registry:lookup_listener(ExUriURL) of
+        {error, not_found} ->
+            case start_listener1(ExUriURL, TransportOpts) of
+                {ok, ListenerRef} ->
+                    hello_registry:register_listener(ExUriURL, ListenerRef),
+                    {ok, ListenerRef};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {ok, ListenerRef} ->
+            {ok, ListenerRef}
     end.
 
-to_mod(CallbackMod, stateful) -> {CallbackMod, default};
-to_mod(CallbackMod, _)        -> CallbackMod.
+stop_listener(ExUriURL = #ex_uri{scheme = Scheme}) ->
+    TransportMod = transport_module(Scheme),
+    case TransportMod:listener_termination(ExUriURL) of
+        child ->
+            hello_listener_supervisor:stop_child(TransportMod, ExUriURL);
+        _ ->
+            ok
+    end.
+
+%% -------------------------------------------------------------------------------
+%% -- helpers TODO e.g. for keep alive mechanism
+start_listener1(ExUriURL = #ex_uri{scheme = Scheme}, TransportOpts) ->
+    TransportMod = transport_module(Scheme),
+    case TransportMod:listener_specification(ExUriURL, TransportOpts) of
+        {make_child, ListenerChildSpec} ->
+            hello_listener_supervisor:start_child(ListenerChildSpec),
+            {ok, make_ref()};
+        {other_supervisor, _Result} ->
+            {ok, make_ref()};
+        {error, Reason} ->
+            erlang:error(Reason)
+    end.
+
+transport_module("zmq-tcp") -> hello_zmq_listener;
+transport_module("zmq-ipc") -> hello_zmq_listener;
+transport_module("http")    -> hello_http_listener;
+transport_module(_Scheme)   -> error(notsup).
+
+handle_internal(Context, ?PING) ->
+    erlang:spawn(?MODULE, send_pong, [Context]),
+    ok;
+handle_internal(Context, Binary) ->
+    handle_internal(Context, binary_to_atom(Binary, latin1)).
+
+send_pong(Context) ->
+    BinaryPong = atom_to_binary(?PONG, latin1),
+    EncInfo = hello_proto:encoding_info(hello_proto),
+    #context{transport = TransportMod} = Context,
+    TransportMod:send_response(Context, EncInfo, BinaryPong),
+    close(Context).

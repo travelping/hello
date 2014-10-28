@@ -1,0 +1,56 @@
+module handler1 {
+    namespace "hello_test";
+    prefix "handler1";
+
+    rpc fun1 {
+        input {
+        	leaf arg1 {
+        		type string;
+        	}
+        }
+    }
+
+    rpc fun2 {
+        input {
+        	leaf arg1 {
+        		type string;
+        	}
+        }
+    }
+
+    rpc fun3 {
+        input {
+        	leaf arg1 {
+        		type string;
+        	}
+        }
+    }
+
+    rpc fun4 {
+        input {
+        	leaf arg1 {
+        		type string;
+        	}
+        }
+    }
+    
+    rpc fun5 {
+        input {
+            leaf arg1 {
+                type string;
+            }
+        }
+    }
+    
+    rpc fun6 {
+        input {
+            leaf arg1 {
+                type string;
+            }
+            leaf arg2 {
+                type string;
+            }
+        }
+    }
+
+}

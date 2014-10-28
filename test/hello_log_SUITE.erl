@@ -1,40 +1,35 @@
 -module(hello_log_SUITE).
 -compile(export_all).
 
--include("ct.hrl").
--include("../include/hello.hrl").
--include("../include/internal.hrl").
+-include_lib("common_test/include/ct.hrl").
+-include("../include/jsonrpc_internal.hrl").
+
+-define(URL, "http://127.0.0.1:6000").
 
 % ---------------------------------------------------------------------
 % -- test cases
 log_request(_Config) ->
-    hello_request_log:request(?MODULE, self(), <<"TestEndPoint">>, #request{}, #response{}),
-    hello_request_log:request(?MODULE, self(), <<"TestEndPoint">>, #request{reqid = 123}, #error{reqid = 123, message = "TestMessage"}),
-
-    Logs = lager_common_test_backend:get_logs(),
-    ok.
-
-log_batch_request(_Config) ->
-    hello_request_log:request(?MODULE, self(), <<"TestEndPoint">>, #batch_request{requests = [#request{}, #request{}]}, #batch_response{responses = [#response{}, ignore]}),
-
+    {ok, ExUriUrl, []} = ex_uri:decode(?URL),
+    hello_jsonrpc_log:request(?MODULE, self(), ExUriUrl, #jsonrpc_request{}, #jsonrpc_response{}),
     Logs = lager_common_test_backend:get_logs(),
     2 = length(Logs),
     ok.
 
 log_bad_request(_Config) ->
-    Chars = [0,1,2,3,4,31,32,$",$\\,126,127,128,255,256,257,1024],
-    TestChars = [ [integer_to_list(X), ":", X, ";"] || X <- Chars],
-    Test = unicode:characters_to_binary(["This is a bad request; ", TestChars]),
-    hello_request_log:bad_request(?MODULE, self(), <<"TestBadEndPoint">>, Test, #response{}),
-
+    BadRequest1 = #jsonrpc_request{method = <<"bad_method">>, params = [<<"bad_param">>], reqid = 123},
+    BadRequest2 = <<"i_am_some_malformed_unparsable_request">>,
+    BadResponse = #jsonrpc_response{reqid = 123, error = #jsonrpc_error{code = 12345, message = <<"TestMessage">>}},
+    {ok, ExUriUrl, []} = ex_uri:decode(?URL),
+    hello_jsonrpc_log:bad_request(?MODULE, self(), ExUriUrl, BadRequest1, BadResponse),
+    hello_jsonrpc_log:bad_request(?MODULE, self(), ExUriUrl, BadRequest2, BadResponse),
     Logs = lager_common_test_backend:get_logs(),
-    2 = length(Logs),
+    3 = length(Logs),
     ok.
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-    [log_request, log_batch_request, log_bad_request].
+    [log_request, log_bad_request].
 
 init_per_testcase(_, Config) ->
     lager:start(),

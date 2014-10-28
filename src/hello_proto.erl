@@ -20,118 +20,126 @@
 
 % @private
 -module(hello_proto).
--export([new_request/4, new_notification/3, new_batch_request/2]).
--export([success_response/2, error_response/2, error_response/3, error_response/4,
-         batch_response/2, error_resp_to_error_reply/1, mime_type/1]).
--export([encode/1, decode/2]).
--export_type([request/0, response/0, standard_error/0]).
+
+-export([init_client/2]).
+-export([do_request/5, proceed_request/6, do_async_request/4]).
+-export([new_request/3, build_request/2, build_response/2]).
+-export([encode/1, generate_request_id/1, decode/2, encoding_info/1, encoding_protocol/1]).
+-export([extract_requests/1, handle_response/2, error_response/4, log/5]).
+
+-export([behaviour_info/1]).
 
 -include("internal.hrl").
 
--type request()  :: #request{} | #batch_request{}.
--type response() :: #response{} | #error{} | #batch_response{}.
+behaviour_info(callbacks) ->
+    [{init_client, 1},
+     {generate_request_id, 1},
+     {new_request, 2},
+     {do_request, 5},
+     {do_async_request, 4},
+     {encoding_info, 0},
+     {encode, 1},
+     {decode, 1},
+     {extract_requests, 1},
+     {error_response, 4},
+     {log, 4}
+     ];
+behaviour_info(_Other) ->
+    undefined.
 
--type error_code()    :: integer() | standard_error().
--type error_message() :: undefined | term().
--type error_data()    :: undefined | hello_json:value().
--type error_reply()   :: error_code() | {error_code(), error_message()} | {error_code(), error_message(), error_data()}.
+%% ----------------------------------------------------------------------------------------------------
+%% -- Request/Response handling
+init_client(ProtocolMod, ProtocolOpts) ->
+    ProtocolMod:init_client(ProtocolOpts).
 
--type standard_error() :: parse_error | invalid_request | method_not_found | invalid_params | internal_error | server_error.
+%% ----------------------------------------------------------------------------------------------------
+%% -- Request/Response handling
+do_request(HandlerMod, Mod, HandlerInfo, ReqContext, #request{proto_mod = Protocol, proto_request = ProtoRequest}) ->
+    Protocol:do_request(HandlerMod, Mod, HandlerInfo, ReqContext, ProtoRequest).
+
+proceed_request(HandlerMod, Mod, HandlerInfo, ReqContext, Method, Params) ->
+    HandlerMod:proceed_request(Mod, HandlerInfo, ReqContext, Method, Params).
+
+do_async_request(#request{proto_mod = Protocol, proto_request = ProtoRequest}, RequestInfo, ProtocolInfo, Result) ->
+    Protocol:do_async_request(ProtoRequest, RequestInfo, ProtocolInfo, Result).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Record Creation/Conversion
--spec new_request(module(), hello_json:value(), atom() | string() | binary(), hello_json:value()) -> #request{}.
-new_request(Mod, ReqId, Method, Args) when is_atom(Mod) ->
-    Mod:new_request(ReqId, to_binary(Method), Args).
+new_request(Call, ProtocolMod, ProtocolState) ->
+    ProtocolMod:new_request(Call, ProtocolState).
 
--spec new_notification(module(), atom() | string() | binary(), hello_json:value()) -> #request{}.
-new_notification(Mod, Method, Args) when is_atom(Mod) ->
-    Mod:new_request(undefined, to_binary(Method), Args).
-
--spec new_batch_request(module(), [#request{}]) -> #batch_request{}.
-new_batch_request(Mod, Requests) when is_atom(Mod) ->
-    #batch_request{proto_mod = Mod, requests = Requests}.
-
-to_binary(Str) when is_atom(Str)   -> atom_to_binary(Str, utf8);
-to_binary(Str) when is_list(Str)   -> unicode:characters_to_binary(Str);
-to_binary(Str) when is_binary(Str) -> Str.
-
--spec batch_response(#batch_request{}, list(#response{})) -> #batch_response{} | ignore.
-batch_response(#batch_request{proto_mod = Mod, errors = Errors}, Responses) ->
-    case filter_ignore(Responses, filter_ignore(Errors, [])) of
-        [] ->
-            ignore;
-        AllResps ->
-            #batch_response{proto_mod = Mod, responses = AllResps}
-    end.
-
-filter_ignore(Resps, OuterAcc) ->
-    lists:foldl(fun (ignore, Acc) -> Acc;
-                    (Resp, Acc)   -> [Resp | Acc]
-                end, OuterAcc, Resps).
-
--spec success_response(#request{}, hello_json:value()) -> #response{} | ignore.
-success_response(#request{reqid = undefined}, _Result) ->
-    ignore;
-success_response(Req, Result) ->
-    #response{proto_mod  = Req#request.proto_mod,
-              proto_data = Req#request.proto_data,
-              reqid      = Req#request.reqid,
-              result     = Result}.
-
--spec error_response(#request{}, error_reply()) -> #error{} | ignore.
-error_response(Req, {ErrorCode, ErrorMsg}) ->
-    error_response(Req, ErrorCode, ErrorMsg);
-error_response(Req, {ErrorCode, ErrorMsg, ErrorData}) ->
-    error_response(Req, ErrorCode, ErrorMsg, ErrorData);
-error_response(Req, ErrorCode) ->
-    error_response(Req, ErrorCode, undefined).
-
-%% @equiv error_response(Req, Code, Msg, undefined)
--spec error_response(#request{}, error_code(), error_message()) -> #error{} | ignore.
-error_response(Req, Code, Msg) ->
-    error_response(Req, Code, Msg, undefined).
-
-%% @doc Creates a response object that represents an error response to the given request.
--spec error_response(#request{}, error_code(), error_message(), error_data()) -> #error{} | ignore.
-error_response(#request{reqid = undefined}, _Code, _Msg, _Data) ->
-    ignore;
-error_response(#request{proto_mod = Mod, proto_data = ProtoData, reqid = ReqId}, Code, Msg, Data) ->
-    Mod:error_response(ProtoData, ReqId, Code, Msg, Data).
-
-error_resp_to_error_reply(Error = #error{proto_mod = Mod}) ->
-    Mod:error_resp_to_error_reply(Error).
-
--spec mime_type(module() | request()) -> binary().
-mime_type(#request{proto_mod = Mod}) -> Mod:mime_type();
-mime_type(#batch_request{proto_mod = Mod}) -> Mod:mime_type();
-mime_type(Mod) when is_atom(Mod)     -> Mod:mime_type().
+build_request(ProtoRequest, ProtoMod) ->
+    #request{proto_request = ProtoRequest, proto_mod = ProtoMod}.
+build_response(#request{proto_mod = Protocol, context = Context}, ProtoResponse) ->
+    #response{proto_mod = Protocol, proto_response = ProtoResponse, context = Context}.
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
--spec encode(request() | response() | ignore) -> binary().
-encode(Req = #request{proto_mod = Mod}) ->
-    Mod:encode(Req);
-encode(Req = #batch_request{proto_mod = Mod}) ->
-    Mod:encode(Req);
-encode(Resp = #response{proto_mod = Mod}) ->
-    Mod:encode(Resp);
-encode(Resp = #error{proto_mod = Mod}) ->
-    Mod:encode(Resp);
-encode(Resp = #batch_response{proto_mod = Mod}) ->
-    Mod:encode(Resp);
-encode(ignore) ->
-    <<>>.
+encode(#request{proto_mod = Mod, proto_request = ProtoRequest}) ->
+    Mod:encode(ProtoRequest);
+encode(#response{proto_mod = Mod, proto_response = ProtoResponse}) ->
+    Mod:encode(ProtoResponse).
 
--spec decode(module() | request(), binary()) -> request() | response() | {proto_reply, response()}.
-decode(#request{proto_mod = Mod}, Message) -> decode1(Mod, Message);
-decode(#batch_request{proto_mod = Mod}, Message) -> decode1(Mod, Message);
-decode(Mod, Message) when is_atom(Mod) -> decode1(Mod, Message).
+generate_request_id(#request{proto_mod = Mod, proto_request = ProtoRequest}) ->
+    Mod:generate_request_id(ProtoRequest).
 
-decode1(Mod, Binary) ->
-    case (catch Mod:decode(Binary)) of
-        {'EXIT', _Error} ->
-            {proto_reply, Mod:error_response(Mod:defaults(), null, parse_error, undefined, undefined)};
-        Result ->
-            Result
-    end.
+decode(hello_proto, Message) ->
+    {internal, Message};
+decode(Mod, Message) when is_atom(Mod) ->
+    Mod:decode(Message).
+
+encoding_info(hello_proto) ->
+    list_to_binary(atom_to_list(?INTERNAL));
+encoding_info(ProtocolMod) ->
+    ProtocolMod:encoding_info().
+
+encoding_protocol(?INTERNAL) ->
+    hello_proto;
+encoding_protocol(?JSONRPC) ->
+    hello_proto_jsonrpc.
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- message distribution
+extract_requests(Request = #request{proto_mod = ProtocolMod, proto_request = ProtoRequest, context = Context}) ->
+    {ProtocolInfo, ExtractedProtoRequests} = ProtocolMod:extract_requests(ProtoRequest),
+    Requests = [ {Status, Namespace, Request#request{proto_mod = ProtocolMod, proto_request = SingleReq, context = Context}} || 
+                                                                    {Status, Namespace, SingleReq}  <- ExtractedProtoRequests ],
+    {ProtocolInfo, Requests}.
+
+handle_response(_ProtocolInfo, []) ->
+    undefined;
+handle_response(single, [ #response{proto_mod = ProtocolMod, proto_response = ProtoResponse, context = Context} ]) ->
+    #response{proto_mod = ProtocolMod, proto_response = ProtoResponse, context = Context};
+handle_response(batch, Responses) ->
+    #response{proto_mod = ProtocolMod, context = Context} = hd(Responses),
+    ProtoResponses = [ ProtoResponse || #response{proto_response = ProtoResponse} <- Responses ],
+    #response{proto_mod = ProtocolMod, proto_response = ProtoResponses, context = Context}.
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- error handling
+error_response(Code, Message, Data, Request = #request{proto_mod = ProtocolMod, proto_request = ProtoRequest}) ->
+    ProtoErrorResponse = ProtocolMod:error_response(Code, Message, Data, ProtoRequest),
+    build_response(Request, ProtoErrorResponse).
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- logging
+log(ProtocolMod, Binary, undefined, Mod, ExUriUrl) when is_binary(Binary) ->
+    ProtocolMod:log(Binary, undefined, Mod, ExUriUrl);
+log(ProtocolMod, Binary, #response{proto_mod = ProtocolMod, proto_response = ProtoResponse}, Mod, ExUriUrl) when is_binary(Binary) ->
+    ProtocolMod:log(Binary, ProtoResponse, Mod, ExUriUrl);
+log(ProtocolMod, #request{proto_mod = ProtocolMod, proto_request = ProtoRequest}, #response{proto_response = ProtoResponse}, Mod, ExUriUrl) ->
+    ProtocolMod:log(ProtoRequest, ProtoResponse, Mod, ExUriUrl).
+
+
+
+
+
+
+
+
+
+
+
+
+
+

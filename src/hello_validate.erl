@@ -21,13 +21,12 @@
 % @private
 -module(hello_validate).
 
--export([request/2, validate_params/3, validate_params/4, find_hello_info/2]).
+-export([request/3, validate_params/3, validate_params/4, get_namespace/1]).
 
 -export_type([json_type/0, param_type/0]).
 
 -include_lib("yang/include/typespec.hrl").
 
--include("hello.hrl").
 -include("internal.hrl").
 
 -type json_type()  :: 'boolean' | 'object' | 'integer' | 'float' | 'number' | 'string' | 'list' | 'array' | 'any' | 'iso_date'.
@@ -35,28 +34,72 @@
 
 %% --------------------------------------------------------------------------------
 %% -- API functions
--spec request(atom, #request{}) -> [term()] | {error, iodata()}.
-request(Mod, Req = #request{method = Method, params = Params}) ->
-    ModSpec = find_hello_info(Mod, <<"">>),
-    try
-        Fields = yang_typespec:rpc_params(Method, ModSpec),
-        case hello_validate:validate_params(ModSpec, Method, params_to_proplist(Fields, Params)) of
-            {error, Code} ->
-                {error, hello_proto:error_response(Req, Code)};
-            {error, Code, Msg} ->
-                {error, hello_proto:error_response(Req, Code, Msg)};
-            {error, Code, Msg, Data} ->
-                {error, hello_proto:error_response(Req, Code, Msg, Data)};
-            ParamsValidated ->
-                ParamsValidated
-        end
+request(Mod, Method, Params) ->
+    case erlang:function_exported(Mod, typespec, 0) of
+        false ->
+            {error, typespec_not_loaded};
+        true ->
+            ModSpec = Mod:typespec(),
+            try
+                Fields = yang_typespec:rpc_params(Method, ModSpec),
+                case is_proplist(Params) of
+                    true ->
+                        Params1 = sort_params(Params, Fields);
+                    false ->
+                        Params1 = Params
+                end,
+                case validate_params(ModSpec, Method, params_to_proplist(Fields, Params1)) of
+                    {error, Code} ->
+                        {error, {Code, undefined, undefined}};
+                    {error, Code, Msg} ->
+                        {error, {Code, Msg, undefined}};
+                    {error, Code, Msg, Data} ->
+                        {error, {Code, Msg, Data}};
+                    ParamsValidated ->
+                        ParamsValidated
+                end
+            catch
+                error:{badarg, _} ->
+                    {error, {method_not_found, undefined, undefined}};
+                throw:{error, unknown_type} ->
+                    {error, {invalid_params, <<"unknown type">>, undefined}};
+                throw:_ ->
+                    {error, {invalid_params, undefined, undefined}}
+            end
+    end.
+
+get_namespace(Mod) ->
+    case erlang:function_exported(Mod, typespec, 0) of
+        true ->
+            {_, Namespace, _} = Mod:typespec(),
+            {ok, Namespace};
+        false ->
+            {error, no_typespec_loaded}
+    end.
+
+%% --------------------------------------------------------------------------------
+%% -- internal functions
+validate_params(TypeSpec, Method, Params) ->
+    validate_params(TypeSpec, Method, -1, Params).
+
+validate_params(TypeSpec, Method, Depth, Params) ->
+    try yang_json_validate:validate(TypeSpec, {rpc, Method, input}, Depth, Params) of
+        Error when element(1, Error) == error ->
+            Error;
+        ParamsValidated when is_list(ParamsValidated) ->
+            #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
+            params_return({ok, Method, ParamsValidated, TypeSpec}, Opts)
     catch
-        error:{badarg, _} ->
-            {error, hello_proto:error_response(Req, method_not_found)};
-        throw:{error, unknown_type} ->
-            {error, hello_proto:error_response(Req, method_not_found)};
-        throw:_ ->
-            hello_proto:error_response(Req, invalid_params, <<"">>)
+        throw:{error, Error} ->
+            Msg = io_lib:format("Error: ~p", [Error]),
+            {error, invalid_params, Msg};
+        throw:{error, invalid_type, {Data, _Type}} ->
+            {error, invalid_params, Data};
+        throw:{error, invalid_params, Msg} ->
+            {error, invalid_params, Msg};
+        throw:{error, Error, EMsg} ->
+            Msg = io_lib:format("Error: ~p, EMsg: ~p", [Error, EMsg]),
+            {error, invalid_params, Msg}
     end.
 
 params_return({ok, Method, Params, _}, []) ->
@@ -75,33 +118,10 @@ params_return(Return, [_|T]) ->
 m2b(Method) when is_atom(Method) -> atom_to_binary(Method, utf8);
 m2b(Method) -> Method.
 
-validate_params(TypeSpec, Method, Params) ->
-    validate_params(TypeSpec, Method, -1, Params).
-
-validate_params(TypeSpec, Method, Depth, Params) ->
-    try yang_json_validate:validate(TypeSpec, {rpc, Method, input}, Depth, Params) of
-        Error when element(1, Error) == error ->
-            Error;
-        ParamsValidated when is_list(ParamsValidated) ->
-            #object{opts = Opts} = yang_typespec:get_type(TypeSpec, {rpc, Method, input}),
-            params_return({ok, Method, ParamsValidated, TypeSpec}, Opts)
-    catch
-        throw:{error, Error} ->
-            Msg = io_lib:format("Error: ~p", [Error]),
-            {error, invalid_params, Msg};
-        throw:{error, invalid_type, {Data, _Type}} ->
-            {error, invalid_params, Data};
-        throw:{error, Error, EMsg} ->
-            Msg = io_lib:format("Error: ~p, EMsg: ~p", [Error, EMsg]),
-            {error, invalid_params, Msg}
-    end.
-
-%% --------------------------------------------------------------------------------
-%% -- internal functions
 params_to_proplist(_PInfo, {Props}) -> Props;
 params_to_proplist(Fields,  Params) when is_list(Params) ->
     {Proplist, TooMany} = zip(Fields, Params, {[], false}),
-    TooMany andalso throw({invalid, "superfluous parameters"}),
+    TooMany andalso throw({error, invalid_params, "superfluous parameters"}),
     lists:reverse(Proplist).
 
 strip_keys([{K, V} | Proplists], [#field{name = K} | Defs], Acc) ->
@@ -127,79 +147,27 @@ zip(_1, [], Result) ->
 zip([H1|R1], [H2|R2], {Result, TooMany}) ->
     zip(R1, R2, {[{H1, H2}|Result], TooMany}).
 
-cb_apply(Mod, Function) ->
-    cb_apply(Mod, Function, []).
-cb_apply({Mod, State}, Function, Args) ->
-    erlang:apply(Mod, Function, Args ++ [State]);
-cb_apply(Mod, Function, Args) ->
-    erlang:apply(Mod, Function, Args).
+is_proplist([]) ->
+    true;
+is_proplist([{_,_} | Tail]) ->
+    is_proplist(Tail);
+is_proplist(_) ->
+    false.
 
-%% --------------------------------------------------------------------------------
-%% -- backwards compatibility functions
+sort_params(Params, Fields) ->
+    case length(Params) == length(Fields) of
+        true ->
+            sort_params1(Params, Fields, []);
+        false ->
+            throw({error, invalid_params, "superfluous parameters"})
+    end.
 
-module_type({Mod, _}) ->
-    module_type(Mod);
-module_type(Mod) ->
-    atom_to_binary(Mod, utf8).
-
-build_field(#rpc_param{name = Name, optional = Optional, description = Desc, default = Default}, Type) ->
-    #field{name = atom_to_binary(Name, utf8),
-	   description = Desc,
-	   type = Type,
-	   mandatory = not Optional,
-	   opts = [{default, Default}]
-	  }.
-build_array(#rpc_bulk{name = Name, description = Desc}, Fields) ->
-    #array{name = Name,
-           type = #struct{fields = Fields},
-           description = Desc
-          }.
-
-build_fields_spec(P = #rpc_param{type = string}) ->
-    build_field(P, #string{});
-build_fields_spec(P = #rpc_param{type = {enum, Enums}}) ->
-    build_field(P, #enumeration{enum = Enums});
-build_fields_spec(_P = #rpc_param{name = Name, optional = Optional, description = Desc, type = ArrayType, default = Default})
-  when (ArrayType == list) orelse (ArrayType == array) ->
-    #array{name = atom_to_binary(Name, utf8),
-           description = Desc,
-           type = {<<"any">>,[]},
-           mandatory = not Optional,
-           opts = [{default, Default}]};
-build_fields_spec(P = #rpc_param{type = Type}) ->
-    build_field(P, {atom_to_binary(Type, utf8), []}).
-
-build_rpc_opts(#rpc_method{params_as = list}) ->
-    [{methods_as, atom},{params_as, list}];
-build_rpc_opts(_) ->
-    [{methods_as, atom},{params_name_as, atom}].
-
-build_rpc_typespec(Mod, M = #rpc_method{name = Name, description = Desc}) ->
-    Fields = case cb_apply(Mod, param_info, [Name]) of
-        ListOfValues when is_list(ListOfValues) ->
-            fields(ListOfValues);
-        #rpc_bulk{reuse = Method,
-                  except = Except} = Bulk ->
-            ToReuse = cb_apply(Mod, param_info, [Method]),
-            {BulkInfo, SingleInfo} = lists:partition(fun(#rpc_param{name = PName}) ->
-                                                             not lists:member(PName, Except)
-                                                     end, ToReuse),
-            BulkInfo ++ [build_array(Bulk, fields(SingleInfo))]
-    end,
-    #rpc{name = atom_to_binary(Name, utf8), description = Desc,
-	 input = #object{name = input, fields = Fields, opts = build_rpc_opts(M)}
-	}.
-
-fields(ListOfValues) -> [build_fields_spec(F) || F <- ListOfValues].
-
-build_hello_info(Mod, DefaultNamespace) ->
-    {module_type(Mod), DefaultNamespace,
-        [build_rpc_typespec(Mod, RPC) || RPC <- cb_apply(Mod, method_info)]}.
-
-find_hello_info(Mod, DefaultNamespace) ->
-    try
-        cb_apply(Mod, hello_info)
-    catch
-        error:undef ->
-            build_hello_info(Mod, DefaultNamespace)
+sort_params1([], [], Akk) ->
+    Akk;
+sort_params1(Params, [ HeadField | TailFields ], Akk) ->
+    case proplists:lookup(HeadField, Params) of
+        {HeadField, Value} ->
+            sort_params1(proplists:delete(HeadField, Params), TailFields, Akk ++ [Value]);
+        none ->
+            throw({error, invalid_params, "params do not match"})
     end.

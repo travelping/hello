@@ -1,4 +1,4 @@
-% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
+% Copyright 2010-2014, Travelping GmbH <info@travelping.com>
 
 % Permission is hereby granted, free of charge, to any person obtaining a
 % copy of this software and associated documentation files (the "Software"),
@@ -21,43 +21,51 @@
 % @doc This module is the main interface to the hello application.
 -module(hello).
 -behaviour(application).
--export([start/2, stop/1]).
--export([start/0, run_stateless_binary_request/3, run_stateless_binary_request/4]).
--export([bind_stateful/3, bind_stateless/2, bind_stateless/3, bindings/0]).
--export_type([url/0, decoded_url/0, transport_params/0]).
+-export([start/2, stop/1, start/0]).
+-export([bind/7, bind_handler/3, unbind/2, bindings/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
--type url() :: string().
--type decoded_url() :: #ex_uri{}.
--define(APPS, [sasl, syntax_tools, compiler, goldrush, lager, crypto, cowlib, ranch, cowboy, ex_uri, erlzmq, ibrowse, hello]).
 
-% @doc Starts the application and all dependencies.
-% This is useful for debugging purposes.
+-define(APPS, [sasl, syntax_tools, compiler, goldrush, lager, crypto, cowlib, ranch, cowboy, ex_uri, erlzmq, ibrowse, jsx, hello]).
+
+%% --------------------------------------------------------------------------------
+%% -- type definitions
+-type url()         :: #ex_uri{}.
+-type bind_errors() ::  {error, callback_not_loaded} |
+                        {error, callback_already_defined} |
+                        {error, typespec_not_loaded} |
+                        {error, {badurl, term()}}.
+
+%% --------------------------------------------------------------------------------
+%% -- debugging stuff
+% @doc Starts the application and all dependencies. For debugging and testing.
 start() ->
     [application:start(App) || App <- ?APPS].
 
+% @doc Callback for application behaviour.
 start(_Type, _StartArgs) ->
-    %% create the log dir
     {ok, Supervisor} = hello_supervisor:start_link(),
     {ok, Supervisor, undefined}.
 
-stop(_) ->
+% @doc Callback for application behaviour.
+stop(_StopArgs) ->
     ok.
 
-bind_stateful(URL, CallbackModule, Args) ->
-    bind_uri(stateful, URL, CallbackModule, Args).
-
-% @doc Starts a stateless RPC server on the given URL.
+%% --------------------------------------------------------------------------------
+%% -- hello binding API
+% @doc Starts a RPC server on the given URL.
 %   The transport implementation that is chosen depends on
 %   the protocol field of the URL. The available transports are documented
-%   below:
+%   below. Hello is capable of binding multiple services to a given URL. Arriving
+%   messages are routed according to their method prefix. Therefore it is crucial
+%   to spend a unique prefix on every callback module. "CallbackArg" is the initial
+%   argument to the callback module and is executed by init/1.
 %
 %    <table border="1">
 %      <thead><tr><td width="140"><b>URL scheme</b></td><td><b>Transport</b></td><td><b>Notes</b></td></tr></thead>
 %      <tbody>
-%        <tr><td>http://...</td><td>HTTP</td><td>Multiple services can be bound to the same host/port
-%                                                combination, as long as the path is different.</td></tr>
+%        <tr><td>http://...</td><td>HTTP</td><td>Default Port is 80.</td></tr>
 %        <tr><td>zmq-tcp://...</td><td>ZeroMQ over TCP</td><td>The port <em>must</em> be specified.</td></tr>
 %        <tr><td>zmq-ipc://...</td><td>ZeroMQ over Unix Sockets</td><td>The path can be either absolute or relative.</td></tr>
 %      </tbody>
@@ -66,9 +74,9 @@ bind_stateful(URL, CallbackModule, Args) ->
 %   The function returns:
 %   <ul>
 %     <li>``ok'' when the server has been bound successfully</li>
-%     <li>``{error, already_started}'' when the same module is already bound to the given URL</li>
-%     <li>``{error, occupied}'' when a different module is already bound to the given URL</li>
-%     <li>``{error, {transport, term()}}'' when there was an error starting the server</li>
+%     <li>``{error, callback_not_loaded}'' when the callback module is not loaded</li>
+%     <li>``{error, callback_already_defined}'' when the same module is already bound to the given URL</li>
+%     <li>``{error, typespec_not_loaded}'' when the yang typespec cannot be loaded</li>
 %   </ul>
 %
 %   The function will <b>exit</b>:
@@ -76,54 +84,40 @@ bind_stateful(URL, CallbackModule, Args) ->
 %     <li>with reason ``badurl'' when the URL is malformed</li>
 %     <li>with reason ``badprotocol'' when the URL uses an unknown scheme</li>
 %   </ul>
--spec bind_stateless(url(), module()) -> ok | {error, already_started} | {error, occupied} | {error, {transport, term()}}.
-bind_stateless(URL, CallbackModule) ->
-    bind_stateless(URL, CallbackModule, []).
+-spec bind_handler(url(), callback(), term()) -> ok | bind_errors().
+bind_handler(URL, CallbackMod, CallbackArg) ->
+    bind(URL, [], CallbackMod, hello_handler, [{callback_args, CallbackArg}], hello_proto_jsonrpc, []).
 
-bind_stateless(URL, CallbackModule, Args) ->
-    bind_uri(stateless, URL, CallbackModule, Args).
-
-bind_uri(Type, URL, CallbackModule, Args) ->
+% @doc Generic interface for binding callback modules.
+%   This function is independent from protocol or transport specific arguments. It should only be used
+%   for developing purposes. A more convenient shortcut is bind_handler/3 which should be capable of everything
+%   you want.
+-spec bind(url(), trans_opts(), callback(), handler(), handler_opts(), protocol(), protocol_opts()) -> ok | bind_errors().
+bind(URL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts) ->
     case (catch ex_uri:decode(URL)) of
-        {ok, Rec = #ex_uri{scheme = Scheme}, _} ->
-            ListenerMod = binding_module(Scheme),
-            case hello_binding_supervisor:start_binding(ListenerMod, Rec, CallbackModule, Type, Args) of
-                {ok, _Pid}     -> ok;
-                {error, Error} -> {error, Error}
+        {ok, ExUriURL, _} ->
+            case code:is_loaded(CallbackMod) of
+                {file, _Loaded} ->
+                    case hello_binding:do_binding(ExUriURL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts) of
+                        {ok, _Pid}     -> ok;
+                        {error, Error} -> {error, Error}
+                    end;
+                false ->
+                    {error, callback_not_loaded}
             end;
         Other ->
-            error({badurl, URL, Other})
+            {error, {badurl, Other}}
     end.
 
-binding_module("zmq-tcp") -> hello_zmq_listener;
-binding_module("zmq-ipc") -> hello_zmq_listener;
-binding_module("http")    -> hello_http_listener;
-binding_module("sockjs")  -> hello_sockjs_listener;
-binding_module(_Scheme)   -> error(notsup).
+% @doc Unbind a callback module from a URL.
+%   You can get the arguments from bindings/0.
+-spec unbind(url_string(), callback()) -> ok.
+unbind(Url, CallbackMod) ->
+    hello_binding:undo_binding(Url, CallbackMod).
 
-% @doc Return the list of bound modules.
--spec bindings() -> [{url(), module()}].
+% @doc List of all bound callbacks with some additional information.
+%   This can be used to apply unbind/2.
+-spec bindings() -> [{url_string(), callback(), handler(), protocol()}].
 bindings() ->
-    Bindings0 = [{ex_uri:encode(Binding#binding.url), dict:to_list(Binding#binding.callbacks)} || Binding <- hello_registry:bindings()],
-    lists:foldl(
-        fun({Url, Callbacks}, Bindings1) ->
-                Bindings1 ++ [{Url, Cb#callback.mod} || {_, [Cb]} <- Callbacks]
-        end, [], Bindings0).
-
--type transport_params() :: [{atom(), any()}].
-% @doc Run a single not-yet-decoded RPC request against the given callback module.
-%   The request must be given as an encoded binary.
-%   The values in ``TransportContextParams'' is inserted into the context of the request.
-%
-%   The request is <b>not</b> logged.
--spec run_stateless_binary_request(module(), binary(), transport_params()) -> binary().
-run_stateless_binary_request(CallbackModule, Message, TransportContextParams) ->
-    run_stateless_binary_request(hello_proto_jsonrpc, CallbackModule, Message, TransportContextParams).
-
-run_stateless_binary_request(Protocol, CallbackModule, Message, TransportProperties) ->
-    case hello_stateless_handler:run_binary_request(Protocol, CallbackModule, TransportProperties, Message) of
-        {ok, _Mod, _Req, Resp} ->
-            hello_proto:encode(Resp);
-        {proto_reply, Resp} ->
-            hello_proto:encode(Resp)
-    end.
+    Bindings = hello_binding:bindings(),
+    [ {ex_uri:encode(ExUriURL), Callback, Handler, Protocol} || {ExUriURL, Callback, Handler, Protocol} <- Bindings ].

@@ -20,23 +20,79 @@
 
 % @private
 -module(hello_http_client).
--behaviour(hello_client).
--export([validate_options/1, init/2, send_request/3, handle_info/3, terminate/3]).
 
-%% internal
--export([http_send/4]).
+-behaviour(hello_client).
+-export([init_transport/2, send_request/2, terminate_transport/2]).
+-export([http_send/3]).
 
 -include("internal.hrl").
-
 -record(http_options, {
     ib_opts :: list({atom(), term()}),
     method = post :: 'put' | 'post'
 }).
-
 -record(http_state, {
     url :: string(),
     options :: #http_options{}
 }).
+
+%% hello_client callbacks
+init_transport(URL, Options) ->
+    case validate_options(Options) of
+        {ok, ValOpts} ->
+            {ok, #http_state{url = ex_uri:encode(URL), options = ValOpts}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+send_request(Message = {_Request, _EncodeInfo}, State) ->
+    spawn(?MODULE, http_send, [self(), Message, State]),
+    {ok, State};
+send_request(_, State) ->
+    {error, no_valid_request, State}.
+
+terminate_transport(_Reason, _State) ->
+    ok.
+
+%% http client helpers
+http_send(Client, {Request, EncInfo}, State = #http_state{url = URL, options = Options}) ->
+    #http_options{method = Method, ib_opts = Opts} = Options,
+    {ok, Vsn} = application:get_key(hello, vsn),
+    MimeType = "application/" ++ binary_to_list(EncInfo),
+    Headers = [{"Content-Type", MimeType},
+               {"Accept", MimeType},
+               {"User-Agent", "hello/" ++ Vsn}],
+    case ibrowse:send_req(URL, Headers, Method, Request, Opts) of
+        {ok, _HttpCode, _, []} -> %% empty responses are ignored
+            ok;
+        {ok, "200", _, Body} ->
+            outgoing_message(Client, EncInfo, Body, State);
+        {ok, "201", _, Body} ->
+            outgoing_message(Client, EncInfo, Body, State);
+        {ok, "202", _, Body} ->
+            outgoing_message(Client, EncInfo, Body, State);
+        {ok, HttpCode, _, _Body} ->
+            Client ! {?INCOMING_MSG, {error, list_to_integer(HttpCode), State}},
+            exit(normal);
+        {error, Reason} ->
+            Client ! {?INCOMING_MSG, {error, Reason, State}},
+            exit(normal)
+    end.
+
+
+outgoing_message(Client, EncInfo, Body, State) ->
+    Body1 = list_to_binary(Body),
+    AtomEncInfo = binary_to_atom(EncInfo, latin1),
+    case AtomEncInfo of
+        ?JSONRPC ->
+            Body2 = binary:replace(Body1, <<"}{">>, <<"}$$${">>, [global]),
+            Body3 = binary:replace(Body2, <<"]{">>, <<"]$$${">>, [global]),
+            Body4 = binary:replace(Body3, <<"}[">>, <<"}$$$[">>, [global]),
+            Bodies = binary:split(Body4, <<"$$$">>, [global]),
+            [ Client ! {?INCOMING_MSG, {ok, AtomEncInfo, SingleBody, State}} || SingleBody <- Bodies ];
+        _NoJson ->
+            Client ! {?INCOMING_MSG, {ok, AtomEncInfo, Body1, State}}
+    end.
+
 
 validate_options(Options) ->
     validate_options(Options, #http_options{ib_opts = [{socket_options, [{reuseaddr, true }]}]}).
@@ -54,66 +110,3 @@ validate_options([_ | R], Opts) ->
 validate_options([], Opts) ->
     {ok, Opts}.
 
-init(URL, Options) ->
-    {ok, #http_state{url = ex_uri:encode(URL), options = Options}}.
-
-send_request(ClientCtx, Request, State = #http_state{url = URL, options = Options}) ->
-    spawn(?MODULE, http_send, [ClientCtx, Request, URL, Options]),
-    {noreply, State}.
-
-handle_info(_ClientCtx, _Info, State) ->
-    {noreply, State}.
-
-terminate(_ClientCtx, _Reason, _State) ->
-    ok.
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- Helpers
-http_send(ClientCtx, Request, URL, #http_options{method = Method, ib_opts = Opts}) ->
-    EncRequest = hello_proto:encode(Request),
-    {ok, Vsn} = application:get_key(hello, vsn),
-    MimeType = hello_proto:mime_type(Request),
-    Headers = [{"Content-Type", binary_to_list(MimeType)},
-               {"Accept", binary_to_list(MimeType)},
-               {"User-Agent", "hello/" ++ Vsn}],
-    ResponseBody =
-        case ibrowse:send_req(URL, Headers, Method, EncRequest, Opts) of
-            {ok, "200", _, Body} ->
-                Body;
-            {ok, "201", _, Body} ->
-                Body;
-            {ok, "202", _, Body} ->
-                Body;
-
-            %% gotcha, those clauses don't return
-            {ok, HttpCode, _, _} ->
-                hello_client:client_ctx_reply(ClientCtx, {error, {transport, list_to_integer(HttpCode)}}),
-                exit(normal);
-            {error, Reason} ->
-                hello_client:client_ctx_reply(ClientCtx, {error, {transport, Reason}}),
-                exit(normal)
-        end,
-    ClientReply =
-        case Request of
-            #request{reqid = undefined} ->
-                ok;
-            #request{} ->
-                case hello_proto:decode(Request, ResponseBody) of
-                    #response{result = Result} ->
-                        {ok, Result};
-                    Error = #error{} ->
-                        {error, hello_proto:error_resp_to_error_reply(Error)};
-                    _ ->
-                        {error, bad_response}
-                end;
-            #batch_request{} ->
-                case hello_proto:decode(Request, ResponseBody) of
-                    #batch_response{responses = BatchResps} ->
-                        lists:map(fun (#response{result = Result}) -> {ok, Result};
-                                      (Error = #error{}) -> {error, hello_proto:error_resp_to_error_reply(Error)}
-                                  end, BatchResps);
-                    _ ->
-                        {error, {http, bad_response}}
-                end
-        end,
-    hello_client:client_ctx_reply(ClientCtx, ClientReply).

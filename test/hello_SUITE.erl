@@ -2,93 +2,96 @@
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
-
--include("../include/hello.hrl").
+-include("hello_test.hrl").
+-include("../include/internal.hrl").
 
 % ---------------------------------------------------------------------
 % -- test cases
-bind_stateless_http_url_errors(_Config) ->
-    URL = "http://127.0.0.1:5673/test",
-    ok = hello:bind_stateless(URL, test_1),
+bind_http(_Config) ->
+    bind_url(?HTTP).
 
-    %% binding the same module returns already_started
-    {error, already_started} = hello:bind_stateless(URL, test_1),
+bind_zmq_tcp(_Config) ->
+    bind_url(?ZMQ_TCP).
 
-    %% binding a different one returns occupied
-    {error, occupied} = hello:bind_stateless(URL, test_2).
+bind_zmq_ipc(_Config) ->
+    bind_url(?ZMQ_IPC).
 
-bind_stateless_zmq_url(_Config) ->
-    ok = hello:bind_stateless("zmq-tcp://127.0.0.1:6001", test_1).
+unbind_all(_Config) ->
+    Bindings = hello:bindings(),
+    [ hello:unbind(Url, CallbackMod) || {Url, CallbackMod, _, _} <- Bindings],
+    [] = hello:bindings().
 
-bind_stateless_zmq_url_errors(_Config) ->
-    URL = "zmq-tcp://127.0.0.1:6002",
-    ok = hello:bind_stateless(URL, test_1),
+start_supervised(_Config) ->
+    [ start_client(Transport) || Transport <- ?TRANSPORTS ],
+    [ hello_client_sup:stop_client(Url) || {Url, _} <- ?TRANSPORTS ],
+    [] = hello_client_sup:clients(),
+    ok.
 
-    %% binding the same module returns already_started
-    {error, already_started} = hello:bind_stateless(URL, test_1),
+start_named_supervised(_Config) ->
+    [ start_named_client(Transport) || Transport <- ?TRANSPORTS ],
+    [ hello_client_sup:stop_client(Url) || {Url, _} <- ?TRANSPORTS ],
+    [] = hello_client_sup:clients(),
+    ok.
 
-    %% binding a different one returns occupied
-    {error, occupied} = hello:bind_stateless(URL, test_2).
-
-bind_stateless_cross_protocol_checking(_Config) ->
-    ok = hello:bind_stateless("http://localhost:6008", test_1),
-    {error, occupied} = hello:bind_stateless("zmq-tcp://127.0.0.1:6008", test_2),
-
-    ok = hello:bind_stateless("zmq-tcp://*:6009", test_1),
-    {error, occupied} = hello:bind_stateless("http://127.0.0.1:6009", test_2).
-
-bindings(_Config) ->
-    OrigBindings = lists:sort(hello:bindings()),
-
-    IPCPath = filename:absname("/tmp/bindings_test.ipc"),
-
-
-    Bindings0 = [{"http://127.0.0.1:6003/test_1", test_1},
-                {"http://127.0.0.1:6003/test_2", test_2},
-                {"http://127.0.0.1:6004", test_3, [{exclusive, false}]},
-                {"http://127.0.0.1:6004", test_4, [{exclusive, false}]},
-                {"zmq-ipc://" ++ IPCPath, test_5},
-                {"zmq-tcp://127.0.0.1:6005", test_6}],
-
-    Bindings1 = lists:map(fun
-            ({Url, Module}) ->
-                ct:log("Binding ~p to ~p", [Module, Url]),
-                ok = hello:bind_stateless(Url, Module),
-                {Url, Module};
-            ({Url, Module, Args}) ->
-                ct:log("Binding ~p to ~p with ~p", [Module, Url, Args]),
-                ok = hello:bind_stateless(Url, Module, Args),
-                {Url, Module}
-        end, Bindings0),
-
-    Bindings1 = lists:sort(hello:bindings() -- OrigBindings).
+keep_alive(_Config) ->
+    bind_url(?HTTP),
+    {Url, TransportOpts} = ?HTTP,
+    meck:new(hello_client, [passthrough]),
+    true = meck:validate(hello_client),
+    ok = meck:expect(hello_client, handle_internal, fun(Message, State) -> ct:log("got pong"), meck:passthrough([Message, State]) end),
+    {ok, _Client} = hello_client:start_supervised(Url, TransportOpts, [{protocol, hello_proto_jsonrpc}], [{keep_alive_interval, 100}] ),
+    timer:sleep(310), %% lets wait for some pongs, should be around 3-4; look them up in the ct log
+    meck:unload(hello_client),
+    ok.
 
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-    [bindings,
-     bind_stateless_http_url_errors,
-     bind_stateless_zmq_url, bind_stateless_zmq_url_errors,
-     bind_stateless_cross_protocol_checking].
+    [bind_http,
+     bind_zmq_tcp,
+     bind_zmq_ipc,
+     unbind_all,
+     start_supervised,
+     start_named_supervised,
+     keep_alive
+     ].
 
 init_per_suite(Config) ->
     hello:start(),
-    Mods = [test_1, test_2, test_3, test_4, test_5, test_6],
-    setup_cb_mocks(Mods),
-    [{cb_modules, Mods} | Config].
+    [ code:ensure_loaded(Callback) || Callback <- ?CALLBACK_MODS ],
+    Config.
 
-end_per_suite(Config) ->
-    teardown_cb_mocks(?config(cb_modules, Config)),
+end_per_suite(_Config) ->
     application:stop(hello).
 
-setup_cb_mocks([]) -> ok;
-setup_cb_mocks([Mod | Rest]) ->
-    ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, hello_info,
-        fun() ->
-            {Mod, atom_to_binary(Mod, utf8), []}
-        end),
-    setup_cb_mocks(Rest).
+% ---------------------------------------------------------------------
+% -- helpers
+bind_url(Transport) ->
+    [ ok = bind_url1(Transport, Handler, Protocol) || Handler <- ?HANDLER, Protocol <- ?PROTOCOLS ].
 
-teardown_cb_mocks(Mods) ->
-    [ok = meck:unload(Mod) || Mod <- Mods].
+bind_url1({Url, TransportOpts}, Handler, Protocol) ->
+    [FirstCallback, SecondCallback] = proplists:get_value(Handler, ?CALLBACKS),
+    HandlerOpts = proplists:get_value(Handler, ?HANDLER_ARGS),
+    ProtocolOpts = proplists:get_value(Protocol, ?PROTOCOL_ARGS),
+
+    %% bind the first callback module
+    ok = hello:bind(Url, TransportOpts, FirstCallback, Handler, HandlerOpts, Protocol, ProtocolOpts),
+
+    %% binding the same module returns already_started
+    {error, callback_already_defined} = hello:bind(Url, TransportOpts, FirstCallback, Handler, HandlerOpts, Protocol, ProtocolOpts),
+
+    %% binding a different (the second) callback should also be possible 
+    ok = hello:bind(Url, TransportOpts, SecondCallback, Handler, HandlerOpts, Protocol, ProtocolOpts).
+
+start_client(Transport) ->
+    {Url, TransportOpts} = Transport, 
+    ProtocolOpts = [{protocol, hello_proto_jsonrpc}],
+    {ok, Pid} = hello_client:start_supervised(Url, TransportOpts, ProtocolOpts, []),
+    Pid.
+
+start_named_client(Transport) ->
+    Name = proplists:get_value(Transport, ?CLIENT_NAMES),
+    {Url, TransportOpts} = Transport, 
+    ProtocolOpts = [{protocol, hello_proto_jsonrpc}],
+    {ok, _Pid} = hello_client:start_supervised(Name, Url, TransportOpts, ProtocolOpts, []),
+    Name.
