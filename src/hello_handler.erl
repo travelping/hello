@@ -32,9 +32,10 @@
 
 %% @doc RPC handler behaviour.
 -module(hello_handler).
--export([set_idle_timeout/1,
-         set_idle_timeout/2, 
-         proceed_request/5, 
+-export([get_handler/4, process/2,
+         set_idle_timeout/1,
+         set_idle_timeout/2,
+         proceed_request/5,
          reply/2
          ]).
 -export([notify/3]).
@@ -50,7 +51,7 @@
 %% -- internal records
 -record(state, {
     mod                     :: module(),
-    mod_state               :: term(),
+    state                   :: term(),
     context                 :: #context{},
     protocol                :: module(),
     async_reply_map         :: gb_tree(),
@@ -69,6 +70,21 @@ behaviour_info(callbacks) ->
      ];
 behaviour_info(_Other) ->
     undefined.
+
+get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
+    case hello_registry:lookup({handler, Name, Identifier}) of
+        {error, not_found} ->
+            start_handler(Identifier, HandlerMod, HandlerArgs);
+        {ok, Handler} ->
+            Handler
+    end.
+
+start_handler(Identifier, HandlerMod, HandlerArgs) ->
+    {ok, Handler} = gen_server:start(?MODULE, {Identifier, HandlerMod, HandlerArgs}, []),
+    Handler.
+
+process(Handler, Request) ->
+    gen_server:cast(Handler, {request, Request}).
 
 %% @equiv set_idle_timeout(self(), Timeout)
 -spec set_idle_timeout(timeout()) -> ok.
@@ -99,26 +115,43 @@ notify(Context, Method, Params) when is_list(Params) ->
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 %% @hidden
-init(Binding) ->
-    CallbackMod = Binding#binding.callback,
-    HandlerOpts = Binding#binding.handler_args,
-    CallbackArgs = proplists:get_value(callback_args, HandlerOpts),
-    Protocol = Binding#binding.protocol,
-    ExUriUrl = Binding#binding.url,
-    State0 = #state{mod = CallbackMod,
-                    protocol = Protocol,
-                    async_reply_map = gb_trees:empty(),
-                    context = undefined,
-                    timer = #timer{},
-                    url = ExUriUrl
-                    },
-    State1 = start_idle_timeout(State0),
-    case CallbackMod:init(CallbackArgs) of
-        {ok, ModState} ->
-            {ok, State1#state{mod_state = ModState}}
+init({Identifier, HandlerMod, HandlerArgs}) ->
+    case HandlerMod:init(Identifier, HandlerArgs) of
+        Result when is_tuple(Result) and (element(1, Result) == ok) ->
+            setelement(2, Result, #state{mod = HandlerMod, state = element(2, Result)});
+        Other ->
+            Other
     end.
 
 %% @hidden
+handle_cast({request, #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = HandlerState}) ->
+    Request = {Method, Args},
+    ExUriUrl = undefined,
+    ProtocolMod = undefined,
+    try Mod:handle_request(Context, Method, Args, HandlerState) of
+        {reply, Response, NewHandlerState} ->
+            send(Context, Response),
+            {noreply, State#state{state = NewHandlerState}};
+        {noreply, NewModState} ->
+            Key = Context#request_context.req_ref,
+            {noreply, State#state{state = NewModState}};
+        {stop, Reason, Response, NewModState} ->
+            send(Context, Response),
+            {stop, Reason, State#state{state = NewModState}};
+        {stop, Reason, NewModState} ->
+            {stop, Reason, State#state{mod=NewModState}};
+        {stop, NewModState} ->
+            {stop, State#state{mod=NewModState}};
+        {ignore, NewModState} ->
+            {noreply, State#state{state = NewModState}};
+        FalseAnswer ->
+            % TODO: log it
+            {noreply, State}
+    catch
+        Error:Reason ->
+            lager:error("handler crashed with error ~p", [{Error, Reason, erlang:get_stacktrace()}]),
+            {noreply, State}
+    end;
 handle_cast({set_idle_timeout, Timeout}, State = #state{timer = Timer}) ->
     NewTimer = Timer#timer{idle_timeout = Timeout},
     {noreply, reset_idle_timeout(State#state{timer = NewTimer})};
@@ -130,7 +163,7 @@ handle_cast({async_reply, ReqContext, Result}, State = #state{async_reply_map = 
                 {reply, ProtoResponse} ->
                     Response = hello_proto:build_response(Request, ProtoResponse),
                     hello_proto:log(ProtocolMod, Request, Response, Mod, ExUriUrl),
-                    send(Response),
+                    send(Mod, Response),
                     {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}};
                 {noreply, ReplaceInfo} ->
                     {noreply, State#state{async_reply_map = gb_trees:enter(ReqRef, {Request, ReplaceInfo}, AsyncMap)}};
@@ -159,16 +192,16 @@ handle_info({?INCOMING_MSG, Request = #request{context = Context}}, State0) ->
     do_request(Request, State#state{context = Context});
 handle_info({terminate, normal}, State) ->
     {stop, normal, State};
-handle_info(InfoMsg, State = #state{mod = Mod, mod_state = ModState, context = Context}) ->
+handle_info(InfoMsg, State = #state{mod = Mod, state = ModState, context = Context}) ->
     case Mod:handle_info(Context, InfoMsg, ModState) of
         {noreply, NewModState} ->
-            {noreply, State#state{mod_state = NewModState}};
+            {noreply, State#state{state = NewModState}};
         {stop, Reason, NewModState} ->
-            {stop, Reason, State#state{mod_state = NewModState}}
+            {stop, Reason, State#state{state = NewModState}}
     end.
 
 %% @hidden
-terminate(Reason, _State = #state{mod = Mod, mod_state = ModState, context = Context, timer = Timer}) ->
+terminate(Reason, _State = #state{mod = Mod, state = ModState, context = Context, timer = Timer}) ->
     case {Reason, Timer#timer.stopped_because_idle} of
         {normal, true} ->
             Mod:terminate(Context, idle_timeout, ModState);
@@ -184,31 +217,10 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 %% @hidden
-do_request(Request, State = #state{mod = Mod, mod_state = ModState, protocol = ProtocolMod, async_reply_map = AsyncMap, url = ExUriUrl}) ->
+do_request(Request, State = #state{mod = Mod, state = ModState, protocol = ProtocolMod, async_reply_map = AsyncMap, url = ExUriUrl}) ->
     Context = Request#request.context,
     ReqContext = #request_context{req_ref = make_ref(), handler_pid = self(), context = Context, protocol_info = undefined},
-    case hello_proto:do_request(?MODULE, Mod, ModState, ReqContext, Request) of
-        {reply, ProtoResponse, NewModState} ->
-            Response = hello_proto:build_response(Request, ProtoResponse),
-            hello_proto:log(ProtocolMod, Request, Response, Mod, ExUriUrl),
-            send(Response),
-            {noreply, State#state{mod_state = NewModState}};
-        {noreply, NewModState} ->
-            Key = ReqContext#request_context.req_ref,
-            NewAsyncMap = gb_trees:enter(Key, {Request, undefined}, AsyncMap),
-            {noreply, State#state{mod_state = NewModState, async_reply_map = NewAsyncMap}};
-        {stop, Reason, ProtoResponse, NewModState} ->
-            Response = hello_proto:build_response(Request, ProtoResponse),
-            hello_proto:log(ProtocolMod, Request, Response, Mod, ExUriUrl),
-            send(Response),
-            {stop, Reason, State#state{mod_state = NewModState}};
-        {stop, Reason, NewModState} ->
-            {stop, Reason, State#state{mod=NewModState}};
-        {stop, NewModState} ->
-            {stop, State#state{mod=NewModState}};
-        {ignore, NewModState} -> %% can be used for e.g. notifications
-            {noreply, State#state{mod_state = NewModState}}
-    end.
+    hello_proto:do_request(?MODULE, Mod, ModState, ReqContext, Request).
 
 %% --------------------------------------------------------------------------------
 %% -- interface for protocol to execute method with parameters on callback
@@ -224,8 +236,8 @@ proceed_request(Mod, ModState, ReqContext, Method, Params) ->
 %% --------------------------------------------------------------------------------
 %% -- finally used to send back a response message to hello_binding
 %% @hidden
-send(Response) ->
-    hello_binding:outgoing_message(Response).
+send(Context, Response) ->
+    hello_service:outgoing_message(Context, Response).
 
 %% --------------------------------------------------------------------------------
 %% -- helpers for timer functionality

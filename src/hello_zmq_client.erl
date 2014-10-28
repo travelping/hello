@@ -39,11 +39,9 @@
 init_transport(URIRec, _Options) ->
     gen_server:start_link(?MODULE, {self(), URIRec}, []).
 
-send_request(Message = {_Request, _EncodeInfo}, TransportPid) ->
-    gen_server:call(TransportPid, Message),
-    {ok, TransportPid};
-send_request(_, TransportPid) ->
-    {error, no_valid_request, TransportPid}.
+send_request(Message, TransportPid) ->
+    gen_server:call(TransportPid, {send, Message}),
+    {ok, TransportPid}.
 
 terminate_transport(_Reason, TransportPid) ->
     gen_server:cast(TransportPid, stop).
@@ -61,19 +59,16 @@ init({Client, URLRec}) ->
             {stop, Error}
     end.
 
-handle_call({Request, EncodeInfo}, _From, State = #zmq_state{socket = Socket}) ->
+handle_call({send, Request}, _From, State = #zmq_state{socket = Socket}) ->
     erlzmq:send(Socket, <<>>, [sndmore]),
-    erlzmq:send(Socket, EncodeInfo, [sndmore]),
     erlzmq:send(Socket, Request),
     {reply, ok, State}.
 
 handle_info({zmq, _Socket, <<>>, [rcvmore]}, State) ->
     {noreply, State};
-handle_info({zmq, _Socket, EncInfo, [rcvmore]}, State) ->
-    {noreply, State#zmq_state{encode_info = EncInfo}};
-handle_info({zmq, _Socket, BinResponse, []}, State = #zmq_state{client = Client, encode_info = EncInfo}) ->
-    Client ! {?INCOMING_MSG, {ok, binary_to_atom(EncInfo, latin1), BinResponse, self()}},
-    {noreply, State#zmq_state{encode_info = undefined}};
+handle_info({zmq, _Socket, BinResponse, []}, State = #zmq_state{client = Client}) ->
+    Client ! {?INCOMING_MSG, {ok, BinResponse, self()}},
+    {noreply, State};
 handle_info(_, State) ->
     {noreply, State}.
 

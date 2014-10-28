@@ -83,7 +83,7 @@ outgoing_message(Client, EncInfo, Body, State) ->
     Body1 = list_to_binary(Body),
     AtomEncInfo = binary_to_atom(EncInfo, latin1),
     case AtomEncInfo of
-        ?JSONRPC ->
+        todo ->
             Body2 = binary:replace(Body1, <<"}{">>, <<"}$$${">>, [global]),
             Body3 = binary:replace(Body2, <<"]{">>, <<"]$$${">>, [global]),
             Body4 = binary:replace(Body3, <<"}[">>, <<"}$$$[">>, [global]),

@@ -58,7 +58,6 @@ role_children(client) ->
     [{client_sup,   {hello_client_sup, start_link, []}, transient, infinity, supervisor, [hello_client_sup]}];
 role_children(server) ->
     [{registry,     {hello_registry, start_link, []}, transient, 1000, worker, [hello_registry]},
-     {listener_sup, {hello_listener_supervisor, start_link, []}, transient, infinity, supervisor, [hello_listener_supervisor]},
-     {handler_sup,  {hello_handler_supervisor, start_link, []}, transient, infinity, supervisor, [hello_handler_supervisor]}];
+     {listener_sup, {hello_listener_supervisor, start_link, []}, transient, infinity, supervisor, [hello_listener_supervisor]}];
 role_children(_) ->
     [].

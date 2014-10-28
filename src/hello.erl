@@ -21,13 +21,14 @@
 % @doc This module is the main interface to the hello application.
 -module(hello).
 -behaviour(application).
+-export([start_service/2, stop_service/1,
+         start_listener/1, start_listener/2, start_listener/5,
+         stop_listener/1, call_service/2, call_service/3]).
 -export([start/2, stop/1, start/0]).
 -export([bind/7, bind_handler/3, unbind/2, bindings/0]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
-
--define(APPS, [sasl, syntax_tools, compiler, goldrush, lager, crypto, cowlib, ranch, cowboy, ex_uri, erlzmq, ibrowse, jsx, hello]).
 
 %% --------------------------------------------------------------------------------
 %% -- type definitions
@@ -41,7 +42,7 @@
 %% -- debugging stuff
 % @doc Starts the application and all dependencies. For debugging and testing.
 start() ->
-    [application:start(App) || App <- ?APPS].
+    application:ensure_all_started(hello).
 
 % @doc Callback for application behaviour.
 start(_Type, _StartArgs) ->
@@ -108,6 +109,46 @@ bind(URL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, Protoco
         Other ->
             {error, {badurl, Other}}
     end.
+
+start_service(HandlerMod, HandlerArgs) ->
+    hello_service:register(HandlerMod, HandlerArgs).
+
+stop_service(HandlerMod) ->
+    hello_service:unregister(HandlerMod).
+
+start_listener(URL) ->
+    start_listener(URL, []).
+
+start_listener(URL, TransportOpts) ->
+    start_listener(URL, TransportOpts, hello_proto_jsonrpc, [], hello_router).
+
+start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
+    on_ex_uri(URL, fun(ExUriURL) -> hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) end).
+
+stop_listener(URL) ->
+    stop_listener(URL).
+
+on_ex_uri(URL, Fun) ->
+    case (catch ex_uri:decode(URL)) of
+        {ok, ExUriURL, _} ->
+            Fun(ExUriURL);
+        Other ->
+            error(badarg, [URL, Other])
+    end.
+
+call_service(Name, {Method, Args}) ->
+    Ref = make_ref(),
+    Context = #context{connection_pid = self(), peer = Ref},
+    call_service(Name, undefined, #request{context = Context, method = Method, args = Args}),
+    receive
+        {?INCOMING_MSG, Response} ->
+            Response
+    after
+        5000 ->
+            {error, timeout}
+    end.
+call_service(Name, UniqId, Request) ->
+    hello_service:call(Name, UniqId, Request).
 
 % @doc Unbind a callback module from a URL.
 %   You can get the arguments from bindings/0.

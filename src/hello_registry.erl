@@ -26,12 +26,8 @@
 -compile({no_auto_import,[register/2, unregister/1]}).
 
 -export([
-    start/0, start_link/0,
-    bindings/0,
-    register/2, unregister/1, lookup/1,
-    register_handler/2, unregister_handler/1, lookup_handler/1,
-    register_binding/2, unregister_binding/1, lookup_binding/2,
-    register_listener/2, unregister_listener/1, lookup_listener/1
+    start/0, start_link/0, all/1,
+    register/2, register/3, unregister/1, lookup/1
 ]).
 
 %% gen_server Callbacks
@@ -55,7 +51,10 @@ start_link() ->
 %% --------------------------------------------------------------------------------
 %% -- general API to register, unregister, update or lookup stuff
 register(Key, Value) ->
-    gen_server:call(?SERVER, {register, Key, Value}).
+    gen_server:call(?SERVER, {register, Key, undefined, Value}).
+
+register(Key, Pid, Value) ->
+    gen_server:call(?SERVER, {register, Key, Pid, Value}).
 
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
@@ -64,10 +63,8 @@ lookup(Key) ->
     case ets:lookup(?TABLE, Key) of
         [] ->
             {error, not_found};
-        [{Key, {pid, Pid}}] ->
-            {ok, Pid};
-        [{Key, Value}] ->
-            {ok, Value}
+        [{Key, Pid, Value}] ->
+            {ok, Pid, Value}
     end.
 
 %% --------------------------------------------------------------------------------
@@ -96,37 +93,21 @@ lookup_binding(Namespace, Url) ->
             {error, not_found}
     end.
 
-
 bindings() ->
     Table = ?TABLE,
     Bindings = ets:match(Table, {{binding, {'_', '_'}}, '$1'}),
     [ {ExUriURL, Callback, HandlerType, Protocol} ||
         [#binding{handler_type =  HandlerType, callback = Callback, protocol = Protocol, url = ExUriURL}] <- Bindings ].
 
+all(Type) ->
+    Table = ?TABLE,
+    [{Name, Pid, Args} || [Name, Pid, Args] <- ets:match(Table, {{Type, '$1'}, '$2', '$3'})].
+
 %% --------------------------------------------------------------------------------
 %% -- registry API for handlers (e.g. stateful or stateless)
-register_handler(Binding, Pid) ->
-    register({handler, Binding}, Pid).
-
-unregister_handler(Binding) ->
-    unregister({handler, Binding}).
-
-lookup_handler(Binding) ->
-    lookup({handler, Binding}).
-
-%% --------------------------------------------------------------------------------
-%% -- registry API for listeners
-register_listener(Url, TPid) ->
-    register({listener, Url}, TPid).
-
-unregister_listener(Url) ->
-    unregister({listener, Url}).
-
-lookup_listener(Url) ->
-    lookup({listener, Url}).
 
 update_listener(Url, NewBinding, Mode) ->
-    {ok, ListenerRef} = lookup_listener(Url),
+    {ok, ListenerRef} = todo:lookup(Url),
     case Mode of
         add ->
             case lookup({listener_bindings, ListenerRef}) of
@@ -147,13 +128,13 @@ update_listener(Url, NewBinding, Mode) ->
     end.
 
 check_listener(Url) ->
-    {ok, ListenerRef} = lookup_listener(Url),
+    {ok, ListenerRef} = todo:lookup(Url),
     case lookup({listener_bindings, ListenerRef}) of
         {ok, _Bindings} ->
             ok;
         {error, not_found} -> %% no handler is using the transport handler => kill it
-            unregister_listener(Url),
-            hello_binding:stop_listener(Url),
+            toto:unregister(Url),
+            hello_listener:stop(Url),
             ok
     end.
 %% --------------------------------------------------------------------------------
@@ -163,17 +144,17 @@ init({}) ->
     Table = ets:new(?TABLE, [protected, ordered_set, named_table, {read_concurrency, true}]),
     {ok, Table}.
 
-handle_call({register, Key, Pid}, _From, Table) when is_pid(Pid) ->
+handle_call({register, Key, Pid, Data}, _From, Table) when is_pid(Pid) ->
     case is_process_alive(Pid) of
         true ->
             erlang:monitor(process, Pid),
-            ets:insert(Table, {Key, {pid, Pid}}),
+            ets:insert(Table, {Key, Pid, Data}),
             {reply, ok, Table};
         false ->
             {reply, {error, pid_not_alive}, Table}
     end;
-handle_call({register, Key, Data}, _From, Table) ->
-    ets:insert(Table, {Key, Data}),
+handle_call({register, Key, undefined, Data}, _From, Table) ->
+    ets:insert(Table, {Key, undefined, Data}),
     {reply, ok, Table};
 
 handle_call({unregister, Key}, _From, Table) ->
@@ -192,7 +173,7 @@ handle_call(_Call, _From, State) ->
 handle_info({'EXIT', _From, Reason}, Table) ->
     {stop, Reason, Table};
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
-    ets:match_delete(Table, {'_', {pid, Pid}}),
+    ets:match_delete(Table, {'_', Pid, '_'}),
     {noreply, Table};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
