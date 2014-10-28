@@ -2,4 +2,5 @@
 
 run("clean:runtimedata", _) ->
     tpk_file:delete(tetrapak:subdir("request-logs")),
+    tpk_file:delete(tetrapak:subdir("test/hrl")),
     tpk_file:delete(tetrapak:subdir("status.ipc")).

@@ -33,12 +33,16 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc start a client process
-start_client(URI, Opts) ->
-    supervisor:start_child(?MODULE, [URI, Opts]).
+start_client(URI, Options) ->
+    ChildSpec = generate_child_spec(URI, Options),
+    supervisor:start_child(?MODULE, ChildSpec).
 
 %% @doc start a client process and register a name for it
-start_named_client(Name, URI, Opts) ->
-    supervisor:start_child(?MODULE, [Name, URI, Opts]).
+start_named_client(Name, URI, Options) ->
+    ChildSpec = generate_child_spec(URI, Options),
+    {ok, Pid} = supervisor:start_child(?MODULE, ChildSpec),
+    register(Name, Pid),
+    {ok, Pid}.
 
 %% @doc stop a client process
 stop_client(Name) when is_atom(Name) ->
@@ -46,8 +50,11 @@ stop_client(Name) when is_atom(Name) ->
         Pid when is_pid(Pid) -> supervisor:terminate_child(?MODULE, Pid);
         _                    -> ok
     end;
-stop_client(Pid) ->
-    supervisor:terminate_child(?MODULE, Pid).
+stop_client(Pid) when is_pid(Pid) -> %% a client is NOT deleted by just handing over the pid
+    supervisor:terminate_child(?MODULE, Pid);
+stop_client(URI) ->
+    supervisor:terminate_child(?MODULE, URI),
+    supervisor:delete_child(?MODULE, URI).
 
 %% @doc return a list of running connections
 clients() ->
@@ -55,7 +62,16 @@ clients() ->
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- supervisor callbacks
-init([]) ->
-    {ok, {{simple_one_for_one, 0, 1},
-          [{hello_client, {hello_client, start_link, []},
-            temporary, 500, worker, [hello_client]}]}}.
+init(_Arg) ->
+    {ok, {{one_for_one, 0, 1}, []}}.
+
+%% ----------------------------------------------------------------------------------------------------
+%% -- helpers
+generate_child_spec(URI, Options) ->
+    {   URI,
+        {hello_client, start_link, [URI, Options]},
+        transient,
+        infinity,
+        worker,
+        dynamic
+    }.

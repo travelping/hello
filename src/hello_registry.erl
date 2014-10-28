@@ -23,13 +23,15 @@
 
 -behaviour(gen_server).
 
+-compile({no_auto_import,[register/2, unregister/1]}).
+
 -export([
     start/0, start_link/0,
-    register/3, multi_register/2, unregister/1,
-    lookup/1, lookup_pid/1,
-    lookup_listener/1, lookup_listener/2, listener_key/2,
-    bindings/0, lookup_binding/2,
-    add_to_key/2, update/2
+    bindings/0,
+    register/2, unregister/1, lookup/1,
+    register_handler/2, unregister_handler/1, lookup_handler/1,
+    register_binding/2, unregister_binding/1, lookup_binding/2,
+    register_listener/2, unregister_listener/1, lookup_listener/1
 ]).
 
 %% gen_server Callbacks
@@ -42,117 +44,118 @@
 
 %% --------------------------------------------------------------------------------
 %% -- API
--type name() :: term().
--type data() :: term().
--type address() :: inet:ip4_address() | inet:ip6_address() | {ipc, string()}.
-
--type listener_key() :: tuple().
-
-%% @doc Start the registry server
 -spec start() -> {ok, pid()}.
 start() ->
     gen_server:start({local, hello_registry}, ?MODULE, {}, []).
 
-%% @doc Start the registry server
 -spec start_link() -> {ok, pid()}.
 start_link() ->
     gen_server:start_link({local, hello_registry}, ?MODULE, {}, []).
 
-%% @doc Atomically register a pid under the given name
-%% @equiv multi_register([{Name, Data}], Pid)
--spec register(name(), data(), pid()) -> ok | {already_registered, pid(), data()}.
-register(Name, Data, Pid) when is_pid(Pid) ->
-    multi_register([{Name, Data}], Pid).
+%% --------------------------------------------------------------------------------
+%% -- general API to register, unregister, update or lookup stuff
+register(Key, Value) ->
+    gen_server:call(?SERVER, {register, Key, Value}).
 
-%% @doc Atomically register a pid under multiple names
-%%   When one of the names is already registered, the function returns the pid and data
-%%   of the existing process.
--spec multi_register(list({name(), data()}), pid()) -> ok | {already_registered, pid(), data()}.
-multi_register(RegSpecs, Pid) when is_pid(Pid) ->
-    gen_server:call(?SERVER, {register, RegSpecs, Pid}).
-%%
-%% @doc Atomically update a already registered name.
--spec update(name(), data()) -> ok | {error, not_found}.
-update(Name, Data) ->
-    gen_server:call(?SERVER, {update, Name, Data}).
-
-%% @doc Atomically add the given number to the data associated with a key
--spec add_to_key(name(), number()) -> {ok, pid(), data()} | {error, not_found} | {error, badarg}.
-add_to_key(Name, Number) when is_number(Number) ->
-    gen_server:call(?SERVER, {add_to_key, Name, Number}).
-
-%% @doc Lookup the pid and data for a given name
--spec lookup(name()) -> {ok, pid(), data()} | {error, not_found}.
-lookup(Name) ->
-    case ets:lookup(?TABLE, {name, Name}) of
-        [] ->
-            {error, not_found};
-        [{{name, _}, Pid, Data}] ->
-            case erlang:is_process_alive(Pid) of
-                true ->
-                    {ok, Pid, Data};
-                false ->
-                    {error, not_found}
-            end
-    end.
-
-%% @doc Lookup all registered names for the given pid
--spec lookup_pid(pid()) -> {ok, list(name())} | {error, not_found}.
-lookup_pid(Pid) ->
-    case erlang:is_process_alive(Pid) of
-        false ->
-            {error, not_found};
-        _ ->
-            case lookup_pid_ms(?TABLE, Pid) of
-                [] ->
-                    {error, not_found};
-                Results ->
-                    {ok, Results}
-            end
-    end.
-
-%% @doc Remove a name from the registry
--spec unregister(name()) -> ok.
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
 
-%% @doc Get the list of all registered bindings
--spec bindings() -> [#binding{}].
-bindings() -> lookup_bindings_ms(?TABLE).
-
--spec lookup_binding(module(), BindingKey :: term()) -> {ok, #binding{}} | {error, not_found}.
-lookup_binding(Module, BindingKey) ->
-    case lookup({binding, Module, BindingKey}) of
-        {ok, _BindingPid, BindingRec} ->
-            %% pid is contained in the binding record
-            {ok, BindingRec};
-        Error ->
-            Error
+lookup(Key) ->
+    case ets:lookup(?TABLE, Key) of
+        [] ->
+            {error, not_found};
+        [{Key, {pid, Pid}}] ->
+            {ok, Pid};
+        [{Key, Value}] ->
+            {ok, Value}
     end.
 
-%% TODO: move listener/binding related stuff out of here
--spec lookup_listener(listener_key()) -> {ok, pid(), module()} | {error, not_found}.
-lookup_listener({listener, IP, Port}) ->
-    lookup_listener(IP, Port).
+%% --------------------------------------------------------------------------------
+%% -- registry API for bindings
+register_binding(BindingKey = {_Namespace, Url}, Binding) ->
+    update_listener(Url, Binding, add),
+    register({binding, BindingKey}, Binding).
 
--spec lookup_listener(address(), Port::non_neg_integer() | undefined) -> {ok, pid(), module()} | {error, not_found}.
-lookup_listener({ipc, Path}, undefined) ->
-    lookup(listener_key({ipc, Path}, undefined));
-
-lookup_listener(IP, Port) ->
-    case lookup(listener_key({0,0,0,0}, Port)) of
-        {ok, Pid, Module} ->
-            {ok, Pid, Module};
+unregister_binding(BindingKey = {Namespace, Url}) ->
+    case lookup_binding(Namespace, Url) of
+        {ok, Binding} ->
+            unregister({binding, BindingKey}),
+            hello_binding:stop_handler(Binding),
+            update_listener(Url, Binding, remove);
         {error, not_found} ->
-            lookup(listener_key(IP, Port))
+            ok
+    end,
+    check_listener(Url).
+
+
+lookup_binding(Namespace, Url) ->
+    case lookup({binding, {Namespace, Url}}) of
+        {ok, Binding} ->
+            {ok, Binding};
+        {error, not_found} ->
+            {error, not_found}
     end.
 
--spec listener_key(address(), Port::non_neg_integer() | undefined) -> listener_key().
-listener_key({ipc, Path}, undefined) ->
-    {listener, {ipc, Path}, undefined};
-listener_key(IP, Port) when is_tuple(IP) andalso is_integer(Port) andalso (Port >= 0) ->
-    {listener, IP, Port}.
 
+bindings() ->
+    Table = ?TABLE,
+    Bindings = ets:match(Table, {{binding, {'_', '_'}}, '$1'}),
+    [ {ExUriURL, Callback, HandlerType, Protocol} ||
+        [#binding{handler_type =  HandlerType, callback = Callback, protocol = Protocol, url = ExUriURL}] <- Bindings ].
+
+%% --------------------------------------------------------------------------------
+%% -- registry API for handlers (e.g. stateful or stateless)
+register_handler(Binding, Pid) ->
+    register({handler, Binding}, Pid).
+
+unregister_handler(Binding) ->
+    unregister({handler, Binding}).
+
+lookup_handler(Binding) ->
+    lookup({handler, Binding}).
+
+%% --------------------------------------------------------------------------------
+%% -- registry API for listeners
+register_listener(Url, TPid) ->
+    register({listener, Url}, TPid).
+
+unregister_listener(Url) ->
+    unregister({listener, Url}).
+
+lookup_listener(Url) ->
+    lookup({listener, Url}).
+
+update_listener(Url, NewBinding, Mode) ->
+    {ok, ListenerRef} = lookup_listener(Url),
+    case Mode of
+        add ->
+            case lookup({listener_bindings, ListenerRef}) of
+                {ok, Bindings} ->
+                    register({listener_bindings, ListenerRef}, Bindings ++ [NewBinding]);
+                {error, not_found} ->
+                    register({listener_bindings, ListenerRef}, [NewBinding])
+            end;
+        remove ->
+            case lookup({listener_bindings, ListenerRef}) of
+                {ok, [_Binding]} ->
+                    unregister({listener_bindings, ListenerRef});
+                {ok, Bindings} ->
+                    register({listener_bindings, ListenerRef}, lists:delete(NewBinding, Bindings));
+                {error, not_found} ->
+                    ok
+            end
+    end.
+
+check_listener(Url) ->
+    {ok, ListenerRef} = lookup_listener(Url),
+    case lookup({listener_bindings, ListenerRef}) of
+        {ok, _Bindings} ->
+            ok;
+        {error, not_found} -> %% no handler is using the transport handler => kill it
+            unregister_listener(Url),
+            hello_binding:stop_listener(Url),
+            ok
+    end.
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 init({}) ->
@@ -160,50 +163,27 @@ init({}) ->
     Table = ets:new(?TABLE, [protected, ordered_set, named_table, {read_concurrency, true}]),
     {ok, Table}.
 
-handle_call({register, RegSpecs, Pid}, _From, Table) ->
+handle_call({register, Key, Pid}, _From, Table) when is_pid(Pid) ->
     case is_process_alive(Pid) of
         true ->
-            case any_registered_ms(Table, RegSpecs) of
-                {OtherPid, OtherData} ->
-                    {reply, {already_registered, OtherPid, OtherData}, Table};
-                undefined ->
-                    erlang:monitor(process, Pid),
-                    NameTuples = [{{name, Name}, Pid, Data}  || {Name, Data} <- RegSpecs],
-                    PidTuples  = [{{pid, Pid, Name}} || {Name, _} <- RegSpecs],
-                    ets:insert(Table, NameTuples ++ PidTuples),
-                    {reply, ok, Table}
-            end;
+            erlang:monitor(process, Pid),
+            ets:insert(Table, {Key, {pid, Pid}}),
+            {reply, ok, Table};
         false ->
-            {reply, {error, noproc}, Table}
+            {reply, {error, pid_not_alive}, Table}
     end;
-handle_call({unregister, Name}, _From, Table) ->
-    case ets:lookup(Table, {name, Name}) of
+handle_call({register, Key, Data}, _From, Table) ->
+    ets:insert(Table, {Key, Data}),
+    {reply, ok, Table};
+
+handle_call({unregister, Key}, _From, Table) ->
+    case ets:lookup(Table, Key) of
         [] ->
             %% not registered, skip
             {reply, ok, Table};
-        [{_NameKey, Pid, _Data}] ->
-            ets:delete(Table, {name, Name}),
-            ets:delete(Table, {pid, Pid, Name}),
+        [{Key, _Data}] ->
+            ets:delete(Table, Key),
             {reply, ok, Table}
-    end;
-handle_call({update, Name, Data}, _From, Table) ->
-    case ets:lookup(Table, {name, Name}) of
-        [] ->
-            {reply, {error, not_found}, Table};
-        [{{name, Name}, Pid, _OldData}] ->
-            ets:insert(Table, {{name, Name}, Pid, Data}),
-            {reply, ok, Table}
-    end;
-handle_call({add_to_key, Name, Number}, _From, Table) ->
-    case ets:lookup(Table, {name, Name}) of
-        [] ->
-            {reply, {error, not_found}, Table};
-        [{NameKey, Pid, Data}] when is_number(Data) ->
-            NewData = Data + Number,
-            ets:insert(Table, {NameKey, Pid, NewData}),
-            {reply, {ok, Pid, NewData}, Table};
-        [{_NameKey, _Pid, _Data}] ->
-            {reply, {error, badarg}, Table}
     end;
 
 handle_call(_Call, _From, State) ->
@@ -212,7 +192,7 @@ handle_call(_Call, _From, State) ->
 handle_info({'EXIT', _From, Reason}, Table) ->
     {stop, Reason, Table};
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
-    _DelCount = delete_pid(Table, Pid),
+    ets:match_delete(Table, {'_', {pid, Pid}}),
     {noreply, Table};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
@@ -228,23 +208,4 @@ handle_cast(_Cast, State) ->
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 
-%% --------------------------------------------------------------------------------
-%% -- helpers
-delete_pid(Table, Pid) ->
-    NameMS = [{{{name, Name}, '_', '_'}, [], [true]} || Name <- lookup_pid_ms(Table, Pid)],
-    PidMS  = {{{pid, Pid, '_'}}, [], [true]},
-    ets:select_delete(Table, [PidMS | NameMS]).
 
-lookup_pid_ms(Table, Pid) ->
-    PidMS = [{{{pid, Pid, '$1'}}, [], ['$1']}],
-    ets:select(Table, PidMS).
-
-lookup_bindings_ms(Table) ->
-    [Data || {_Key, _Pid, Data} <- ets:match_object(Table, {{name, {binding, '_', '_'}}, '_', '_'})].
-
-any_registered_ms(Table, Names) ->
-    NamesMS = [{{{name, Name}, '$1', '$2'}, [], [{{'$1', '$2'}}]} || {Name, _} <- Names],
-    case ets:select(Table, NamesMS) of
-        []               -> undefined;
-        [FirstMatch | _] -> FirstMatch
-    end.

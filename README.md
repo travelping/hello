@@ -10,6 +10,16 @@ over HTTP and ZeroMQ transports.
 
 ## Dependencies:
 
+You can build an install hello using tetrapak. It will 
+automatically download necessary dependencies if your 
+version is up to date.
+
+If you don't want to use tetrapak here is the list of
+dependencies. You can also lookup the commit id in the 
+list of (tested) dependencies for tetrapak in the file 
+<config.ini>.
+
+* [jsx] (https://some_link.com)
 * [cowboy](https://github.com/extend/cowboy)
 * [ex_uri](https://github.com/extend/ex_uri)
 * [erlzmq2](https://github.com/zeromq/erlzmq2)
@@ -43,10 +53,10 @@ URL to a handler module.
 
 ## Listeners
 
-A listener is a container for one or more bindings.
-It usually wraps a network socket (e.g. a TCP acceptor).
+A listener usually wraps a network socket (e.g. a TCP acceptor).
 Listeners are created on demand when the first binding that references
-them is created. 
+them is created. It is also automatically removed if no bindings 
+exists that could use it.
 
 Quick example, creating a stateless HTTP binding like this:
 
@@ -56,29 +66,32 @@ will start an HTTP server automatically.
 
 ## Handlers
 
-Hello handlers are Erlang modules that implement an RPC service.
-There are two types of handlers, stateful and stateless.
+Hello handlers are Erlang modules that implement an RPC service. A 
+handler can be started for every peer resulting in a 1-to-1 mapping. 
+This mechanism relies on transport specific implementations like the 
+ZeroMQ peer identit.
+If started without that option the handler is available for N clients.
 
-Stateless handlers answer RPC requests independently of each
-other. No state is kept in between requests. This behavior
-is adequate for CRUD interfaces and other forms of classic RPC.
+There are two types of handlers:
 
-Stateful handlers keep session
-state in between requests. The stateful handler behavior is very
-similar to OTP's gen_server behavior. A distinct stateful handler
-is spawned for every distinct peer. Peer distinction is handled by
-the listener implementation and usually relies on transport-specific
-mechanisms (like the ZeroMQ peer identity).
-The stateful handler behavior is meant to be used when transport-level
-sessions are required.
+- the hello_handler which has full capabilities including
+    - async replies
+    - a state to hold a rpc session
+    - receiving messages from other processes of the same node
+    - full jsonrpc support (e.g. two sided communication)
 
-Hello's stateful handlers also support bi-directional
-communication, that is, the server can initiate requests to a
-connected client.
+- the hello_simple_handler which has restricted capabilities:
+    - can just handle pure request-response patterns
+    - is stateless
+    - no async replies are possible, an immediate response is 
+      expected
+    - cannot be started in single-client mode 
+    - covers the most 'usecases'
 
 # Client
 
-Hello also contains an RPC client.
+Hello also contains an RPC client which is also capable of handling different 
+rpc protocols. Out of the box it supports jsonrpc as well.
 Connecting to a server can be as simple as:
 
 	{ok, Client} = hello_client:start_link("http://127.0.0.1:8080/example", []),
