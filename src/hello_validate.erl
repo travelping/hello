@@ -40,32 +40,33 @@ request(Mod, Method, Params) ->
             {error, typespec_not_loaded};
         true ->
             ModSpec = Mod:typespec(),
-            try
-                Fields = yang_typespec:rpc_params(Method, ModSpec),
-                case is_proplist(Params) of
-                    true ->
-                        Params1 = sort_params(Params, Fields);
-                    false ->
-                        Params1 = Params
-                end,
-                case validate_params(ModSpec, Method, params_to_proplist(Fields, Params1)) of
-                    {error, Code} ->
-                        {error, {Code, undefined, undefined}};
-                    {error, Code, Msg} ->
-                        {error, {Code, Msg, undefined}};
-                    {error, Code, Msg, Data} ->
-                        {error, {Code, Msg, Data}};
-                    ParamsValidated ->
-                        ParamsValidated
-                end
-            catch
-                error:{badarg, _} ->
-                    {error, {method_not_found, undefined, undefined}};
-                throw:{error, unknown_type} ->
-                    {error, {invalid_params, <<"unknown type">>, undefined}};
-                throw:_ ->
-                    {error, {invalid_params, undefined, undefined}}
-            end
+            Params
+            %try
+            %    Fields = yang_typespec:rpc_params(Method, ModSpec),
+            %    case is_proplist(Params) of
+            %        true ->
+            %            Params1 = sort_params(Params, Fields);
+            %        false ->
+            %            Params1 = Params
+            %    end,
+            %    case validate_params(ModSpec, Method, params_to_proplist(Fields, Params1)) of
+            %        {error, Code} ->
+            %            {error, {Code, undefined, undefined}};
+            %        {error, Code, Msg} ->
+            %            {error, {Code, Msg, undefined}};
+            %        {error, Code, Msg, Data} ->
+            %            {error, {Code, Msg, Data}};
+            %        ParamsValidated ->
+            %            ParamsValidated
+            %    end
+            %catch
+            %    error:{badarg, _} ->
+            %        {error, {method_not_found, undefined, undefined}};
+            %    throw:{error, unknown_type} ->
+            %        {error, {invalid_params, <<"unknown type">>, undefined}};
+            %    throw:_ ->
+            %        {error, {invalid_params, undefined, undefined}}
+            %end
     end.
 
 get_namespace(Mod) ->

@@ -22,7 +22,7 @@
 -module(hello_http_listener).
 
 -behaviour(hello_binding).
--export([listener_specification/2, send_response/3, close/1, listener_termination/1]).
+-export([listener_specification/2, send_response/2, close/1, listener_termination/1]).
 
 %% cowboy http handler callbacks
 -export([init/3, handle/2, terminate/3]).
@@ -50,8 +50,8 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Result = cowboy:start_http({?MODULE, ExUriUrl}, Acceptors, TransportOpts, ProtocolOpts),
     {other_supervisor, Result}.
 
-send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, EncInfo, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, EncInfo, BinResp}.
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, BinResp) ->
+    TPid ! {hello_msg, TParams, Peer, BinResp}.
 
 close(#context{transport_pid = TPid}) ->
     TPid ! hello_closed.
@@ -75,22 +75,20 @@ handle(Req, State = #http_listener_state{url = URL}) ->
                                 transport_pid = self(),
                                 transport_params = TransportParams,
                                 peer = Peer},
-            {ContentType, Req5} = cowboy_req:header(<<"content-type">>, Req4),
-            [_, BinEncInfo] = binary:split(ContentType, [<<"/">>], []),
-            hello_binding:incoming_message(Context, URL, binary_to_atom(BinEncInfo, latin1), Message),
-            CompactReq = cowboy_req:compact(Req5),
-            {ok, Req7} = cowboy_req:chunked_reply(200, response_header(ContentType), CompactReq),
-            http_chunked_loop(Req7, State);
+            hello_listener:async_incoming_message(Context, URL, Message),
+            CompactReq = cowboy_req:compact(Req4),
+            {ok, Req5} = cowboy_req:chunked_reply(200, response_header(<<"TODO:ContentType">>), CompactReq),
+            http_chunked_loop(Req5, State);
         false ->
-            {ok, Req8} = cowboy_req:reply(405, server_header(), Req1),
-            {ok, Req8, State}
+            {ok, Req2} = cowboy_req:reply(405, server_header(), Req1),
+            {ok, Req2, State}
     end.
 
 http_chunked_loop(Req, State) ->
     receive
         hello_closed ->
             {ok, Req, State};
-        {hello_msg, _TParams, _Peer, _EncInfo, BinResp} ->
+        {hello_msg, _TParams, _Peer, BinResp} ->
             cowboy_req:chunk(BinResp, Req),
             http_chunked_loop(Req, State)
     end.

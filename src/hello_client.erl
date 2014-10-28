@@ -99,8 +99,9 @@ timeout_call(Client, Call, Timeout) ->
     protocol_state ::term(),
     async_request_map :: gb_tree(),
     keep_alive_interval :: number(),
-    keep_alive_ref :: term()
-    }).
+    keep_alive_ref :: term(),
+    notification_sink :: pid() | function()
+}).
 
 %% @hidden
 init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
@@ -110,6 +111,7 @@ init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
                 {NewURIRec, TransportModule} ->
                     case TransportModule:init_transport(NewURIRec, TransportOpts) of
                         {ok, TransportState} ->
+                            NotificationSink = proplists:get_value(notification_sink, ProtocolOpts, undefined),
                             ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
                             case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
                                 {ok, ProtocolState} ->
@@ -117,7 +119,8 @@ init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
                                                             transport_state = TransportState,
                                                             protocol_mod = ProtocolMod,
                                                             protocol_state = ProtocolState,
-                                                            async_request_map = gb_trees:empty()
+                                                            async_request_map = gb_trees:empty(),
+                                                            notification_sink = NotificationSink
                                                             },
                                     case evaluate_client_options(ClientOpts, State) of
                                         {ok, State1} ->
@@ -140,10 +143,9 @@ init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
 
 %% @hidden
 handle_call({call, Call}, From, State = #client_state{protocol_mod = ProtocolMod, protocol_state = ProtocolState}) ->
-    case hello_proto:new_request(Call, ProtocolMod, ProtocolState) of
-        {ok, ProtoRequest, NewProtocolState} ->
+    case hello_proto:build_request(Call, ProtocolMod, ProtocolState) of
+        {ok, Request, NewProtocolState} ->
             State1 = State#client_state{protocol_state = NewProtocolState},
-            Request = hello_proto:build_request(ProtoRequest, ProtocolMod),
             case outgoing_message(Request, From, State1) of
                 {ok, State2} ->
                     {noreply, State2};
@@ -185,25 +187,15 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- Helper functions
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
     {noreply, State#client_state{transport_state = NewTransportState}};
-incoming_message({ok, EncodeInfo, BinResponse, NewTransportState},
+incoming_message({ok, BinResponse, NewTransportState},
                  State = #client_state{protocol_mod = ProtocolMod, protocol_state = ProtocolState, async_request_map = AsyncMap}) ->
-    ProtoMod = hello_proto:encoding_protocol(EncodeInfo),
-    case hello_proto:decode(ProtoMod, BinResponse) of
-        {ok, ProtoResponse} when ProtoMod == ProtocolMod ->
-            case ProtocolMod:do_response(ProtoResponse, ProtocolState) of
-                {noreply, NewProtocolState} ->
-                    {noreply, State#client_state{transport_state = NewTransportState, protocol_state = NewProtocolState}};
-                {reply, RequestId, Result, NewProtocolState} ->
-                    case gb_trees:lookup(RequestId, AsyncMap) of
-                        {value, {CallRef, _Request}} ->
-                            gen_server:reply(CallRef, {ok, Result}),
-                            NewAsyncMap = gb_trees:delete(RequestId, AsyncMap),
-                            {noreply, State#client_state{   transport_state = NewTransportState,
-                                                            protocol_state = NewProtocolState, async_request_map = NewAsyncMap}};
-                        none ->
-                            {noreply, State#client_state{transport_state = NewTransportState, protocol_state = NewProtocolState}}
-                    end
-            end;
+    case hello_proto:decode(ProtocolMod, BinResponse, response) of
+        {ok, Response = #request{id = undefined}} ->
+            notification(Response, State),
+            {noreply, State#client_state{transport_state = NewTransportState}};
+        {ok, Response = #response{id = RequestId}} ->
+            NewAsyncMap = request_reply(Response, State),
+            {noreply, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
         {error, _Reason} ->
             {noreply, State#client_state{transport_state = NewTransportState}};
         ignore ->
@@ -213,32 +205,23 @@ incoming_message({ok, EncodeInfo, BinResponse, NewTransportState},
             {noreply, State1}
     end.
 
-outgoing_message(Request, From, State = #client_state{transport_mod=TransportModule, transport_state=TransportState, async_request_map=AsyncMap}) ->
-    case hello_proto:encode(Request) of
+outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod, transport_mod=TransportModule, transport_state=TransportState, async_request_map=AsyncMap}) ->
+    case hello_proto:encode(ProtocolMod, Request) of
         {ok, BinRequest} ->
-            EncodeInfo = hello_proto:encoding_info(Request#request.proto_mod),
-            case hello_proto:generate_request_id(Request) of
-                {ok, RequestId} ->
-                    case TransportModule:send_request({BinRequest, EncodeInfo}, TransportState) of
-                        {ok, NewTransportState} ->
-                            NewAsyncMap = gb_trees:enter(RequestId, {From, Request}, AsyncMap),
-                            {ok, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
-                        {error, Reason, RequestId, NewTransportState} ->
-                            {error, Reason, State#client_state{transport_state = NewTransportState}}
-                    end;
-                ignore ->
-                    case TransportModule:send_request({BinRequest, EncodeInfo}, TransportState) of
-                        {ok, NewTransportState} ->
-                            {ok, ok, State#client_state{transport_state = NewTransportState}};
-                        {error, Reason, NewTransportState} ->
-                            {error, Reason, State#client_state{transport_state = NewTransportState}}
-                    end
+            case TransportModule:send_request(BinRequest, TransportState) of
+                {ok, NewTransportState} ->
+                    {ok, State#client_state{transport_state = NewTransportState, async_request_map = update_map(Request, From, AsyncMap)}};
+                {error, Reason, NewTransportState} ->
+                    {error, Reason, State#client_state{transport_state = NewTransportState}}
             end;
         {error, Reason, State} ->
             {error, Reason, State};
         ignore ->
             {ok, State}
     end.
+
+update_map(#request{id = undefined}, _From, AsyncMap) -> AsyncMap;
+update_map(#request{id = RequestId} = Request, From, AsyncMap) -> gb_trees:enter(RequestId, {From, Request}, AsyncMap).
 
 evaluate_client_options(ClientOpts, State) ->
     KeepAliveInterval = proplists:get_value(keep_alive_interval, ClientOpts, -1),
@@ -263,3 +246,23 @@ uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"}) -> {URI#ex_uri{scheme = "tc
 uri_client_module(URI = #ex_uri{scheme = "zmq-ipc"}) -> {URI#ex_uri{scheme = "ipc"}, hello_zmq_client};
 uri_client_module(_) ->
     badscheme.
+
+notification(#response{response = Response}, _State = #client_state{notification_sink = NotificationSink}) ->
+    if
+        is_pid(NotificationSink) ->
+            NotificationSink ! {notification, Response};
+        is_function(NotificationSink) ->
+            erlang:apply(NotificationSink, [Response]);
+        true ->
+            ignore
+    end.
+
+request_reply(#response{id = RequestId, response = Response}, _State = #client_state{async_request_map = AsyncMap}) ->
+    case gb_trees:lookup(RequestId, AsyncMap) of
+        {value, {CallRef, _Request}} ->
+            gen_server:reply(CallRef, {ok, Response}),
+            gb_trees:delete(RequestId, AsyncMap);
+        none ->
+            lager:warning("get not existing request_id ~p", [RequestId]),
+            AsyncMap
+    end.

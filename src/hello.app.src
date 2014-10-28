@@ -4,5 +4,8 @@
    {applications, [kernel, stdlib, lager, cowboy, ex_uri, erlzmq, ibrowse, jsx]},
    {registered, [hello_supervisor]},
    {mod, {hello, []}},
-   {env, []}
+   {env, [
+       {default_protocol, hello_proto_jsonrpc},
+       {transports, []}
+   ]}
 ]}.

@@ -5,19 +5,30 @@
     transport               :: module(),
     transport_pid           :: pid(),
     transport_params        :: term(),
-    peer                    :: term()
-    }).
+    peer                    :: term(),
+    session_id              :: term()
+}).
 
--record(request,  {
-    proto_request           :: term(),
-    proto_mod               :: module(),
-    context                 :: #context{}
+-record(request, {
+    type = sync             :: sync | async,
+    id                      :: term(),
+    context                 :: #context{},
+    proto_data              :: term(),
+    method                  :: binary(),
+    args                    :: term()
 }).
 
 -record(response, {
-    proto_response          :: term(),
-    proto_mod               :: module(),
-    context                 :: #context{}
+    id                      :: term(),
+    context                 :: #context{},
+    proto_data              :: term(),
+    response                :: term()
+}).
+
+-record(error, {
+    code                    :: integer(),
+    message = <<"">>        :: iodata(),
+    proto_data              :: term()
 }).
 
 -record(binding, {
@@ -64,10 +75,6 @@
 %% -- internal definitions
 -define(IDLE_TIMEOUT_MSG, '$hello_idle_timeout').
 -define(INCOMING_MSG, '$hello_incoming_message').
-
-%% will b transmitted by transport to identify encoding
--define(INTERNAL, '$hello_internal').
--define(JSONRPC, '$hello_jsonrpc').
 
 %% for keep alive initiated by a client
 -define(PING, '$PING').

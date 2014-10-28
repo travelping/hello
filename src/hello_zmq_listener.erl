@@ -23,7 +23,7 @@
 -export([start_link/1]).
 
 -behaviour(hello_binding).
--export([listener_specification/2, send_response/3, close/1, listener_termination/1]).
+-export([listener_specification/2, send_response/2, close/1, listener_termination/1]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -39,8 +39,8 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Specs = {{?MODULE, ExUriUrl}, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]},
     {make_child, Specs}.
 
-send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, EncInfo, BinResp) ->
-    gen_server:call(TPid, {hello_msg, TParams, Peer, EncInfo, BinResp}).
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, BinResp) ->
+    gen_server:call(TPid, {hello_msg, TParams, Peer, BinResp}).
 
 close(_Context) ->
     ok.
@@ -80,9 +80,6 @@ handle_info({zmq, Socket, Message, [rcvmore]}, State = #state{socket = Socket, l
 handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = Peer}) when is_binary(Peer) ->
     %% empty message part separates envelope from data
     {noreply, State};
-handle_info({zmq, Socket, EncInfo, [rcvmore]}, State = #state{socket = Socket}) ->
-    %% first actual data frame is an info about the encoding of the message
-    {noreply, State#state{encode_info = EncInfo}};
 handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, encode_info = EncInfo, lastmsg_peer = Peer, url = ExUriUrl}) ->
     %% second data part is the actual request
     Context = #context{ transport=?MODULE,
@@ -90,7 +87,7 @@ handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, encode_i
                         transport_params = undefined,
                         peer = Peer
                         },
-    hello_binding:incoming_message(Context, ExUriUrl, binary_to_atom(EncInfo, latin1), Message),
+    hello_listener:async_incoming_message(Context, ExUriUrl, Message),
     {noreply, State#state{encode_info = undefined, lastmsg_peer = undefined}};
 
 handle_info(hello_closed, State) ->
@@ -102,10 +99,9 @@ terminate(_Reason, State) ->
     erlzmq:close(State#state.socket),
     erlzmq:term(State#state.context).
 
-handle_call({hello_msg, _TParams, Peer, EncInfo, Message}, _From, State = #state{socket = Socket}) ->
+handle_call({hello_msg, _TParams, Peer, Message}, _From, State = #state{socket = Socket}) ->
     ok = erlzmq:send(Socket, Peer, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, EncInfo, [sndmore]),
     ok = erlzmq:send(Socket, Message),
     {reply, ok, State};
 handle_call(_Call, _From, State) ->

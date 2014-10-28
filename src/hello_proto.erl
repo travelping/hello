@@ -22,19 +22,16 @@
 -module(hello_proto).
 
 -export([init_client/2]).
--export([do_request/5, proceed_request/6, do_async_request/4]).
--export([new_request/3, build_request/2, build_response/2]).
--export([encode/1, generate_request_id/1, decode/2, encoding_info/1, encoding_protocol/1]).
--export([extract_requests/1, handle_response/2, error_response/4, log/5]).
-
+-export([build_request/3]).
+-export([encode/2, decode/3]).
+-export([handle_incoming_message/5]).
 -export([behaviour_info/1]).
 
 -include("internal.hrl").
 
 behaviour_info(callbacks) ->
     [{init_client, 1},
-     {generate_request_id, 1},
-     {new_request, 2},
+     {build_request, 2},
      {do_request, 5},
      {do_async_request, 4},
      {encoding_info, 0},
@@ -52,94 +49,68 @@ behaviour_info(_Other) ->
 init_client(ProtocolMod, ProtocolOpts) ->
     ProtocolMod:init_client(ProtocolOpts).
 
+build_request(BatchRequest, ProtocolMod, ProtocolState) when is_list(BatchRequest) ->
+    {Requests, NewProtocolState} = lists:mapfoldl(fun(SingleRequest, AccState) ->
+                                                          {ok, BuildRequest, NewAccState} = build_request(SingleRequest, ProtocolMod, AccState),
+                                                          {BuildRequest, NewAccState}
+                                                  end, ProtocolState, BatchRequest),
+    {ok, Requests, NewProtocolState};
+build_request({Method, Args, Options}, ProtocolMod, ProtocolState) ->
+    Request = #request{method = Method, args = Args},
+    ProtocolMod:build_request(Request, Options, ProtocolState).
+
 %% ----------------------------------------------------------------------------------------------------
 %% -- Request/Response handling
-do_request(HandlerMod, Mod, HandlerInfo, ReqContext, #request{proto_mod = Protocol, proto_request = ProtoRequest}) ->
-    Protocol:do_request(HandlerMod, Mod, HandlerInfo, ReqContext, ProtoRequest).
 
-proceed_request(HandlerMod, Mod, HandlerInfo, ReqContext, Method, Params) ->
-    HandlerMod:proceed_request(Mod, HandlerInfo, ReqContext, Method, Params).
+handle_incoming_message(Context1, ProtocolMod, Router, ExUriURL, Binary) ->
+    Context = Context1#context{connection_pid = self()},
+    case decode(ProtocolMod, Binary, request) of
+        {ok, Requests} ->
+            Result = proceed_incoming_message(Requests, Context, ProtocolMod, Router, ExUriURL),
+            may_be_encode(ProtocolMod, Result);
+        {error, ignore} ->
+            hello_proto:log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
+            todo:close(Context);
+        {error, Response} ->
+            hello_proto:log(ProtocolMod, Binary, Response, undefined, ExUriURL),
+            todo:send(Response),
+            todo:close(Context);
+        {internal, Message} ->
+            todo:handle_internal(Context, Message)
+    end.
 
-do_async_request(#request{proto_mod = Protocol, proto_request = ProtoRequest}, RequestInfo, ProtocolInfo, Result) ->
-    Protocol:do_async_request(ProtoRequest, RequestInfo, ProtocolInfo, Result).
+proceed_incoming_message(Requests, Context, ProtocolMod, Router, ExUriURL) when is_list(Requests) ->
+    [proceed_incoming_message(Request, Context, ProtocolMod, Router, ExUriURL) || Request <- Requests];
+proceed_incoming_message(Request = #request{type = Type}, Context, ProtocolMod, Router, ExUriURL) ->
+    case Router:route(Context, Request, ExUriURL) of
+        {ok, ServiceName, Identifier} ->
+            hello:call_service(ServiceName, Identifier, Request#request{context = Context}),
+            may_be_wait(Type, Request, Context);
+        {error, Error} ->
+            hello_proto:error_response(Request)
+    end.
 
-%% ----------------------------------------------------------------------------------------------------
-%% -- Record Creation/Conversion
-new_request(Call, ProtocolMod, ProtocolState) ->
-    ProtocolMod:new_request(Call, ProtocolState).
+may_be_wait(sync, #request{proto_data = Info}, Context) ->
+    Answer = hello_service:await(5000),
+    #response{proto_data = Info, response = proto_answer(Answer)};
+may_be_wait(async, _Request, _Context) ->
+    ignore.
 
-build_request(ProtoRequest, ProtoMod) ->
-    #request{proto_request = ProtoRequest, proto_mod = ProtoMod}.
-build_response(#request{proto_mod = Protocol, context = Context}, ProtoResponse) ->
-    #response{proto_mod = Protocol, proto_response = ProtoResponse, context = Context}.
+may_be_encode(ProtocolMod, BatchAnswer) when is_list(BatchAnswer) ->
+    ShelledResults = [Result || Result <- BatchAnswer, Result =/= ignore],
+    case ShelledResults of
+        [] -> ignore;
+        _  -> encode(ProtocolMod, ShelledResults)
+    end;
+may_be_encode(ProtocolMod, ignore) ->
+    ignore;
+may_be_encode(ProtocolMod, Answer) ->
+    encode(ProtocolMod, Answer).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
-encode(#request{proto_mod = Mod, proto_request = ProtoRequest}) ->
-    Mod:encode(ProtoRequest);
-encode(#response{proto_mod = Mod, proto_response = ProtoResponse}) ->
-    Mod:encode(ProtoResponse).
+encode(Mod, Request) -> Mod:encode(Request).
+decode(Mod, Message, Type) when is_atom(Mod) -> Mod:decode(Message, Type).
 
-generate_request_id(#request{proto_mod = Mod, proto_request = ProtoRequest}) ->
-    Mod:generate_request_id(ProtoRequest).
-
-decode(hello_proto, Message) ->
-    {internal, Message};
-decode(Mod, Message) when is_atom(Mod) ->
-    Mod:decode(Message).
-
-encoding_info(hello_proto) ->
-    list_to_binary(atom_to_list(?INTERNAL));
-encoding_info(ProtocolMod) ->
-    ProtocolMod:encoding_info().
-
-encoding_protocol(?INTERNAL) ->
-    hello_proto;
-encoding_protocol(?JSONRPC) ->
-    hello_proto_jsonrpc.
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- message distribution
-extract_requests(Request = #request{proto_mod = ProtocolMod, proto_request = ProtoRequest, context = Context}) ->
-    {ProtocolInfo, ExtractedProtoRequests} = ProtocolMod:extract_requests(ProtoRequest),
-    Requests = [ {Status, Namespace, Request#request{proto_mod = ProtocolMod, proto_request = SingleReq, context = Context}} || 
-                                                                    {Status, Namespace, SingleReq}  <- ExtractedProtoRequests ],
-    {ProtocolInfo, Requests}.
-
-handle_response(_ProtocolInfo, []) ->
-    undefined;
-handle_response(single, [ #response{proto_mod = ProtocolMod, proto_response = ProtoResponse, context = Context} ]) ->
-    #response{proto_mod = ProtocolMod, proto_response = ProtoResponse, context = Context};
-handle_response(batch, Responses) ->
-    #response{proto_mod = ProtocolMod, context = Context} = hd(Responses),
-    ProtoResponses = [ ProtoResponse || #response{proto_response = ProtoResponse} <- Responses ],
-    #response{proto_mod = ProtocolMod, proto_response = ProtoResponses, context = Context}.
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- error handling
-error_response(Code, Message, Data, Request = #request{proto_mod = ProtocolMod, proto_request = ProtoRequest}) ->
-    ProtoErrorResponse = ProtocolMod:error_response(Code, Message, Data, ProtoRequest),
-    build_response(Request, ProtoErrorResponse).
-
-%% ----------------------------------------------------------------------------------------------------
-%% -- logging
-log(ProtocolMod, Binary, undefined, Mod, ExUriUrl) when is_binary(Binary) ->
-    ProtocolMod:log(Binary, undefined, Mod, ExUriUrl);
-log(ProtocolMod, Binary, #response{proto_mod = ProtocolMod, proto_response = ProtoResponse}, Mod, ExUriUrl) when is_binary(Binary) ->
-    ProtocolMod:log(Binary, ProtoResponse, Mod, ExUriUrl);
-log(ProtocolMod, #request{proto_mod = ProtocolMod, proto_request = ProtoRequest}, #response{proto_response = ProtoResponse}, Mod, ExUriUrl) ->
-    ProtocolMod:log(ProtoRequest, ProtoResponse, Mod, ExUriUrl).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+proto_answer({error, {Code, Message, ProtoData}}) -> #error{code = Code, message = Message, proto_data = ProtoData};
+proto_answer(Response) -> Response.

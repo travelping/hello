@@ -10,16 +10,16 @@ over HTTP and ZeroMQ transports.
 
 ## Dependencies:
 
-You can build an install hello using tetrapak. It will 
-automatically download necessary dependencies if your 
+You can build an install hello using tetrapak. It will
+automatically download necessary dependencies if your
 version is up to date.
 
 If you don't want to use tetrapak here is the list of
-dependencies. You can also lookup the commit id in the 
-list of (tested) dependencies for tetrapak in the file 
+dependencies. You can also lookup the commit id in the
+list of (tested) dependencies for tetrapak in the file
 <config.ini>.
 
-* [jsx] (https://some_link.com)
+* [jsx](https://some_link.com)
 * [cowboy](https://github.com/extend/cowboy)
 * [ex_uri](https://github.com/extend/ex_uri)
 * [erlzmq2](https://github.com/zeromq/erlzmq2)
@@ -27,9 +27,9 @@ list of (tested) dependencies for tetrapak in the file
 
 ## Building
 
-We use [tetrapak](https://github.com/fjl/tetrapak) for
+We use [tetrapak](https://github.com/travelping/tetrapak) for
 development. Hello follows standard OTP practice though, so you
-can use any build tool that supports OTP applications.  
+can use any build tool that supports OTP applications.
 
 In order to build hello using tetrapak, simply execute
 
@@ -55,7 +55,7 @@ URL to a handler module.
 
 A listener usually wraps a network socket (e.g. a TCP acceptor).
 Listeners are created on demand when the first binding that references
-them is created. It is also automatically removed if no bindings 
+them is created. It is also automatically removed if no bindings
 exists that could use it.
 
 Quick example, creating a stateless HTTP binding like this:
@@ -66,9 +66,9 @@ will start an HTTP server automatically.
 
 ## Handlers
 
-Hello handlers are Erlang modules that implement an RPC service. A 
-handler can be started for every peer resulting in a 1-to-1 mapping. 
-This mechanism relies on transport specific implementations like the 
+Hello handlers are Erlang modules that implement an RPC service. A
+handler can be started for every peer resulting in a 1-to-1 mapping.
+This mechanism relies on transport specific implementations like the
 ZeroMQ peer identit.
 If started without that option the handler is available for N clients.
 
@@ -83,14 +83,14 @@ There are two types of handlers:
 - the hello_simple_handler which has restricted capabilities:
     - can just handle pure request-response patterns
     - is stateless
-    - no async replies are possible, an immediate response is 
+    - no async replies are possible, an immediate response is
       expected
-    - cannot be started in single-client mode 
+    - cannot be started in single-client mode
     - covers the most 'usecases'
 
 # Client
 
-Hello also contains an RPC client which is also capable of handling different 
+Hello also contains an RPC client which is also capable of handling different
 rpc protocols. Out of the box it supports jsonrpc as well.
 Connecting to a server can be as simple as:
 
