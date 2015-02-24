@@ -3,6 +3,11 @@ hello
 
 JSON-RPC API toolkit
 
+Version 2.2.4 - 24 Feb 2015
+---------------------------
+
+* fix handling of optional parameters
+
 Version 2.2.3 - 16 Oct 2014
 ---------------------------
 
