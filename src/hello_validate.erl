@@ -104,15 +104,17 @@ params_to_proplist(Fields,  Params) when is_list(Params) ->
     TooMany andalso throw({invalid, "superfluous parameters"}),
     lists:reverse(Proplist).
 
-strip_keys([{K, V} | Proplists], [#field{name = K} | Defs], Acc) ->
-    strip_keys(Proplists, Defs, [V | Acc]);
-strip_keys([{K, V} | Proplists], [#array{name = K} | Defs], Acc) ->
-    strip_keys(Proplists, Defs, [V | Acc]);
-strip_keys(Args, [#field{opts = Opts} | Defs], Acc) ->
-    strip_keys(tail(Args), Defs, [proplists:get_value(default, Opts) | Acc]);
-strip_keys(Args, [#array{opts = Opts} | Defs], Acc) ->
-    strip_keys(tail(Args), Defs, [proplists:get_value(default, Opts) | Acc]);
-strip_keys([], [], Acc) ->
+strip_keys(Proplist, [#field{name = K, opts = Opts} | Defs], Acc) ->
+    case lists:keyfind(K, 1, Proplist) of
+        {_, V} -> strip_keys(Proplist, Defs, [V | Acc]);
+        false  -> strip_keys(Proplist, Defs, [proplists:get_value(default, Opts) | Acc])
+    end;
+strip_keys(Proplist, [#array{name = K, opts = Opts} | Defs], Acc) ->
+    case lists:keyfind(K, 1, Proplist) of
+        {_, V} -> strip_keys(Proplist, Defs, [V | Acc]);
+        false  -> strip_keys(Proplist, Defs, [proplists:get_value(default, Opts) | Acc])
+    end;
+strip_keys(_, [], Acc) ->
     lists:reverse(Acc).
 
 tail([_ | V]) -> V;
