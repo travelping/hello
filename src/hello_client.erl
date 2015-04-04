@@ -168,8 +168,13 @@ handle_info(?PING, State = #client_state{transport_mod=TransportModule, transpor
     BinaryPing = list_to_binary(atom_to_list(?PING)),
     {ok, NewTransportState} = TransportModule:send_request({BinaryPing, EncodeInfo}, TransportState),
     {noreply, State#client_state{transport_state = NewTransportState}};
-handle_info(_Message, State) ->
-    {noreply, State}.
+handle_info(Message, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
+    case TransportModule:handle_info(Message, TransportState) of
+        {?INCOMING_MSG, Message} ->
+            incoming_message(Message, State);
+        {noreply, NewTransportState} ->
+            {noreply, State#client_state{transport_state = NewTransportState}}
+    end.
 
 %% @hidden
 terminate(Reason, #client_state{transport_mod = TransportModule, transport_state = TransportState, keep_alive_ref = TimerRef}) ->
@@ -240,10 +245,10 @@ handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInte
 handle_internal(Message, State) ->
     ?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
 
-uri_client_module(URI = #ex_uri{scheme = "http"})    -> {URI, hello_http_client};
-uri_client_module(URI = #ex_uri{scheme = "https"})   -> {URI, hello_http_client};
-uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"}) -> {URI#ex_uri{scheme = "tcp"}, hello_zmq_client};
-uri_client_module(URI = #ex_uri{scheme = "zmq-ipc"}) -> {URI#ex_uri{scheme = "ipc"}, hello_zmq_client};
+uri_client_module(URI = #ex_uri{scheme = "http"})     -> {URI, hello_http_client};
+uri_client_module(URI = #ex_uri{scheme = "https"})    -> {URI, hello_http_client};
+uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"})  -> {URI, hello_zmq_client};
+uri_client_module(URI = #ex_uri{scheme = "zmq-tcp6"}) -> {URI, hello_zmq_client};
 uri_client_module(_) ->
     badscheme.
 

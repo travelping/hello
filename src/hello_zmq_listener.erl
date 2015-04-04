@@ -40,7 +40,7 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     {make_child, Specs}.
 
 send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, BinResp) ->
-    gen_server:call(TPid, {hello_msg, TParams, Peer, BinResp}).
+    TPid ! {hello_msg, TParams, Peer, BinResp}.
 
 close(_Context) ->
     ok.
@@ -55,7 +55,9 @@ listener_termination(_ListenerID) ->
     context :: erlzmq:erlzmq_context(),
     socket  :: erlzmq:erlzmq_socket(),
     lastmsg_peer :: binary(),
-    encode_info :: binary()
+    encode_info :: binary(),
+    socket  :: ezmq:socket(),
+    binding_key :: term()
 }).
 
 start_link(ExUriUrl) ->
@@ -63,49 +65,35 @@ start_link(ExUriUrl) ->
 
 init(ExUriUrl) ->
     process_flag(trap_exit, true),
-    Endpoint      = url_for_zmq(ExUriUrl),
-    {ok, Context} = erlzmq:context(),
-    {ok, Socket}  = erlzmq:socket(Context, [router, {active, true}]),
-    case erlzmq:bind(Socket, Endpoint) of
+    {ok, Socket}  = ezmq:socket([{type, router}, {active, true}]),
+    case ezmq_bind_url(Socket, URL) of
         ok ->
-            State = #state{socket = Socket, context = Context, url = ExUriUrl},
+            State = #state{socket = Socket, url = ExUriUrl},
             {ok, State};
         {error, Error} ->
             {stop, Error}
     end.
 
-handle_info({zmq, Socket, Message, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = undefined}) ->
-    %% first message part is peer identity
-    {noreply, State#state{lastmsg_peer = Message}};
-handle_info({zmq, Socket, <<>>, [rcvmore]}, State = #state{socket = Socket, lastmsg_peer = Peer}) when is_binary(Peer) ->
-    %% empty message part separates envelope from data
-    {noreply, State};
-handle_info({zmq, Socket, Message, []}, State = #state{socket = Socket, encode_info = EncInfo, lastmsg_peer = Peer, url = ExUriUrl}) ->
-    %% second data part is the actual request
+handle_info({zmq, Socket, {Peer, [<<>>, Message]}}, State = #state{binding_key=BindingKey, socket = Socket}) ->
     Context = #context{ transport=?MODULE,
                         transport_pid = self(),
                         transport_params = undefined,
                         peer = Peer
                         },
     hello_listener:async_incoming_message(Context, ExUriUrl, Message),
-    {noreply, State#state{encode_info = undefined, lastmsg_peer = undefined}};
+    {noreply, State};
 
-handle_info(hello_closed, State) ->
+handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
+    ok = ezmq:send(Socket, {Peer, [<<>>, Message]}),
+    {noreply, State};
+
+handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
     {noreply, State};
 handle_info({'EXIT', _Reason}, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
-    erlzmq:close(State#state.socket),
-    erlzmq:term(State#state.context).
-
-handle_call({hello_msg, _TParams, Peer, Message}, _From, State = #state{socket = Socket}) ->
-    ok = erlzmq:send(Socket, Peer, [sndmore]),
-    ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, Message),
-    {reply, ok, State};
-handle_call(_Call, _From, State) ->
-    {reply, {error, unknown_call}, State}.
+    ezmq:close(State#state.socket).
 
 %% unused callbacks
 handle_cast(_Cast, State) ->
@@ -113,6 +101,34 @@ handle_cast(_Cast, State) ->
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
 
-%% helpers
 url_for_zmq(URI = #ex_uri{scheme = "zmq-tcp"}) -> ex_uri:encode(URI#ex_uri{scheme = "tcp"});
 url_for_zmq(URI = #ex_uri{scheme = "zmq-ipc"}) -> ex_uri:encode(URI#ex_uri{scheme = "ipc"}).
+
+%% --------------------------------------------------------------------------------
+%% -- helpers
+url_for_log1(URI) ->
+    list_to_binary(ex_uri:encode(URI)).
+
+zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
+zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
+
+ezmq_bind_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port}}) ->
+    Protocol = zmq_protocol(URI),
+    case ezmq_ip(Protocol, Host) of
+        {ok, IP} ->
+            ezmq:bind(Socket, tcp, Port, [Protocol, {reuseaddr, true}, {ip, IP}]);
+        Other ->
+            Other
+    end.
+
+ezmq_ip(inet, "*") -> {ok, {0,0,0,0}};
+ezmq_ip(inet, Host) -> inet:parse_ipv4_address(Host);
+
+ezmq_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
+ezmq_ip(inet6, Host) ->
+    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
+        {match, ["[::1]", IP]} ->
+            inet:parse_ipv6_address(IP);
+        _ ->
+            inet:parse_ipv6_address(Host)
+    end.
