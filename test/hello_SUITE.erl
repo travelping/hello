@@ -80,18 +80,18 @@ bind_url1({Url, TransportOpts}, Handler, Protocol) ->
     %% binding the same module returns already_started
     {error, callback_already_defined} = hello:bind(Url, TransportOpts, FirstCallback, Handler, HandlerOpts, Protocol, ProtocolOpts),
 
-    %% binding a different (the second) callback should also be possible 
+    %% binding a different (the second) callback should also be possible
     ok = hello:bind(Url, TransportOpts, SecondCallback, Handler, HandlerOpts, Protocol, ProtocolOpts).
 
 start_client(Transport) ->
-    {Url, TransportOpts} = Transport, 
+    {Url, TransportOpts} = Transport,
     ProtocolOpts = [{protocol, hello_proto_jsonrpc}],
     {ok, Pid} = hello_client:start_supervised(Url, TransportOpts, ProtocolOpts, []),
     Pid.
 
 start_named_client(Transport) ->
     Name = proplists:get_value(Transport, ?CLIENT_NAMES),
-    {Url, TransportOpts} = Transport, 
+    {Url, TransportOpts} = Transport,
     ProtocolOpts = [{protocol, hello_proto_jsonrpc}],
     {ok, _Pid} = hello_client:start_supervised(Name, Url, TransportOpts, ProtocolOpts, []),
     Name.

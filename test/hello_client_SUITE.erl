@@ -125,15 +125,15 @@ all_ok_test() ->
 
 all_testgroup() ->
     [{group, http},
-     {group, zmq_ipc},
      {group, zmq_tcp},
+     {group, zmq_tcp6},
      {group, http_error},
      {group, zmq_tcp_error}].
 
 groups() ->
     [{http, [],  all_ok_test()},
-     {zmq_ipc, [],  all_ok_test()},
      {zmq_tcp, [],  all_ok_test()},
+     {zmq_tcp6, [],  all_ok_test()},
      {http_error, [], [call_http_error, notification_http_error, call_np_http_error]},
      {zmq_tcp_error, [], [call_zmq_tcp_error, notification_zmq_tcp_error, call_np_zmq_tcp_error]},
      {old_cb_info, [], all_testgroup()},
@@ -145,11 +145,10 @@ all() ->
 
 group_config(http) ->
 	{"http://127.0.0.1:8001", true, []};
-group_config(zmq_ipc) ->
-	%% don't restart....
-	{"zmq-ipc://simple_client_suite.ipc", true, []};
 group_config(zmq_tcp) ->
 	{"zmq-tcp://127.0.0.1:5556", true, []};
+group_config(zmq_tcp6) ->
+	{"zmq-tcp6://[::1]:5556", true, []};
 
 group_config(http_error) ->
 	{"http://undefined.undefined:8888", false, []};

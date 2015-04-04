@@ -22,64 +22,51 @@
 -module(hello_zmq_client).
 
 -behaviour(hello_client).
--export([init_transport/2, send_request/2, terminate_transport/2]).
+-export([init_transport/2, send_request/2, terminate_transport/2, handle_info/2]).
 
--behaviour(gen_server).
--export([init/1, handle_call/3, handle_info/2, terminate/2, handle_cast/2, code_change/3]).
+-include_lib("ex_uri/include/ex_uri.hrl").
+-include("internal.hrl").
 
 -include("internal.hrl").
 -record(zmq_state, {
-    client          :: pid(),
-    encode_info     :: binary(),
-    context         :: erlzmq:erlzmq_context(),
-    socket          :: erlzmq:erlzmq_socket()
+    client  :: pid(),
+    socket  :: ezmq:socket()
 }).
 
-%% hello_cllient callbacks
-init_transport(URIRec, _Options) ->
-    gen_server:start_link(?MODULE, {self(), URIRec}, []).
+init_transport(URI, _Options) ->
+    {ok, Socket} = ezmq:socket([{type, dealer}, {active, true}]),
+    ok = ezmq_connect_url(Socket, URL),
+    {ok, #zmq_state{socket = Socket}}.
 
-send_request(Message, TransportPid) ->
-    gen_server:call(TransportPid, {send, Message}),
-    {ok, TransportPid}.
+send_request(Message, State) ->
+    ezmq:send(Socket, [<<>>, Message])
+    {ok, State}.
 
-terminate_transport(_Reason, TransportPid) ->
-    gen_server:cast(TransportPid, stop).
+terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
+    ezmq:close(Socket).
 
-%% gen_server callbacks
-init({Client, URLRec}) ->
-    URL = ex_uri:encode(URLRec),
-    {ok, Context} = erlzmq:context(),
-    {ok, Socket} = erlzmq:socket(Context, [dealer, {active, true}]),
-    case erlzmq:connect(Socket, URL) of
-        ok ->
-            State = #zmq_state{client = Client, context = Context, socket = Socket},
-            {ok, State};
-        {error, Error} ->
-            {stop, Error}
+handle_info({zmq, _Socket, [<<>>, Msg]}, State) ->
+    {?INCOMING_MSG, Msg}.
+
+%% --------------------------------------------------------------------------------
+%% -- helpers
+zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
+zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
+
+ezmq_connect_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port}}) ->
+    Protocol = zmq_protocol(URI),
+    case ezmq_ip(Protocol, Host) of
+        {ok, IP} ->
+            ezmq:connect(Socket, tcp, IP, Port, [Protocol]);
+        Other ->
+            Other
     end.
 
-handle_call({send, Request}, _From, State = #zmq_state{socket = Socket}) ->
-    erlzmq:send(Socket, <<>>, [sndmore]),
-    erlzmq:send(Socket, Request),
-    {reply, ok, State}.
-
-handle_info({zmq, _Socket, <<>>, [rcvmore]}, State) ->
-    {noreply, State};
-handle_info({zmq, _Socket, BinResponse, []}, State = #zmq_state{client = Client}) ->
-    Client ! {?INCOMING_MSG, {ok, BinResponse, self()}},
-    {noreply, State};
-handle_info(_, State) ->
-    {noreply, State}.
-
-handle_cast(stop, State) ->
-    {stop, normal, State};
-handle_cast(_Request, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State = #zmq_state{socket = Socket, context = Context}) ->
-    erlzmq:close(Socket),
-    erlzmq:term(Context).
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+ezmq_ip(inet, Host)  -> inet:parse_ipv4_address(Host);
+ezmq_ip(inet6, Host) ->
+    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
+        {match, ["[::1]", IP]} ->
+            inet:parse_ipv6_address(IP);
+        _ ->
+            inet:parse_ipv6_address(Host)
+    end.

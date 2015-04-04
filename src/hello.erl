@@ -30,6 +30,10 @@
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
+-type url() :: string().
+-type decoded_url() :: #ex_uri{}.
+-define(APPS, [sasl, syntax_tools, compiler, goldrush, lager, crypto, ranch, cowlib, cowboy, ex_uri, gen_listener_tcp, ezmq, ibrowse, hello]).
+
 %% --------------------------------------------------------------------------------
 %% -- type definitions
 -type url()         :: #ex_uri{}.
@@ -66,9 +70,9 @@ stop(_StopArgs) ->
 %    <table border="1">
 %      <thead><tr><td width="140"><b>URL scheme</b></td><td><b>Transport</b></td><td><b>Notes</b></td></tr></thead>
 %      <tbody>
-%        <tr><td>http://...</td><td>HTTP</td><td>Default Port is 80.</td></tr>
-%        <tr><td>zmq-tcp://...</td><td>ZeroMQ over TCP</td><td>The port <em>must</em> be specified.</td></tr>
-%        <tr><td>zmq-ipc://...</td><td>ZeroMQ over Unix Sockets</td><td>The path can be either absolute or relative.</td></tr>
+%        <tr><td>http://...</td><td>HTTP</td><td>Multiple services can be bound to the same host/port
+%                                                combination, as long as the path is different.</td></tr>
+%        <tr><td>zmq-tcp[6]://...</td><td>ZeroMQ over TCP</td><td>The port <em>must</em> be specified.</td></tr>
 %      </tbody>
 %    </table>
 %   <br/>
