@@ -54,7 +54,7 @@
     state                   :: term(),
     context                 :: #context{},
     protocol                :: module(),
-    async_reply_map         :: gb_tree(),
+    async_reply_map         :: gb_tree:tree(),
     timer                   :: #timer{},
     url                     :: #ex_uri{}
 }).

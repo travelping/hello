@@ -52,35 +52,33 @@ listener_termination(_ListenerID) ->
 %% -- gen_server callbacks
 -record(state, {
     url     :: #ex_uri{},
-    context :: erlzmq:erlzmq_context(),
-    socket  :: erlzmq:erlzmq_socket(),
     lastmsg_peer :: binary(),
     encode_info :: binary(),
     socket  :: ezmq:socket(),
     binding_key :: term()
 }).
 
-start_link(ExUriUrl) ->
-    gen_server:start_link(?MODULE, ExUriUrl, []).
+start_link(URL) ->
+    gen_server:start_link(?MODULE, URL, []).
 
-init(ExUriUrl) ->
+init(URL) ->
     process_flag(trap_exit, true),
     {ok, Socket}  = ezmq:socket([{type, router}, {active, true}]),
     case ezmq_bind_url(Socket, URL) of
         ok ->
-            State = #state{socket = Socket, url = ExUriUrl},
+            State = #state{socket = Socket, url = URL},
             {ok, State};
         {error, Error} ->
             {stop, Error}
     end.
 
-handle_info({zmq, Socket, {Peer, [<<>>, Message]}}, State = #state{binding_key=BindingKey, socket = Socket}) ->
+handle_info({zmq, Socket, {Peer, [<<>>, Message]}}, State = #state{url = URL, socket = Socket}) ->
     Context = #context{ transport=?MODULE,
                         transport_pid = self(),
                         transport_params = undefined,
                         peer = Peer
                         },
-    hello_listener:async_incoming_message(Context, ExUriUrl, Message),
+    hello_listener:async_incoming_message(Context, URL, Message),
     {noreply, State};
 
 handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
@@ -96,6 +94,8 @@ terminate(_Reason, State) ->
     ezmq:close(State#state.socket).
 
 %% unused callbacks
+handle_call(_Call, _From, State) ->
+    {reply, not_supported, State}.
 handle_cast(_Cast, State) ->
     {noreply, State}.
 code_change(_FromVsn, _ToVsn, State) ->

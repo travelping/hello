@@ -20,7 +20,7 @@
 
 % @private
 -module(hello_proto_jsonrpc).
--behaviour(hello_proto).
+%-behaviour(hello_proto).
 
 -export([init_client/1,
          build_request/3,

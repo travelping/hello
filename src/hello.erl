@@ -30,9 +30,7 @@
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
--type url() :: string().
 -type decoded_url() :: #ex_uri{}.
--define(APPS, [sasl, syntax_tools, compiler, goldrush, lager, crypto, ranch, cowlib, cowboy, ex_uri, gen_listener_tcp, ezmq, ibrowse, hello]).
 
 %% --------------------------------------------------------------------------------
 %% -- type definitions

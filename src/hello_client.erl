@@ -168,8 +168,8 @@ handle_info(?PING, State = #client_state{transport_mod=TransportModule, transpor
     BinaryPing = list_to_binary(atom_to_list(?PING)),
     {ok, NewTransportState} = TransportModule:send_request({BinaryPing, EncodeInfo}, TransportState),
     {noreply, State#client_state{transport_state = NewTransportState}};
-handle_info(Message, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
-    case TransportModule:handle_info(Message, TransportState) of
+handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
+    case TransportModule:handle_info(Info, TransportState) of
         {?INCOMING_MSG, Message} ->
             incoming_message(Message, State);
         {noreply, NewTransportState} ->
