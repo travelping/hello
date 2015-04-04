@@ -78,7 +78,6 @@ http_send(Client, {Request, EncInfo}, State = #http_state{url = URL, options = O
             exit(normal)
     end.
 
-
 outgoing_message(Client, EncInfo, Body, State) ->
     Body1 = list_to_binary(Body),
     AtomEncInfo = binary_to_atom(EncInfo, latin1),
@@ -92,7 +91,6 @@ outgoing_message(Client, EncInfo, Body, State) ->
         _NoJson ->
             Client ! {?INCOMING_MSG, {ok, AtomEncInfo, Body1, State}}
     end.
-
 
 validate_options(Options) ->
     validate_options(Options, #http_options{ib_opts = [{socket_options, [{reuseaddr, true }]}]}).

@@ -27,7 +27,6 @@
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("internal.hrl").
 
--include("internal.hrl").
 -record(zmq_state, {
     client  :: pid(),
     socket  :: ezmq:socket()
@@ -35,23 +34,30 @@
 
 init_transport(URI, _Options) ->
     {ok, Socket} = ezmq:socket([{type, dealer}, {active, true}]),
-    ok = ezmq_connect_url(Socket, URL),
+    ok = ezmq_connect_url(Socket, URI),
     {ok, #zmq_state{socket = Socket}}.
 
-send_request(Message, State) ->
-    ezmq:send(Socket, [<<>>, Message])
+send_request(Message, State = #zmq_state{socket = Socket}) ->
+    ezmq:send(Socket, [<<>>, Message]),
     {ok, State}.
 
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
     ezmq:close(Socket).
 
 handle_info({zmq, _Socket, [<<>>, Msg]}, State) ->
-    {?INCOMING_MSG, Msg}.
+    {?INCOMING_MSG, {ok, Msg, State}}.
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
 zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
 zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
+
+%% use dnssd to resolve port AND host
+%% map host to Type and Path to Name
+ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{host = Host, port = undefined},
+				  path = [$/|Path]}) ->
+    dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
+    ok;
 
 ezmq_connect_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port}}) ->
     Protocol = zmq_protocol(URI),

@@ -1,6 +1,9 @@
 *.beam
 /ebin/*.app
 /test-log/
+/log
+/deps
+.rebar
 /request-logs/
 /status.ipc
 /dist/

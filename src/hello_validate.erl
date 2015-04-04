@@ -37,7 +37,8 @@
 request(Mod, Method, Params) ->
     case erlang:function_exported(Mod, typespec, 0) of
         false ->
-            {error, typespec_not_loaded};
+            %{error, typespec_not_loaded};
+            Params;
         true ->
             ModSpec = Mod:typespec(),
             Params
