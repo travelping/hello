@@ -1,20 +1,16 @@
 -module(hello_service).
--export([register/2, unregister/1, call/3, await/1, outgoing_message/2, all/0]).
+-export([register_link/2, unregister_link/1, call/3, await/1, outgoing_message/2, all/0]).
 -include("internal.hrl").
 
 -define(REG_NAME(Name), Name}).
 
-register(HandlerMod, HandlerArgs) ->
-    Name = to_bin(HandlerMod:name()),
-    hello_registry:register({service, Name}, {HandlerMod, HandlerArgs}).
+register_link(HandlerMod, HandlerArgs) ->
+    Name = hello_lib:to_binary(HandlerMod:name()),
+    hello_registry:register_link({service, Name}, {HandlerMod, HandlerArgs}).
 
-unregister(HandlerMod) ->
-    Name = to_bin(HandlerMod:name()),
-    hello_registry:unregister({service, Name}).
-
-to_bin(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
-to_bin(List) when is_list(List) -> list_to_binary(List);
-to_bin(Bin) when is_binary(Bin) -> Bin.
+unregister_link(HandlerMod) ->
+    Name = hello_lib:to_binary(HandlerMod:name()),
+    hello_registry:unregister_link({service, Name}).
 
 call(Name, Identifier, {Method, Args}) ->
     call(Name, Identifier, #request{method = Method, args = Args});
@@ -24,7 +20,8 @@ call(Name, Identifier, Request) ->
             Handler = hello_handler:get_handler(Name, Identifier, HandlerMod, HandlerArgs),
             hello_handler:process(Handler, Request);
         {error, not_found} ->
-            {error, service_not_found}
+            lager:warning("Service ~s not found", [Name]),
+            {error, method_not_found}
     end.
 
 await(Timeout) ->
@@ -36,7 +33,7 @@ await(Timeout) ->
             {error, timeout}
     end.
 
-outgoing_message(Context = #context{connection_pid = ConnectionPid}, Response) ->
+outgoing_message(_Context = #context{connection_pid = ConnectionPid}, Response) ->
     ConnectionPid ! {?INCOMING_MSG, Response}.
 
 all() -> hello_registry:all(service).

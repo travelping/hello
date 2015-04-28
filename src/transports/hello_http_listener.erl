@@ -21,7 +21,7 @@
 % @private
 -module(hello_http_listener).
 
--behaviour(hello_binding).
+-behaviour(hello_listener).
 -export([listener_specification/2, send_response/2, close/1, listener_termination/1]).
 
 %% cowboy http handler callbacks

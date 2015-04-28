@@ -25,7 +25,7 @@
          start_listener/1, start_listener/2, start_listener/5,
          stop_listener/1, call_service/2, call_service/3]).
 -export([start/2, stop/1, start/0]).
--export([bind/7, bind_handler/3, unbind/2, bindings/0]).
+-export([bind/2, unbind/2]).
 
 -include("internal.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -112,23 +112,40 @@ bind(URL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, Protoco
             {error, {badurl, Other}}
     end.
 
+%% API
+
 start_service(HandlerMod, HandlerArgs) ->
-    hello_service:register(HandlerMod, HandlerArgs).
+    hello_service:register_link(HandlerMod, HandlerArgs).
 
 stop_service(HandlerMod) ->
-    hello_service:unregister(HandlerMod).
+    hello_service:unregister_link(HandlerMod).
 
 start_listener(URL) ->
     start_listener(URL, []).
 
 start_listener(URL, TransportOpts) ->
-    start_listener(URL, TransportOpts, hello_proto_jsonrpc, [], hello_router).
+    start_listener(URL, TransportOpts, hello_proto_jsonrpc, [{decoder, hello_msgpack}], hello_router).
 
 start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
     on_ex_uri(URL, fun(ExUriURL) -> hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) end).
 
 stop_listener(URL) ->
     stop_listener(URL).
+
+bind(URL, HandlerMod) ->
+    on_ex_uri(URL, fun(ExUriURL) -> hello_binding:register_link(ExUriURL, HandlerMod) end).
+
+unbind(URL, HandlerMod) ->
+    on_ex_uri(URL, fun(ExUriURL) -> hello_binding:unregister_link(ExUriURL, HandlerMod) end).
+
+call_service(Name, {Method, Args}) ->
+    Ref = make_ref(),
+    Context = #context{connection_pid = self(), peer = Ref},
+    call_service(Name, undefined, #request{context = Context, method = Method, args = Args}),
+    hello_service:await(5000).
+
+call_service(Name, UniqId, Request) ->
+    hello_service:call(Name, UniqId, Request).
 
 on_ex_uri(URL, Fun) ->
     case (catch ex_uri:decode(URL)) of
@@ -137,30 +154,3 @@ on_ex_uri(URL, Fun) ->
         Other ->
             error(badarg, [URL, Other])
     end.
-
-call_service(Name, {Method, Args}) ->
-    Ref = make_ref(),
-    Context = #context{connection_pid = self(), peer = Ref},
-    call_service(Name, undefined, #request{context = Context, method = Method, args = Args}),
-    receive
-        {?INCOMING_MSG, Response} ->
-            Response
-    after
-        5000 ->
-            {error, timeout}
-    end.
-call_service(Name, UniqId, Request) ->
-    hello_service:call(Name, UniqId, Request).
-
-% @doc Unbind a callback module from a URL.
-%   You can get the arguments from bindings/0.
--spec unbind(url_string(), callback()) -> ok.
-unbind(Url, CallbackMod) ->
-    hello_binding:undo_binding(Url, CallbackMod).
-
-% @doc List of all bound callbacks with some additional information.
-%   This can be used to apply unbind/2.
--spec bindings() -> [{url_string(), callback(), handler(), protocol()}].
-bindings() ->
-    Bindings = hello_binding:bindings(),
-    [ {ex_uri:encode(ExUriURL), Callback, Handler, Protocol} || {ExUriURL, Callback, Handler, Protocol} <- Bindings ].

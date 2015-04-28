@@ -23,8 +23,8 @@
 
 -export([init_client/2]).
 -export([build_request/3]).
--export([encode/2, decode/3]).
--export([handle_incoming_message/5]).
+-export([encode/3, decode/4]).
+-export([handle_incoming_message/6]).
 -export([behaviour_info/1]).
 
 -include("internal.hrl").
@@ -62,12 +62,12 @@ build_request({Method, Args, Options}, ProtocolMod, ProtocolState) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- Request/Response handling
 
-handle_incoming_message(Context1, ProtocolMod, Router, ExUriURL, Binary) ->
+handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, Binary) ->
     Context = Context1#context{connection_pid = self()},
-    case decode(ProtocolMod, Binary, request) of
+    case decode(ProtocolMod, ProtocolOpts, Binary, request) of
         {ok, Requests} ->
-            Result = proceed_incoming_message(Requests, Context, ProtocolMod, Router, ExUriURL),
-            may_be_encode(ProtocolMod, Result);
+            Result = proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL),
+            may_be_encode(ProtocolMod, ProtocolOpts, Result);
         {error, ignore} ->
             hello_proto:log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
             todo:close(Context);
@@ -79,38 +79,39 @@ handle_incoming_message(Context1, ProtocolMod, Router, ExUriURL, Binary) ->
             todo:handle_internal(Context, Message)
     end.
 
-proceed_incoming_message(Requests, Context, ProtocolMod, Router, ExUriURL) when is_list(Requests) ->
-    [proceed_incoming_message(Request, Context, ProtocolMod, Router, ExUriURL) || Request <- Requests];
-proceed_incoming_message(Request = #request{type = Type}, Context, ProtocolMod, Router, ExUriURL) ->
+proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) when is_list(Requests) ->
+    [proceed_incoming_message(Request, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) || Request <- Requests];
+proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) ->
     case Router:route(Context, Request, ExUriURL) of
         {ok, ServiceName, Identifier} ->
             hello:call_service(ServiceName, Identifier, Request#request{context = Context}),
             may_be_wait(Type, Request, Context);
-        {error, Error} ->
-            hello_proto:error_response(Request)
+        {error, Error} = _ ->
+            #response{proto_data = Info,
+                      response = ProtocolMod:build_error(Error, "the required method is not registered", undefined, ProtocolOpts)}
     end.
 
-may_be_wait(sync, #request{proto_data = Info}, Context) ->
+may_be_wait(sync, #request{proto_data = Info}, _Context) ->
     Answer = hello_service:await(5000),
     #response{proto_data = Info, response = proto_answer(Answer)};
 may_be_wait(async, _Request, _Context) ->
     ignore.
 
-may_be_encode(ProtocolMod, BatchAnswer) when is_list(BatchAnswer) ->
+may_be_encode(ProtocolMod, ProtocolOpts, BatchAnswer) when is_list(BatchAnswer) ->
     ShelledResults = [Result || Result <- BatchAnswer, Result =/= ignore],
     case ShelledResults of
         [] -> ignore;
-        _  -> encode(ProtocolMod, ShelledResults)
+        _  -> encode(ProtocolMod, ProtocolOpts, ShelledResults)
     end;
-may_be_encode(ProtocolMod, ignore) ->
+may_be_encode(_ProtocolMod, _ProtocolOpts, ignore) ->
     ignore;
-may_be_encode(ProtocolMod, Answer) ->
-    encode(ProtocolMod, Answer).
+may_be_encode(ProtocolMod, ProtocolOpts, Answer) ->
+    encode(ProtocolMod, ProtocolOpts, Answer).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
-encode(Mod, Request) -> Mod:encode(Request).
-decode(Mod, Message, Type) when is_atom(Mod) -> Mod:decode(Message, Type).
+encode(Mod, Opts, Request) -> Mod:encode(Request, Opts).
+decode(Mod, Opts, Message, Type) when is_atom(Mod) -> Mod:decode(Message, Opts, Type).
 
 proto_answer({error, {Code, Message, ProtoData}}) -> #error{code = Code, message = Message, proto_data = ProtoData};
-proto_answer(Response) -> Response.
+proto_answer({ok, Response}) -> Response.

@@ -24,8 +24,9 @@
 
 -export([init_client/1,
          build_request/3,
-         encode/1,
-         decode/2
+         build_error/4,
+         encode/2,
+         decode/3
          ]).
 
 -include("internal.hrl").
@@ -55,16 +56,16 @@ build_request(SingleRequest, Options, State = #jsonrpc_info{ reqid = ReqId }) ->
     Request = SingleRequest#request{proto_data = Info, id = ReqId},
     {ok, Request, State#jsonrpc_info{ reqid = ReqId+1 }}.
 
-encode(Batch) when is_list(Batch)  ->
+encode(Batch, Opts) when is_list(Batch)  ->
     EncodedBatch = [ encode_single(Request) || Request <- Batch ],
-    {ok, jsx:encode(EncodedBatch)};
-encode(Single) ->
+    {ok, (get_decoder(Opts)):encode(EncodedBatch)};
+encode(Single, Opts) ->
     EncodedSingle = encode_single(Single),
-    {ok, jsx:encode(EncodedSingle)}.
+    {ok, (get_decoder(Opts)):encode(EncodedSingle)}.
 
-decode(Binary, Type) ->
+decode(Binary, Opts, Type) ->
     try
-        case jsx:decode(to_binary(Binary), [return_maps]) of
+        case (get_decoder(Opts)):decode(to_binary(Binary)) of
             Batch = [ Single | _ ] when is_map(Single) ->
                 decode_batch(Batch, Type);
             Single ->
@@ -75,6 +76,8 @@ decode(Binary, Type) ->
             io:format(user, "Error ~p Reason ~p ~p~n", [Error, Reason, erlang:get_stacktrace()]),
             {error, #error{code = parse_error}}
     end.
+
+get_decoder(Opts) -> proplists:get_value(decoder, Opts, hello_json).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding
@@ -132,16 +135,17 @@ decode_single(request, #{<<"method">> := _Method} = _Object, Info) ->
 decode_single(request, _Object, Info) ->
     throw({invalid, Info, <<"method does not exist">>});
 decode_single(response, #{<<"error">> := Error = #{}} = _Object, Info) ->
-    Error = #error{ code = get(Error, <<"code">>),
-                    message = get(Error, <<"message">>),
-                    proto_data = get(Error, <<"data">>) },
-    {ok, #response{response = Error, proto_data = Info, id = Info#jsonrpc_info.reqid}};
+    ErrorRec = #error{ code = get(Error, <<"code">>),
+                       message = get(Error, <<"message">>),
+                       proto_data = get(Error, <<"data">>) },
+    {ok, #response{response = ErrorRec, proto_data = Info, id = Info#jsonrpc_info.reqid}};
 decode_single(response, #{<<"error">> := Error} = _Object, #jsonrpc_info{version = ?JSONRPC_1} = Info) ->
-    Error = #error{ code = 32000,
-                    message = Error,
-                    proto_data = undefined},
-    {ok, #response{response = Error, proto_data = Info, id = Info#jsonrpc_info.reqid}};
-decode_single(response, #{<<"error">> := Error} = _Object, Info) when Error =/= null ->
+    ErrorRec = #error{ code = 32000,
+                       message = Error,
+                       proto_data = undefined},
+    {ok, #response{response = ErrorRec, proto_data = Info, id = Info#jsonrpc_info.reqid}};
+decode_single(response, #{<<"error">> := Error} = _Object, Info) when (Error =/= null) and (Error =/= nil) ->
+    io:format(user, "error: ~p~n", [{Error, Error =/= nil}]),
     throw({invalid, Info, <<"JSON-RPC 2.0 requires \"error\" to be an object">>});
 decode_single(response, #{<<"result">> := Result}, Info) ->
     {ok, #response{response = Result, proto_data = Info, id = Info#jsonrpc_info.reqid}};
@@ -153,24 +157,24 @@ invalid(request)  -> invalid_request;
 invalid(response) -> invalid_response.
 
 %% @doc Create a response object representing a JSON-RPC error.
-build_error(Code, Message, Data) ->
-    case Code of
+build_error(Code, Message, Data, _ProtocolOpts) ->
+    {NumCode, MsgPrefix} = case Code of
         parse_error ->
-            NumCode = -32700, MsgPrefix = <<"Parse error">>;
+            {-32700, <<"Parse error">>};
         invalid_request ->
-            NumCode = -32600, MsgPrefix = <<"Invalid Request">>;
+            {-32600, <<"Invalid Request">>};
         method_not_found ->
-            NumCode = -32601, MsgPrefix = <<"Method not found">>;
+            {-32601, <<"Method not found">>};
         invalid_params ->
-            NumCode = -32602, MsgPrefix = <<"Invalid params">>;
+            {-32602, <<"Invalid params">>};
         internal_error ->
-            NumCode = -32603, MsgPrefix = <<"Internal Error">>;
+            {-32603, <<"Internal Error">>};
         invalid_response ->
-            NumCode = -32001, MsgPrefix = <<"Invalid Response">>;
+            {-32001, <<"Invalid Response">>};
         server_error ->
-            NumCode = -32002, MsgPrefix = <<"Server Error">>;
+            {-32002, <<"Server Error">>};
         _ when is_integer(Code) ->
-            NumCode = Code, MsgPrefix = undefined
+            {Code, undefined}
     end,
     case Message of
         undefined ->

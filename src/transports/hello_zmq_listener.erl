@@ -22,7 +22,7 @@
 -module(hello_zmq_listener).
 -export([start_link/1]).
 
--behaviour(hello_binding).
+-behaviour(hello_listener).
 -export([listener_specification/2, send_response/2, close/1, listener_termination/1]).
 
 -behaviour(gen_server).
@@ -55,7 +55,8 @@ listener_termination(_ListenerID) ->
     lastmsg_peer :: binary(),
     encode_info :: binary(),
     socket  :: ezmq:socket(),
-    binding_key :: term()
+    binding_key :: term(),
+    dnss_ref :: term()
 }).
 
 start_link(URL) ->
@@ -66,7 +67,8 @@ init(URL) ->
     {ok, Socket}  = ezmq:socket([{type, router}, {active, true}]),
     case ezmq_bind_url(Socket, URL) of
         ok ->
-            State = #state{socket = Socket, url = URL},
+            Ref = dnss_register(Socket, {<<"app">>, <<"test">>}, URL),
+            State = #state{socket = Socket, url = URL, dnss_ref = Ref},
             {ok, State};
         {error, Error} ->
             {stop, Error}
@@ -88,9 +90,13 @@ handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket
 handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
     {noreply, State};
 handle_info({'EXIT', _Reason}, State) ->
+    {noreply, State};
+handle_info({dnssd, _Ref, Msg}, State) ->
+    lager:info("dnssd Msg: ~p", [Msg]),
     {noreply, State}.
 
 terminate(_Reason, State) ->
+    dnssd_clean(State#state.dnss_ref),
     ezmq:close(State#state.socket).
 
 %% unused callbacks
@@ -132,3 +138,25 @@ ezmq_ip(inet6, Host) ->
         _ ->
             inet:parse_ipv6_address(Host)
     end.
+
+do_dnss_register(App, Name, Port) ->
+    lager:info("dnss port: ~p", [Port]),
+    case dnssd:register(Name, <<"_", App/binary, "._tcp">>, Port) of
+        {ok, Ref} -> Ref;
+        _ -> ok
+    end.
+
+dnss_register(Socket, {App, Name}, #ex_uri{authority = #ex_uri_authority{port = 0}})
+  when is_binary(App), is_binary(Name) ->
+    {ok, [{_, _, Port}|_]} = ezmq:sockname(Socket),
+    do_dnss_register(App, Name, Port);
+dnss_register(_Socket, {App, Name}, #ex_uri{authority = #ex_uri_authority{port = Port}})
+  when is_binary(App), is_binary(Name) ->
+    do_dnss_register(App, Name, Port);
+dnss_register(_Socket, _, _) ->
+    ok.
+
+dnssd_clean(Ref) when is_reference(Ref) ->
+    dnssd:stop(Ref);
+dnssd_clean(_) ->
+    ok.

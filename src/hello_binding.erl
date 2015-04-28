@@ -20,17 +20,20 @@
 
 % @private
 -module(hello_binding).
+-export([register_link/2, unregister_link/2, lookup/2, all/0]).
 
--export([behaviour_info/1]).
-
--include_lib("ex_uri/include/ex_uri.hrl").
 -include("internal.hrl").
 
-behaviour_info(callbacks) ->
-    [{listener_specification, 2},
-     {send_response, 3},
-     {close, 1},
-     {listener_termination, 1}
-     ];
-behaviour_info(_) ->
-    undefined.
+register_link(ExUriURL, HandlerMod) ->
+    RouterKey = hello_lib:to_binary(HandlerMod:router_key()),
+    Name = hello_lib:to_binary(HandlerMod:name()),
+    hello_registry:register_link({binding, {ExUriURL, RouterKey}}, Name).
+
+lookup(ExUriURL, RouterKey) ->
+    hello_registry:lookup({binding, {ExUriURL, RouterKey}}).
+
+unregister_link(ExUriURL, HandlerMod) ->
+    RouterKey = hello_lib:to_binary(HandlerMod:router_key()),
+    hello_registry:unregister_link({binding, {ExUriURL, RouterKey}}).
+
+all() -> hello_registry:all(binding).
