@@ -27,8 +27,7 @@
 -export([start_link/2, start_link/3,
          start/4, start/5, stop/1,
          start_supervised/4, start_supervised/5, stop_supervised/1,
-         call/2, call/3]
-         ).
+         call/2, call/3]).
 
 %% for tests
 -export([handle_internal/2]).
@@ -96,8 +95,9 @@ timeout_call(Client, Call, Timeout) ->
     transport_mod :: module(),
     transport_state :: term(),
     protocol_mod :: atom(),
+    protocol_opts :: list(),
     protocol_state ::term(),
-    async_request_map :: gb_tree(),
+    async_request_map :: gb_tree:tree(),
     keep_alive_interval :: number(),
     keep_alive_ref :: term(),
     notification_sink :: pid() | function()
@@ -118,6 +118,7 @@ init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
                                     State = #client_state{  transport_mod = TransportModule,
                                                             transport_state = TransportState,
                                                             protocol_mod = ProtocolMod,
+                                                            protocol_opts = ProtocolOpts,
                                                             protocol_state = ProtocolState,
                                                             async_request_map = gb_trees:empty(),
                                                             notification_sink = NotificationSink
@@ -168,6 +169,7 @@ handle_info(?PING, State = #client_state{transport_mod=TransportModule, transpor
     BinaryPing = list_to_binary(atom_to_list(?PING)),
     {ok, NewTransportState} = TransportModule:send_request({BinaryPing, EncodeInfo}, TransportState),
     {noreply, State#client_state{transport_state = NewTransportState}};
+
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
     case TransportModule:handle_info(Info, TransportState) of
         {?INCOMING_MSG, Message} ->
@@ -193,12 +195,12 @@ code_change(_FromVsn, _ToVsn, State) ->
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
     {noreply, State#client_state{transport_state = NewTransportState}};
 incoming_message({ok, BinResponse, NewTransportState},
-                 State = #client_state{protocol_mod = ProtocolMod, protocol_state = ProtocolState, async_request_map = AsyncMap}) ->
-    case hello_proto:decode(ProtocolMod, BinResponse, response) of
+                 State = #client_state{protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts}) ->
+    case hello_proto:decode(ProtocolMod, ProtocolOpts, BinResponse, response) of
         {ok, Response = #request{id = undefined}} ->
             notification(Response, State),
             {noreply, State#client_state{transport_state = NewTransportState}};
-        {ok, Response = #response{id = RequestId}} ->
+        {ok, Response = #response{}} ->
             NewAsyncMap = request_reply(Response, State),
             {noreply, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
         {error, _Reason} ->
@@ -210,8 +212,9 @@ incoming_message({ok, BinResponse, NewTransportState},
             {noreply, State1}
     end.
 
-outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod, transport_mod=TransportModule, transport_state=TransportState, async_request_map=AsyncMap}) ->
-    case hello_proto:encode(ProtocolMod, Request) of
+outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts,
+                                                      transport_mod = TransportModule, transport_state = TransportState, async_request_map = AsyncMap}) ->
+    case hello_proto:encode(ProtocolMod, ProtocolOpts, Request) of
         {ok, BinRequest} ->
             case TransportModule:send_request(BinRequest, TransportState) of
                 {ok, NewTransportState} ->

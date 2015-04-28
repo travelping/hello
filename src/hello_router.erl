@@ -2,9 +2,15 @@
 -export([route/3]).
 -include("internal.hrl").
 
-route(_Context = #context{session_id = Id}, _, _) ->
-    [{Name, _, _} | _] = hello_service:all(),
-    {ok, Name, Id}.
+route(_Context = #context{session_id = Id}, _Request = #request{method = Method}, ExURI) ->
+    Namespace = get_namespace(Method),
+    case hello_binding:lookup(ExURI, Namespace) of
+        {error, not_found} ->
+            lager:warning("Route couldn't find a service for a key ~s not found", [Namespace]),
+            {error, method_not_found};
+        {ok, _, Name} ->
+            {ok, Name, Id}
+    end.
 
 get_namespace(Method) ->
     Method1 = hello_lib:to_binary(Method),

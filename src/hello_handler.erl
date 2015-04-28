@@ -125,15 +125,11 @@ init({Identifier, HandlerMod, HandlerArgs}) ->
 
 %% @hidden
 handle_cast({request, #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = HandlerState}) ->
-    Request = {Method, Args},
-    ExUriUrl = undefined,
-    ProtocolMod = undefined,
     try Mod:handle_request(Context, Method, Args, HandlerState) of
         {reply, Response, NewHandlerState} ->
             send(Context, Response),
             {noreply, State#state{state = NewHandlerState}};
         {noreply, NewModState} ->
-            Key = Context#request_context.req_ref,
             {noreply, State#state{state = NewModState}};
         {stop, Reason, Response, NewModState} ->
             send(Context, Response),
@@ -144,7 +140,7 @@ handle_cast({request, #request{context = Context, method = Method, args = Args}}
             {stop, State#state{mod=NewModState}};
         {ignore, NewModState} ->
             {noreply, State#state{state = NewModState}};
-        FalseAnswer ->
+        _FalseAnswer ->
             % TODO: log it
             {noreply, State}
     catch
@@ -217,7 +213,7 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 %% @hidden
-do_request(Request, State = #state{mod = Mod, state = ModState, protocol = ProtocolMod, async_reply_map = AsyncMap, url = ExUriUrl}) ->
+do_request(Request, _State = #state{mod = Mod, state = ModState}) ->
     Context = Request#request.context,
     ReqContext = #request_context{req_ref = make_ref(), handler_pid = self(), context = Context, protocol_info = undefined},
     hello_proto:do_request(?MODULE, Mod, ModState, ReqContext, Request).

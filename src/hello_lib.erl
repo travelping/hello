@@ -19,8 +19,7 @@ get(Map, Key, Default) -> maps:get(Key, Map, Default).
 to_binary(Str) when is_atom(Str)   -> atom_to_binary(Str, utf8);
 to_binary(Str) when is_list(Str)   -> unicode:characters_to_binary(Str);
 to_binary(Str) when is_binary(Str) -> Str;
-to_binary(Term) ->
-    unicode:characters_to_binary(io_lib:format("~p", [Term])).
+to_binary(Term) -> unicode:characters_to_binary(io_lib:format("~p", [Term])).
 
 wrap(Requests) when is_list(Requests) -> Requests;
 wrap(Request) -> [Request].

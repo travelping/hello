@@ -26,7 +26,7 @@
 -compile({no_auto_import,[register/2, unregister/1]}).
 
 -export([
-    start/0, start_link/0, all/1,
+    start/0, start_link/0, all/1, register_link/2, unregister_link/1,
     register/2, register/3, unregister/1, lookup/1
 ]).
 
@@ -50,11 +50,19 @@ start_link() ->
 
 %% --------------------------------------------------------------------------------
 %% -- general API to register, unregister, update or lookup stuff
+register_link(Key, Value) ->
+    register(Key, Value),
+    link(whereis(?SERVER)).
+
 register(Key, Value) ->
     gen_server:call(?SERVER, {register, Key, undefined, Value}).
 
 register(Key, Pid, Value) ->
     gen_server:call(?SERVER, {register, Key, Pid, Value}).
+
+unregister_link(Name) ->
+    unregister(Name),
+    unlink(whereis(?SERVER)).
 
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
@@ -67,76 +75,10 @@ lookup(Key) ->
             {ok, Pid, Value}
     end.
 
-%% --------------------------------------------------------------------------------
-%% -- registry API for bindings
-register_binding(BindingKey = {_Namespace, Url}, Binding) ->
-    update_listener(Url, Binding, add),
-    register({binding, BindingKey}, Binding).
-
-unregister_binding(BindingKey = {Namespace, Url}) ->
-    case lookup_binding(Namespace, Url) of
-        {ok, Binding} ->
-            unregister({binding, BindingKey}),
-            hello_binding:stop_handler(Binding),
-            update_listener(Url, Binding, remove);
-        {error, not_found} ->
-            ok
-    end,
-    check_listener(Url).
-
-
-lookup_binding(Namespace, Url) ->
-    case lookup({binding, {Namespace, Url}}) of
-        {ok, Binding} ->
-            {ok, Binding};
-        {error, not_found} ->
-            {error, not_found}
-    end.
-
-bindings() ->
-    Table = ?TABLE,
-    Bindings = ets:match(Table, {{binding, {'_', '_'}}, '$1'}),
-    [ {ExUriURL, Callback, HandlerType, Protocol} ||
-        [#binding{handler_type =  HandlerType, callback = Callback, protocol = Protocol, url = ExUriURL}] <- Bindings ].
-
 all(Type) ->
     Table = ?TABLE,
     [{Name, Pid, Args} || [Name, Pid, Args] <- ets:match(Table, {{Type, '$1'}, '$2', '$3'})].
 
-%% --------------------------------------------------------------------------------
-%% -- registry API for handlers (e.g. stateful or stateless)
-
-update_listener(Url, NewBinding, Mode) ->
-    {ok, ListenerRef} = todo:lookup(Url),
-    case Mode of
-        add ->
-            case lookup({listener_bindings, ListenerRef}) of
-                {ok, Bindings} ->
-                    register({listener_bindings, ListenerRef}, Bindings ++ [NewBinding]);
-                {error, not_found} ->
-                    register({listener_bindings, ListenerRef}, [NewBinding])
-            end;
-        remove ->
-            case lookup({listener_bindings, ListenerRef}) of
-                {ok, [_Binding]} ->
-                    unregister({listener_bindings, ListenerRef});
-                {ok, Bindings} ->
-                    register({listener_bindings, ListenerRef}, lists:delete(NewBinding, Bindings));
-                {error, not_found} ->
-                    ok
-            end
-    end.
-
-check_listener(Url) ->
-    {ok, ListenerRef} = todo:lookup(Url),
-    case lookup({listener_bindings, ListenerRef}) of
-        {ok, _Bindings} ->
-            ok;
-        {error, not_found} -> %% no handler is using the transport handler => kill it
-            toto:unregister(Url),
-            hello_listener:stop(Url),
-            ok
-    end.
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 init({}) ->
@@ -188,5 +130,3 @@ handle_cast(_Cast, State) ->
 
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
-
-

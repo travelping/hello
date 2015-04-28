@@ -29,13 +29,14 @@
 
 -record(zmq_state, {
     client  :: pid(),
+    uri     :: #ex_uri{},
     socket  :: ezmq:socket()
 }).
 
 init_transport(URI, _Options) ->
     {ok, Socket} = ezmq:socket([{type, dealer}, {active, true}]),
     ok = ezmq_connect_url(Socket, URI),
-    {ok, #zmq_state{socket = Socket}}.
+    {ok, #zmq_state{socket = Socket, uri = URI}}.
 
 send_request(Message, State = #zmq_state{socket = Socket}) ->
     ezmq:send(Socket, [<<>>, Message]),
@@ -44,6 +45,15 @@ send_request(Message, State = #zmq_state{socket = Socket}) ->
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
     ezmq:close(Socket).
 
+handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri = URI, socket = Socket}) ->
+    lager:info("dnssd Service: ~p:~w", [Host, Port]),
+    Protocol = zmq_protocol(URI),
+    R = ezmq:connect(Socket, tcp, clean_host(Host), Port, [Protocol]),
+    lager:debug("ezmq:connect: ~p", [R]),
+    {noreply, State};
+handle_info({dnssd, _Ref, Msg}, State) ->
+    lager:info("dnssd Msg: ~p", [Msg]),
+    {noreply, State};
 handle_info({zmq, _Socket, [<<>>, Msg]}, State) ->
     {?INCOMING_MSG, {ok, Msg, State}}.
 
@@ -54,8 +64,7 @@ zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
 
 %% use dnssd to resolve port AND host
 %% map host to Type and Path to Name
-ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{host = Host, port = undefined},
-				  path = [$/|Path]}) ->
+ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{host = Host, port = undefined}, path = [$/|Path]}) ->
     dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
     ok;
 
@@ -76,3 +85,14 @@ ezmq_ip(inet6, Host) ->
         _ ->
             inet:parse_ipv6_address(Host)
     end.
+
+clean_host(Host) ->
+    HostSize = erlang:byte_size(Host),
+    CleanedHost = case binary:match(Host, <<".local.">>) of
+        {M, L} when HostSize == (M + L) ->
+            <<HostCuted:M/binary, _/binary>> = Host,
+            HostCuted;
+        _ ->
+            Host
+    end,
+    binary_to_list(CleanedHost).
