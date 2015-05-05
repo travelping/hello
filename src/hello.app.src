@@ -3,6 +3,7 @@
   [{description, "JSON-RPC API toolkit"},
    {applications, [kernel, stdlib, lager, cowboy, ex_uri, ezmq, dnssd, ibrowse, jsx]},
    {registered, [hello_supervisor, hello_stateless_zmq_supervisor]},
+   {vsn, git},
    {mod, {hello, []}},
    {vsn, git},
    {env, []}
