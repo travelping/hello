@@ -27,7 +27,7 @@
 %% cowboy http handler callbacks
 -export([init/3, handle/2, terminate/3]).
 
--include("internal.hrl").
+-include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 -record(http_listener_state, {

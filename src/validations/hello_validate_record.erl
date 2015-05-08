@@ -24,7 +24,7 @@
 -export([request_params/3, request_params/4, type/2]).
 -export_type([json_type/0, param_type/0]).
 
--include("internal.hrl").
+-include("hello.hrl").
 
 -type json_type()  :: 'boolean' | 'object' | 'integer' | 'float' | 'number' | 'string' | 'list' | 'array' | 'any' | 'iso_date'.
 -type param_type() :: json_type() | {enum, [atom()]}.

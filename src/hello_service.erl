@@ -1,6 +1,6 @@
 -module(hello_service).
 -export([register_link/2, unregister_link/1, call/3, await/1, outgoing_message/2, all/0]).
--include("internal.hrl").
+-include("hello.hrl").
 
 -define(REG_NAME(Name), Name}).
 

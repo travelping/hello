@@ -25,7 +25,7 @@
 -export([init_transport/2, send_request/2, terminate_transport/2, handle_info/2]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
--include("internal.hrl").
+-include("hello.hrl").
 
 -record(zmq_state, {
     client  :: pid(),

@@ -27,7 +27,7 @@
 
 -include_lib("yang/include/typespec.hrl").
 
--include("internal.hrl").
+-include("hello.hrl").
 
 -type json_type()  :: 'boolean' | 'object' | 'integer' | 'float' | 'number' | 'string' | 'list' | 'array' | 'any' | 'iso_date'.
 -type param_type() :: json_type() | {enum, [atom()]}.

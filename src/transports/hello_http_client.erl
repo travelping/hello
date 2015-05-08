@@ -25,7 +25,7 @@
 -export([init_transport/2, send_request/2, terminate_transport/2]).
 -export([http_send/3]).
 
--include("internal.hrl").
+-include("hello.hrl").
 -record(http_options, {
     ib_opts :: list({atom(), term()}),
     method = post :: 'put' | 'post'

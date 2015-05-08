@@ -23,7 +23,7 @@
 
 -export([validate_request/2]).
 
--include("internal.hrl").
+-include("hello.hrl").
 
 validate_request(Request = #request{context = Context, method = Method, args = Args}, Module) ->
     case erlang:function_exported(Module, validation, 0) of
