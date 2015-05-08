@@ -27,7 +27,7 @@
 -export([start/2, stop/1, start/0]).
 -export([bind/2, unbind/2]).
 
--include("internal.hrl").
+-include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 -type decoded_url() :: #ex_uri{}.

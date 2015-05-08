@@ -35,7 +35,7 @@
 %% client transport implementation API
 -export([behaviour_info/1]).
 
--include("internal.hrl").
+-include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 -define(DEFAULT_TIMEOUT, 10000).
 

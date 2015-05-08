@@ -22,7 +22,7 @@
 -module(hello_binding).
 -export([register_link/2, unregister_link/2, lookup/2, all/0]).
 
--include("internal.hrl").
+-include("hello.hrl").
 
 register_link(ExUriURL, HandlerMod) ->
     RouterKey = hello_lib:to_binary(HandlerMod:router_key()),

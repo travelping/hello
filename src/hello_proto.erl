@@ -27,7 +27,7 @@
 -export([handle_incoming_message/6]).
 -export([behaviour_info/1]).
 
--include("internal.hrl").
+-include("hello.hrl").
 
 behaviour_info(callbacks) ->
     [{init_client, 1},
