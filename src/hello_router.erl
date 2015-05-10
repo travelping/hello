@@ -1,6 +1,6 @@
 -module(hello_router).
 -export([route/3]).
--include("internal.hrl").
+-include("hello.hrl").
 
 route(_Context = #context{session_id = Id}, _Request = #request{method = Method}, ExURI) ->
     Namespace = get_namespace(Method),

@@ -44,7 +44,7 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--include("internal.hrl").
+-include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 %% ----------------------------------------------------------------------------------------------------
@@ -124,29 +124,34 @@ init({Identifier, HandlerMod, HandlerArgs}) ->
     end.
 
 %% @hidden
-handle_cast({request, #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = HandlerState}) ->
-    try Mod:handle_request(Context, Method, Args, HandlerState) of
-        {reply, Response, NewHandlerState} ->
-            send(Context, Response),
-            {noreply, State#state{state = NewHandlerState}};
-        {noreply, NewModState} ->
-            {noreply, State#state{state = NewModState}};
-        {stop, Reason, Response, NewModState} ->
-            send(Context, Response),
-            {stop, Reason, State#state{state = NewModState}};
-        {stop, Reason, NewModState} ->
-            {stop, Reason, State#state{mod=NewModState}};
-        {stop, NewModState} ->
-            {stop, State#state{mod=NewModState}};
-        {ignore, NewModState} ->
-            {noreply, State#state{state = NewModState}};
-        _FalseAnswer ->
-            % TODO: log it
-            {noreply, State}
-    catch
-        Error:Reason ->
-            lager:error("handler crashed with error ~p", [{Error, Reason, erlang:get_stacktrace()}]),
-            {noreply, State}
+handle_cast({request, Request = #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = HandlerState}) ->
+    lager:info("handle_cast:Request ~p", [Request]),
+    case hello_validate:validate_request(Request, Mod) of
+        {ok, ValMethod, ValParams} ->
+            try Mod:handle_request(Context, Method, Args, HandlerState) of
+                {reply, Response, NewHandlerState} ->
+                    send(Context, Response),
+                    {noreply, State#state{state = NewHandlerState}};
+                {noreply, NewModState} ->
+                    {noreply, State#state{state = NewModState}};
+                {stop, Reason, Response, NewModState} ->
+                    send(Context, Response),
+                    {stop, Reason, State#state{state = NewModState}};
+                {stop, Reason, NewModState} ->
+                    {stop, Reason, State#state{mod=NewModState}};
+                {stop, NewModState} ->
+                    {stop, State#state{mod=NewModState}};
+                {ignore, NewModState} ->
+                    {noreply, State#state{state = NewModState}};
+                _FalseAnswer ->
+                    % TODO: log it
+                    {noreply, State}
+            catch
+                Error:Reason ->
+                    {noreply, State}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end;
 handle_cast({set_idle_timeout, Timeout}, State = #state{timer = Timer}) ->
     NewTimer = Timer#timer{idle_timeout = Timeout},

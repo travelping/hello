@@ -29,7 +29,7 @@
          decode/3
          ]).
 
--include("internal.hrl").
+-include("hello.hrl").
 -include("jsonrpc_internal.hrl").
 -import(hello_lib, [get_in/2, get/2, get/3, to_binary/1]).
 
