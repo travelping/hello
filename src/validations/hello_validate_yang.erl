@@ -34,12 +34,12 @@
 
 %% --------------------------------------------------------------------------------
 %% -- API functions
-request(Mod, Method, Params) ->
-    case erlang:function_exported(Mod, typespec, 0) of
+request(CallbackModule, Method, Params) ->
+    case erlang:function_exported(CallbackModule, typespec, 0) of
         false ->
             {error, typespec_not_loaded};
         true ->
-            ModSpec = Mod:typespec(),
+            ModSpec = CallbackModule:typespec(),
             try
                 Fields = yang_typespec:rpc_params(Method, ModSpec),
                 case is_proplist(Params) of
@@ -56,7 +56,7 @@ request(Mod, Method, Params) ->
                     {error, Code, Msg, Data} ->
                         {error, {Code, Msg, Data}};
                     ParamsValidated ->
-                        ParamsValidated %{ok, Method, Params}
+                        ParamsValidated
                 end
             catch
                 error:{badarg, _} ->
@@ -122,7 +122,9 @@ params_to_proplist(_PInfo, {Props}) -> Props;
 params_to_proplist(Fields,  Params) when is_list(Params) ->
     {Proplist, TooMany} = zip(Fields, Params, {[], false}),
     TooMany andalso throw({error, invalid_params, "superfluous parameters"}),
-    lists:reverse(Proplist).
+    lists:reverse(Proplist);
+params_to_proplist(_Fields,  Params) when is_map(Params) ->
+    maps:to_list(Params).
 
 strip_keys([{K, V} | Proplists], [#field{name = K} | Defs], Acc) ->
     strip_keys(Proplists, Defs, [V | Acc]);
