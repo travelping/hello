@@ -33,6 +33,7 @@
 %% gen_server Callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
 
 -define(TABLE, hello_registry_tab).
@@ -71,13 +72,13 @@ lookup(Key) ->
     case ets:lookup(?TABLE, Key) of
         [] ->
             {error, not_found};
-        [{Key, Pid, Value}] ->
+        [{Key, Pid, Value, _}] ->
             {ok, Pid, Value}
     end.
 
 all(Type) ->
     Table = ?TABLE,
-    [{Name, Pid, Args} || [Name, Pid, Args] <- ets:match(Table, {{Type, '$1'}, '$2', '$3'})].
+    [{Name, Pid, Args, Ref} || [Name, Pid, Args, Ref] <- ets:match(Table, {{Type, '$1'}, '$2', '$3', '$4'})].
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -86,25 +87,19 @@ init({}) ->
     Table = ets:new(?TABLE, [protected, ordered_set, named_table, {read_concurrency, true}]),
     {ok, Table}.
 
-handle_call({register, Key, Pid, Data}, _From, Table) when is_pid(Pid) ->
-    case is_process_alive(Pid) of
-        true ->
-            erlang:monitor(process, Pid),
-            ets:insert(Table, {Key, Pid, Data}),
-            {reply, ok, Table};
-        false ->
-            {reply, {error, pid_not_alive}, Table}
+handle_call({register, Key, Pid, Data}, _From, Table) ->
+    case register(Key, Pid, Data, Table) of
+        ok -> {reply, ok, Table};
+        Error -> {reply, Error, Table}
     end;
-handle_call({register, Key, undefined, Data}, _From, Table) ->
-    ets:insert(Table, {Key, undefined, Data}),
-    {reply, ok, Table};
 
 handle_call({unregister, Key}, _From, Table) ->
     case ets:lookup(Table, Key) of
         [] ->
             %% not registered, skip
             {reply, ok, Table};
-        [{Key, _Data}] ->
+        [{Key, _, _, Ref}] ->
+            dnssd_clean(Ref),
             ets:delete(Table, Key),
             {reply, ok, Table}
     end;
@@ -117,6 +112,9 @@ handle_info({'EXIT', _From, Reason}, Table) ->
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
     ets:match_delete(Table, {'_', Pid, '_'}),
     {noreply, Table};
+handle_info({dnssd, _Ref, Msg}, State) ->
+    lager:info("dnssd Msg: ~p", [Msg]),
+    {noreply, State};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
 
@@ -130,3 +128,34 @@ handle_cast(_Cast, State) ->
 
 code_change(_FromVsn, _ToVsn, State) ->
     {ok, State}.
+
+%% --------------------------------------------------------------------------------
+%% -- helpers
+register(Key, Pid, Data, Table) ->
+    case Pid =:= undefined orelse is_process_alive(Pid) of
+        true ->
+            is_pid(Pid) andalso erlang:monitor(process, Pid),
+            bind(Key, Pid, Data, Table);
+        false -> {error, pid_not_alive}
+    end.
+
+bind({binding, {Url, _RouterKey}} = Key, Pid, Data, Table) -> 
+    [App, Name] = string:tokens(binary_to_list(Data), "/"),
+    Ref = dnss_register(App, Name, Url),
+    ets:insert(Table, {Key, Pid, Data, Ref});
+bind(Key, Pid, Data, Table) -> ets:insert(Table, {Key, Pid, Data, undefined}).
+
+do_dnss_register(App, Name, Port) ->
+    %lager:info("dnss port: ~p", [Port]),
+    case dnssd:register(Name, <<"_", App/binary, "._tcp">>, Port) of
+        {ok, Ref} -> Ref;
+        _ -> ok
+    end.
+
+dnss_register(App, Name, #ex_uri{authority = #ex_uri_authority{port = Port}})
+  when is_list(App), is_list(Name), is_integer(Port) ->
+    do_dnss_register(list_to_binary(App), list_to_binary(Name), Port);
+dnss_register(_, _, _) -> ok.
+
+dnssd_clean(Ref) when is_reference(Ref) -> dnssd:stop(Ref);
+dnssd_clean(_) -> ok.

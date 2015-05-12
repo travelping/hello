@@ -22,18 +22,22 @@
 -module(hello_binding).
 -export([register_link/2, unregister_link/2, lookup/2, all/0]).
 
+-include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
 
 register_link(ExUriURL, HandlerMod) ->
     RouterKey = hello_lib:to_binary(HandlerMod:router_key()),
     Name = hello_lib:to_binary(HandlerMod:name()),
-    hello_registry:register_link({binding, {ExUriURL, RouterKey}}, Name).
+    NewExURL = hello_listener:default_port(ExUriURL),
+    hello_registry:register_link({binding, {NewExURL, RouterKey}}, Name).
 
 lookup(ExUriURL, RouterKey) ->
-    hello_registry:lookup({binding, {ExUriURL, RouterKey}}).
+    NewExURL = hello_listener:default_port(ExUriURL),
+    hello_registry:lookup({binding, {NewExURL, RouterKey}}).
 
 unregister_link(ExUriURL, HandlerMod) ->
     RouterKey = hello_lib:to_binary(HandlerMod:router_key()),
-    hello_registry:unregister_link({binding, {ExUriURL, RouterKey}}).
+    NewExURL = hello_listener:default_port(ExUriURL),
+    hello_registry:unregister_link({binding, {NewExURL, RouterKey}}).
 
 all() -> hello_registry:all(binding).
