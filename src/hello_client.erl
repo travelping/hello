@@ -41,7 +41,7 @@
 
 behaviour_info(callbacks) ->
     [{init_transport,2},
-     {send_request,2},
+     {send_request,3},
      {terminate_transport,2}];
 behaviour_info(_) ->
     undefined.
@@ -164,10 +164,11 @@ handle_call(terminate, _From, State) ->
 %% @hidden
 handle_info({?INCOMING_MSG, Message}, State) ->
     incoming_message(Message, State);
-handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
-    EncodeInfo = hello_proto:encoding_info(hello_proto),
+handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState,
+                                         protocol_mod=ProtocolMod, protocol_opts=ProtocolOpts}) ->
+    EncodeInfo = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
     BinaryPing = list_to_binary(atom_to_list(?PING)),
-    {ok, NewTransportState} = TransportModule:send_request({BinaryPing, EncodeInfo}, TransportState),
+    {ok, NewTransportState} = TransportModule:send_request(BinaryPing, EncodeInfo, TransportState),
     {noreply, State#client_state{transport_state = NewTransportState}};
 
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
@@ -216,7 +217,8 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
                                                       transport_mod = TransportModule, transport_state = TransportState, async_request_map = AsyncMap}) ->
     case hello_proto:encode(ProtocolMod, ProtocolOpts, Request) of
         {ok, BinRequest} ->
-            case TransportModule:send_request(BinRequest, TransportState) of
+            MimeType = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
+            case TransportModule:send_request(BinRequest, MimeType, TransportState) of
                 {ok, NewTransportState} ->
                     {ok, State#client_state{transport_state = NewTransportState, async_request_map = update_map(Request, From, AsyncMap)}};
                 {error, Reason, NewTransportState} ->

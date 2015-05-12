@@ -26,7 +26,8 @@
          build_request/3,
          build_error/4,
          encode/2,
-         decode/3
+         decode/3,
+         mime_type/1
          ]).
 
 -include("hello.hrl").
@@ -58,14 +59,14 @@ build_request(SingleRequest, Options, State = #jsonrpc_info{ reqid = ReqId }) ->
 
 encode(Batch, Opts) when is_list(Batch)  ->
     EncodedBatch = [ encode_single(Request) || Request <- Batch ],
-    {ok, (get_decoder(Opts)):encode(EncodedBatch)};
+    {ok, hello_decoder:encode(get_decoder(Opts), EncodedBatch)};
 encode(Single, Opts) ->
     EncodedSingle = encode_single(Single),
-    {ok, (get_decoder(Opts)):encode(EncodedSingle)}.
+    {ok, hello_decoder:encode(get_decoder(Opts), EncodedSingle)}.
 
 decode(Binary, Opts, Type) ->
     try
-        case (get_decoder(Opts)):decode(to_binary(Binary)) of
+        case hello_decoder:decode(get_decoder(Opts), to_binary(Binary)) of
             Batch = [ Single | _ ] when is_map(Single) ->
                 decode_batch(Batch, Type);
             Single ->
@@ -76,6 +77,9 @@ decode(Binary, Opts, Type) ->
             io:format(user, "Error ~p Reason ~p ~p~n", [Error, Reason, erlang:get_stacktrace()]),
             {error, #error{code = parse_error}}
     end.
+
+mime_type(Opts) ->
+    {ok, hello_decoder:mime_type(get_decoder(Opts))}.
 
 get_decoder(Opts) -> proplists:get_value(decoder, Opts, hello_json).
 
