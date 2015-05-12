@@ -7,6 +7,6 @@ decode(Binary) ->
     Unpacked.
 
 encode(Json) ->
-    msgpack:pack(Json, [{format, jsx}]).
+    msgpack:pack(Json, [{format, jsx}, {allow_atom, pack}]).
 
 mime_type() -> <<"application/x-msgpack">>.
