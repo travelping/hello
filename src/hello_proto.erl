@@ -23,7 +23,7 @@
 
 -export([init_client/2]).
 -export([build_request/3]).
--export([encode/3, decode/4]).
+-export([encode/3, decode/4, mime_type/2]).
 -export([handle_incoming_message/6]).
 -export([behaviour_info/1]).
 
@@ -37,6 +37,7 @@ behaviour_info(callbacks) ->
      {encoding_info, 0},
      {encode, 1},
      {decode, 1},
+     {mime_type, 1},
      {extract_requests, 1},
      {error_response, 4},
      {log, 4}
@@ -112,6 +113,7 @@ may_be_encode(ProtocolMod, ProtocolOpts, Answer) ->
 %% -- Encoding/Decoding
 encode(Mod, Opts, Request) -> Mod:encode(Request, Opts).
 decode(Mod, Opts, Message, Type) when is_atom(Mod) -> Mod:decode(Message, Opts, Type).
+mime_type(Mod, Opts) when is_atom(Mod) -> Mod:mime_type(Opts).
 
 proto_answer({error, {Code, Message, ProtoData}}) -> #error{code = Code, message = Message, proto_data = ProtoData};
 proto_answer({ok, Response}) -> Response.

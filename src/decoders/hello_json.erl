@@ -1,8 +1,11 @@
 -module(hello_json).
--export([decode/1, encode/1]).
+-behaviour(hello_decoder).
+-export([decode/1, encode/1, mime_type/0]).
 
 decode(Binary) ->
     jsx:decode(Binary, [return_maps]).
 
 encode(Json) ->
     jsx:encode(Json).
+
+mime_type() -> <<"application/json">>.
