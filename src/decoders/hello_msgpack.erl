@@ -1,5 +1,6 @@
 -module(hello_msgpack).
--export([decode/1, encode/1]).
+-behaviour(hello_decoder).
+-export([decode/1, encode/1, mime_type/0]).
 
 decode(Binary) ->
     {ok, Unpacked} = msgpack:unpack(Binary, [{format, map}]),
@@ -7,3 +8,5 @@ decode(Binary) ->
 
 encode(Json) ->
     msgpack:pack(Json, [{format, jsx}]).
+
+mime_type() -> <<"application/x-msgpack">>.

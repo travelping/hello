@@ -22,7 +22,7 @@
 -module(hello_zmq_client).
 
 -behaviour(hello_client).
--export([init_transport/2, send_request/2, terminate_transport/2, handle_info/2]).
+-export([init_transport/2, send_request/3, terminate_transport/2, handle_info/2]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
@@ -38,7 +38,7 @@ init_transport(URI, _Options) ->
     ok = ezmq_connect_url(Socket, URI),
     {ok, #zmq_state{socket = Socket, uri = URI}}.
 
-send_request(Message, State = #zmq_state{socket = Socket}) ->
+send_request(Message, _, State = #zmq_state{socket = Socket}) ->
     ezmq:send(Socket, [<<>>, Message]),
     {ok, State}.
 
