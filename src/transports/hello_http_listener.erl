@@ -22,7 +22,7 @@
 -module(hello_http_listener).
 
 -behaviour(hello_listener).
--export([listener_specification/2, send_response/2, close/1, listener_termination/1]).
+-export([listener_specification/2, send_response/2, close/1, listener_termination/1, default_port/1]).
 
 %% cowboy http handler callbacks
 -export([init/3, handle/2, terminate/3]).
@@ -117,6 +117,7 @@ req_transport_params(Req1) ->
     {TransportParams, Req5}.
 
 default_port(undefined) -> 80;
+default_port(0) -> 80;
 default_port(Port)      -> Port.
 
 peer_addr(Req) ->

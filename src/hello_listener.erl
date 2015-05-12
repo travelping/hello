@@ -1,5 +1,5 @@
 -module(hello_listener).
--export([start/5, stop/1, all/0, async_incoming_message/3, await_answer/0, handle_incoming_message/3]).
+-export([start/5, stop/1, lookup/1, all/0, async_incoming_message/3, await_answer/0, handle_incoming_message/3, default_port/1]).
 -export([behaviour_info/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -24,16 +24,17 @@ behaviour_info(_) ->
     undefined.
 
 start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
-    case hello_registry:lookup({listener, ExUriURL}) of
+    NewExURL = default_port(ExUriURL),
+    case lookup(NewExURL) of
         {error, not_found} ->
-            case start1(ExUriURL, TransportOpts) of
+            case start1(NewExURL, TransportOpts) of
                 {ok, ListenerRef} ->
                     ListenerInfo = #listener{ref = ListenerRef,
-                                             exuri = ExUriURL,
+                                             exuri = NewExURL,
                                              protocol = Protocol,
                                              protocol_opts = ProtocolOpts,
                                              router = RouterMod},
-                    hello_registry:register({listener, ExUriURL}, ListenerInfo),
+                    hello_registry:register({listener, NewExURL}, ListenerInfo),
                     {ok, ListenerRef};
                 {error, Reason} ->
                     {error, Reason}
@@ -51,6 +52,9 @@ stop(ExUriURL = #ex_uri{scheme = Scheme}) ->
             ok
     end.
 
+lookup(ExUriURL) ->
+    hello_registry:lookup({listener, ExUriURL}).
+
 all() ->
     hello_registry:all(listener).
 
@@ -66,8 +70,12 @@ await_answer() ->
             {error, timeout}
     end.
 
+default_port(#ex_uri{scheme = Scheme, authority = #ex_uri_authority{port = Port} = Authority} = ExUriURL) -> 
+    Module = transport_module(Scheme),
+    ExUriURL#ex_uri{authority = Authority#ex_uri_authority{port = Module:default_port(Port)}}.
+
 handle_incoming_message(Context, ExUriURL, Binary) ->
-    {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = hello_registry:lookup({listener, ExUriURL}),
+    {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
     {ok, BinResp} = hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Binary),
     send(BinResp, Context),
     close(Context).
@@ -96,3 +104,4 @@ transport_module("zmq-tcp6") -> hello_zmq_listener;
 transport_module("zmq-ipc")  -> hello_zmq_listener;
 transport_module("http")     -> hello_http_listener;
 transport_module(_Scheme)    -> error(notsup).
+
