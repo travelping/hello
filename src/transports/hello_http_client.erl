@@ -77,18 +77,17 @@ http_send(Client, Request, MimeType, State = #http_state{url = URL, options = Op
             exit(normal)
     end.
 
-outgoing_message(Client, EncInfo, Body, State) ->
+outgoing_message(Client, MimeType, Body, State) ->
     Body1 = list_to_binary(Body),
-    AtomEncInfo = binary_to_atom(EncInfo, latin1),
-    case AtomEncInfo of
-        todo ->
+    case MimeType of
+        <<"application/json">> ->
             Body2 = binary:replace(Body1, <<"}{">>, <<"}$$${">>, [global]),
             Body3 = binary:replace(Body2, <<"]{">>, <<"]$$${">>, [global]),
             Body4 = binary:replace(Body3, <<"}[">>, <<"}$$$[">>, [global]),
             Bodies = binary:split(Body4, <<"$$$">>, [global]),
-            [ Client ! {?INCOMING_MSG, {ok, AtomEncInfo, SingleBody, State}} || SingleBody <- Bodies ];
+            [ Client ! {?INCOMING_MSG, {ok, SingleBody, State}} || SingleBody <- Bodies ];
         _NoJson ->
-            Client ! {?INCOMING_MSG, {ok, AtomEncInfo, Body1, State}}
+            Client ! {?INCOMING_MSG, {ok, Body1, State}}
     end.
 
 validate_options(Options) ->

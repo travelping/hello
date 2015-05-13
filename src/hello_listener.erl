@@ -69,10 +69,14 @@ await_answer() ->
 handle_incoming_message(Context, ExUriURL, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = hello_registry:lookup({listener, ExUriURL}),
     {ok, BinResp} = hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Binary),
-    send(BinResp, Context).
+    send(BinResp, Context),
+    close(Context).
 
 send(BinResp, Context = #context{transport = TransportMod}) ->
     TransportMod:send_response(Context, BinResp).
+
+close(Context = #context{transport = TransportMod}) ->
+    TransportMod:close(Context).
 %% -------------------------------------------------------------------------------
 %% -- helpers TODO e.g. for keep alive mechanism
 start1(ExUriURL = #ex_uri{scheme = Scheme}, TransportOpts) ->
