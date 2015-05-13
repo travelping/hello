@@ -89,7 +89,7 @@ http_chunked_loop(Req, State) ->
         hello_closed ->
             {ok, Req, State};
         {hello_msg, _TParams, _Peer, BinResp} ->
-            cowboy_req:chunk(BinResp, Req),
+            ok = cowboy_req:chunk(BinResp, Req),
             http_chunked_loop(Req, State)
     end.
 
