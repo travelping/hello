@@ -166,9 +166,9 @@ handle_info({?INCOMING_MSG, Message}, State) ->
     incoming_message(Message, State);
 handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState,
                                          protocol_mod=ProtocolMod, protocol_opts=ProtocolOpts}) ->
-    EncodeInfo = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
+    {ok, MimeType} = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
     BinaryPing = list_to_binary(atom_to_list(?PING)),
-    {ok, NewTransportState} = TransportModule:send_request(BinaryPing, EncodeInfo, TransportState),
+    {ok, NewTransportState} = TransportModule:send_request(BinaryPing, MimeType, TransportState),
     {noreply, State#client_state{transport_state = NewTransportState}};
 
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
@@ -217,7 +217,7 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
                                                       transport_mod = TransportModule, transport_state = TransportState, async_request_map = AsyncMap}) ->
     case hello_proto:encode(ProtocolMod, ProtocolOpts, Request) of
         {ok, BinRequest} ->
-            MimeType = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
+            {ok, MimeType} = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
             case TransportModule:send_request(BinRequest, MimeType, TransportState) of
                 {ok, NewTransportState} ->
                     {ok, State#client_state{transport_state = NewTransportState, async_request_map = update_map(Request, From, AsyncMap)}};
