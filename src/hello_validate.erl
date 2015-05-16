@@ -25,12 +25,9 @@
 
 -include("hello.hrl").
 
-validate_request(Request = #request{context = Context, method = Method, args = Args}, Module) ->
-    case erlang:function_exported(Module, validation, 0) of
-        false ->
-            ValidationModule = hello_validate_yang;
-        true ->
-            ValidationModule = Module:validation(),
-            lager:info("hello_validate:validate_request ValidationModule:~p, Method:~p, Args:~p", [Module, Method, Args])
+validate_request(_Request = #request{context = _Context, method = Method, args = Args}, Module) ->
+    ValidationModule = case erlang:function_exported(Module, validation, 0) of
+        false -> hello_validate_yang;
+        true  -> Module:validation()
     end,
     ValidationModule:request(Module, Method, Args).

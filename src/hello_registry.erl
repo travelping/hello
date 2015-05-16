@@ -139,20 +139,21 @@ register(Key, Pid, Data, Table) ->
         false -> {error, pid_not_alive}
     end.
 
-bind({binding, {Url, _RouterKey}} = Key, Pid, Data, Table) -> 
+bind({binding, {_Url, _RouterKey}} = Key, Pid, {Data, Port}, Table) ->
+    % TODO: That is very dangarous, as single error on service, will simple crash the whole registry
     [App, Name] = string:tokens(binary_to_list(Data), "/"),
-    Ref = dnss_register(App, Name, Url),
+    Ref = dnss_register(App, Name, Port),
     ets:insert(Table, {Key, Pid, Data, Ref});
 bind(Key, Pid, Data, Table) -> ets:insert(Table, {Key, Pid, Data, undefined}).
 
 do_dnss_register(App, Name, Port) ->
-    %lager:info("dnss port: ~p", [Port]),
+    lager:info("dnss port: ~p", [Port]),
     case dnssd:register(Name, <<"_", App/binary, "._tcp">>, Port) of
         {ok, Ref} -> Ref;
         _ -> ok
     end.
 
-dnss_register(App, Name, #ex_uri{authority = #ex_uri_authority{port = Port}})
+dnss_register(App, Name, Port)
   when is_list(App), is_list(Name), is_integer(Port) ->
     do_dnss_register(list_to_binary(App), list_to_binary(Name), Port);
 dnss_register(_, _, _) -> ok.
