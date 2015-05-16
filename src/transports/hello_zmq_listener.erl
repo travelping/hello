@@ -23,7 +23,7 @@
 -export([start_link/1]).
 
 -behaviour(hello_listener).
--export([listener_specification/2, send_response/2, close/1, listener_termination/1, default_port/1]).
+-export([listener_specification/2, send_response/2, close/1, port/2, listener_termination/2]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -45,8 +45,11 @@ send_response(#context{transport_pid = TPid, transport_params = TParams, peer = 
 close(_Context) ->
     ok.
 
-listener_termination(_ListenerID) ->
+listener_termination(_ExUri, _ListenerID) ->
     child.
+
+port(_ExUriUrl, ListenerId) ->
+    gen_server:call(ListenerId, get_port).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -96,6 +99,9 @@ terminate(_Reason, State) ->
     ezmq:close(State#state.socket).
 
 %% unused callbacks
+handle_call(get_port, _From, State = #state{socket = Socket}) ->
+    {ok, [{_, _, Port}|_]} = ezmq:sockname(Socket),
+    {reply, Port, State};
 handle_call(_Call, _From, State) ->
     {reply, not_supported, State}.
 handle_cast(_Cast, State) ->
@@ -105,10 +111,6 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-default_port(undefined) -> 27000;
-default_port(0) -> 27000;
-default_port(Port)      -> Port.
-
 zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
 zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
 
@@ -116,7 +118,7 @@ ezmq_bind_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, p
     Protocol = zmq_protocol(URI),
     case ezmq_ip(Protocol, Host) of
         {ok, IP} ->
-            ezmq:bind(Socket, tcp, default_port(Port), [Protocol, {reuseaddr, true}, {ip, IP}]);
+            ezmq:bind(Socket, tcp, Port, [Protocol, {reuseaddr, true}, {ip, IP}]);
         Other ->
             Other
     end.

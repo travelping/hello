@@ -22,7 +22,7 @@
 -module(hello_http_listener).
 
 -behaviour(hello_listener).
--export([listener_specification/2, send_response/2, close/1, listener_termination/1, default_port/1]).
+-export([listener_specification/2, send_response/2, close/1, listener_termination/2, port/2]).
 
 %% cowboy http handler callbacks
 -export([init/3, handle/2, terminate/3]).
@@ -45,7 +45,7 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Acceptors = 30,
     {IP, _Host} = extract_ip_and_host(ExUriUrl),
     Port = (ExUriUrl#ex_uri.authority)#ex_uri_authority.port,
-    TransportOpts = [{port, default_port(Port)}, {ip, IP}],
+    TransportOpts = [{port, Port}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
     Result = cowboy:start_http({?MODULE, ExUriUrl}, Acceptors, TransportOpts, ProtocolOpts),
     {other_supervisor, Result}.
@@ -56,9 +56,11 @@ send_response(#context{transport_pid = TPid, transport_params = TParams, peer = 
 close(#context{transport_pid = TPid}) ->
     TPid ! hello_closed.
 
-listener_termination(ExUriUrl) ->
+listener_termination(ExUriUrl, _ListenerRef) ->
     ranch:stop_listener({?MODULE, ExUriUrl}).
 
+port(_, _) ->
+    error(badarg, not_supported).
 %% --------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
 init({tcp, http}, Req, [State]) ->
@@ -115,10 +117,6 @@ req_transport_params(Req1) ->
                        {query_params, QSVals},
                        {cookie_params, Cookies}],
     {TransportParams, Req5}.
-
-default_port(undefined) -> 80;
-default_port(0) -> 80;
-default_port(Port)      -> Port.
 
 peer_addr(Req) ->
     {RealIp, Req1} = cowboy_req:header(<<"X-Real-Ip">>, Req),
