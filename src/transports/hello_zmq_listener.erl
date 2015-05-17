@@ -111,6 +111,9 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
+default_port(undefined) -> 0.
+default_port(Port) -> Port.
+
 zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
 zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
 
@@ -118,7 +121,7 @@ ezmq_bind_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, p
     Protocol = zmq_protocol(URI),
     case ezmq_ip(Protocol, Host) of
         {ok, IP} ->
-            ezmq:bind(Socket, tcp, Port, [Protocol, {reuseaddr, true}, {ip, IP}]);
+            ezmq:bind(Socket, tcp, default_port(Port), [Protocol, {reuseaddr, true}, {ip, IP}]);
         Other ->
             Other
     end.
