@@ -45,7 +45,7 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Acceptors = 30,
     {IP, _Host} = extract_ip_and_host(ExUriUrl),
     Port = (ExUriUrl#ex_uri.authority)#ex_uri_authority.port,
-    TransportOpts = [{port, Port}, {ip, IP}],
+    TransportOpts = [{port, default_port(Port)}, {ip, IP}],
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
     Result = cowboy:start_http({?MODULE, ExUriUrl}, Acceptors, TransportOpts, ProtocolOpts),
     {other_supervisor, Result}.
@@ -59,8 +59,8 @@ close(#context{transport_pid = TPid}) ->
 listener_termination(ExUriUrl, _ListenerRef) ->
     ranch:stop_listener({?MODULE, ExUriUrl}).
 
-port(_, _) ->
-    error(badarg, not_supported).
+port(#ex_uri{authority = #ex_uri_authority{port = Port}}, _) ->
+    default_port(Port).
 %% --------------------------------------------------------------------------------
 %% -- request handling (callbacks for cowboy_http_handler)
 init({tcp, http}, Req, [State]) ->
@@ -99,6 +99,9 @@ terminate(_Reason, _Req, _State) ->
     ok.
 
 %% helpers
+default_port(undefined) -> 80;
+default_port(Port) -> Port.
+
 response_header(ContentType) ->
     [{<<"Content-Type">>, ContentType}] ++ server_header().
 
