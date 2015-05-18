@@ -111,7 +111,7 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-default_port(undefined) -> 0.
+default_port(undefined) -> 0;
 default_port(Port) -> Port.
 
 zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
