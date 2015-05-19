@@ -31,16 +31,16 @@
 
 behaviour_info(callbacks) ->
     [{init_client, 1},
-     {build_request, 2},
-     {do_request, 5},
-     {do_async_request, 4},
-     {encoding_info, 0},
-     {encode, 1},
-     {decode, 1},
-     {mime_type, 1},
-     {extract_requests, 1},
-     {error_response, 4},
-     {log, 4}
+     {build_request, 3},
+     %{do_request, 5},
+     %{do_async_request, 4},
+     %{encoding_info, 0},
+     {encode, 2},
+     {decode, 3},
+     {mime_type, 1}
+     %{extract_requests, 1},
+     %{error_response, 4},
+     %{log, 4}
      ];
 behaviour_info(_Other) ->
     undefined.
@@ -70,10 +70,10 @@ handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, B
             Result = proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL),
             may_be_encode(ProtocolMod, ProtocolOpts, Result);
         {error, ignore} ->
-            hello_proto:log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
+            %log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
             todo:close(Context);
         {error, Response} ->
-            hello_proto:log(ProtocolMod, Binary, Response, undefined, ExUriURL),
+            %log(ProtocolMod, Binary, Response, undefined, ExUriURL),
             todo:send(Response),
             todo:close(Context);
         {internal, Message} ->
