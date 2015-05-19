@@ -148,8 +148,8 @@ handle_cast({request, Request = #request{context = Context, method = Method, arg
                     % TODO: log it
                     {noreply, State}
             catch
-                _Error:_Reason ->
-                    lager:error("service: ~p handler thrown an error for method: ~p, args: ~p", [Mod, Method, Args]),
+                Error:Reason ->
+                    lager:error("service: ~p handler thrown an error for method: ~p, args: ~p error: ~p", [Mod, Method, Args, {Error, Reason, erlang:get_stacktrace()}]),
                     {noreply, State}
             end;
         {error, Reason} ->
