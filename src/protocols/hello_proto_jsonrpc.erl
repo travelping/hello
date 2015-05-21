@@ -27,7 +27,7 @@
          build_error/4,
          encode/2,
          decode/3,
-         mime_type/1
+         signature/1
          ]).
 
 -include("hello.hrl").
@@ -57,16 +57,16 @@ build_request(SingleRequest, Options, State = #jsonrpc_info{ reqid = ReqId }) ->
     Request = SingleRequest#request{proto_data = Info, id = ReqId},
     {ok, Request, State#jsonrpc_info{ reqid = ReqId+1 }}.
 
-encode(Batch, Opts) when is_list(Batch)  ->
+encode(Batch, _Opts) when is_list(Batch)  ->
     EncodedBatch = [ encode_single(Request) || Request <- Batch ],
-    {ok, hello_decoder:encode(get_decoder(Opts), EncodedBatch)};
-encode(Single, Opts) ->
+    {ok, hello_json:encode(EncodedBatch)};
+encode(Single, _Opts) ->
     EncodedSingle = encode_single(Single),
-    {ok, hello_decoder:encode(get_decoder(Opts), EncodedSingle)}.
+    {ok, hello_json:encode(EncodedSingle)}.
 
-decode(Binary, Opts, Type) ->
+decode(Binary, _Opts, Type) ->
     try
-        case hello_decoder:decode(get_decoder(Opts), to_binary(Binary)) of
+        case hello_json:decode(to_binary(Binary)) of
             Batch = [ Single | _ ] when is_map(Single) ->
                 decode_batch(Batch, Type);
             Single ->
@@ -78,10 +78,7 @@ decode(Binary, Opts, Type) ->
             {error, #error{code = parse_error}}
     end.
 
-mime_type(Opts) ->
-    {ok, hello_decoder:mime_type(get_decoder(Opts))}.
-
-get_decoder(Opts) -> proplists:get_value(decoder, Opts, hello_json).
+signature(_Opts) -> hello_json:signature().
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding

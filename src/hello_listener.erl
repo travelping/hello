@@ -1,5 +1,5 @@
 -module(hello_listener).
--export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/3, await_answer/0, handle_incoming_message/3]).
+-export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, await_answer/0, handle_incoming_message/4]).
 -export([behaviour_info/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -16,7 +16,7 @@
 
 behaviour_info(callbacks) ->
     [{listener_specification, 2},
-     {send_response, 2},
+     {send_response, 3},
      {close, 1},
      {port, 2},
      {listener_termination, 2}
@@ -70,8 +70,8 @@ port(ExUriURL = #ex_uri{scheme = Scheme}) ->
 all() ->
     hello_registry:all(listener).
 
-async_incoming_message(Context, ExUriURL, Binary) ->
-    spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Binary]).
+async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
+    spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Signarute, Binary]).
 
 await_answer() ->
     receive
@@ -82,14 +82,14 @@ await_answer() ->
             {error, timeout}
     end.
 
-handle_incoming_message(Context, ExUriURL, Binary) ->
+handle_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
-    {ok, BinResp} = hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Binary),
-    send(BinResp, Context),
+    {ok, BinResp} = hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signarute, Binary),
+    send(hello_proto:signature(ProtocolMod, ProtocolOpts), BinResp, Context),
     close(Context).
 
-send(BinResp, Context = #context{transport = TransportMod}) ->
-    TransportMod:send_response(Context, BinResp).
+send(Signarute, BinResp, Context = #context{transport = TransportMod}) ->
+    TransportMod:send_response(Context, Signarute, BinResp).
 
 close(Context = #context{transport = TransportMod}) ->
     TransportMod:close(Context).

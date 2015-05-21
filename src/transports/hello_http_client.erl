@@ -48,8 +48,8 @@ init_transport(URL, Options) ->
             {error, Reason}
     end.
 
-send_request(Request, MimeType, State) when is_binary(Request), is_binary(MimeType) ->
-    spawn(?MODULE, http_send, [self(), Request, MimeType, State]),
+send_request(Request, Signarute, State) when is_binary(Request), is_binary(Signarute) ->
+    spawn(?MODULE, http_send, [self(), Request, Signarute, State]),
     {ok, State};
 send_request(_, _, State) ->
     {error, no_valid_request, State}.
@@ -80,22 +80,28 @@ clean_host(Host) ->
     end,
     binary_to_list(CleanedHost).
 
+content_type(Signarute) ->
+    Json = hello_json:signature(),
+    MsgPack = hello_msgpack:signature(),
+    case Signarute of
+        Json -> "application/json";
+        MsgPack -> "application/x-msgpack";
+        _ -> [] 
+    end.
+
 %% http client helpers
-http_send(Client, Request, MimeType, State = #http_state{url = URL, options = Options}) ->
+http_send(Client, Request, Signarute, State = #http_state{url = URL, options = Options}) ->
     #http_options{method = Method, ib_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
-    Headers = [{"Content-Type", binary_to_list(MimeType)},
-               {"Accept", MimeType},
+    Headers = [{"Content-Type", content_type(Signarute)},
+               {"Accept", Signarute},
                {"User-Agent", "hello/" ++ Vsn}],
     case ibrowse:send_req(URL, Headers, Method, Request, Opts) of
         {ok, _HttpCode, _, []} -> %% empty responses are ignored
             ok;
-        {ok, "200", _, Body} ->
-            outgoing_message(Client, MimeType, Body, State);
-        {ok, "201", _, Body} ->
-            outgoing_message(Client, MimeType, Body, State);
-        {ok, "202", _, Body} ->
-            outgoing_message(Client, MimeType, Body, State);
+        {ok, Success, RespHeaders, Body} when Success =:= "200"; Success =:= "201"; Success =:= "202" ->
+            Signarute1 = proplists:get_value("content-type", RespHeaders, "undefined"),
+            outgoing_message(Client, Signarute1, Body, State);
         {ok, HttpCode, _, _Body} ->
             Client ! {?INCOMING_MSG, {error, list_to_integer(HttpCode), State}},
             exit(normal);
@@ -104,17 +110,18 @@ http_send(Client, Request, MimeType, State = #http_state{url = URL, options = Op
             exit(normal)
     end.
 
-outgoing_message(Client, MimeType, Body, State) ->
+outgoing_message(Client, Signarute, Body, State) ->
     Body1 = list_to_binary(Body),
-    case MimeType of
+    Signarute1 = list_to_binary(Signarute),
+    case Signarute1 of
         <<"application/json">> ->
             Body2 = binary:replace(Body1, <<"}{">>, <<"}$$${">>, [global]),
             Body3 = binary:replace(Body2, <<"]{">>, <<"]$$${">>, [global]),
             Body4 = binary:replace(Body3, <<"}[">>, <<"}$$$[">>, [global]),
             Bodies = binary:split(Body4, <<"$$$">>, [global]),
-            [ Client ! {?INCOMING_MSG, {ok, SingleBody, State}} || SingleBody <- Bodies ];
+            [ Client ! {?INCOMING_MSG, {ok, Signarute1, SingleBody, State}} || SingleBody <- Bodies ];
         _NoJson ->
-            Client ! {?INCOMING_MSG, {ok, Body1, State}}
+            Client ! {?INCOMING_MSG, {ok, Signarute1, Body1, State}}
     end.
 
 validate_options(Options) ->

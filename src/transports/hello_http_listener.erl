@@ -22,7 +22,7 @@
 -module(hello_http_listener).
 
 -behaviour(hello_listener).
--export([listener_specification/2, send_response/2, close/1, listener_termination/2, port/2]).
+-export([listener_specification/2, send_response/3, close/1, listener_termination/2, port/2]).
 
 %% cowboy http handler callbacks
 -export([init/3, handle/2, terminate/3]).
@@ -50,8 +50,8 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Result = cowboy:start_http({?MODULE, ExUriUrl}, Acceptors, TransportOpts, ProtocolOpts),
     {other_supervisor, Result}.
 
-send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, BinResp}.
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signarute, BinResp) ->
+    TPid ! {hello_msg, TParams, Peer, Signarute, BinResp}.
 
 close(#context{transport_pid = TPid}) ->
     TPid ! hello_closed.
@@ -73,14 +73,15 @@ handle(Req, State = #http_listener_state{url = URL}) ->
             {TransportParams, Req2} = req_transport_params(Req1),
             {Peer, Req3} = cowboy_req:peer(Req2),
             {ok, Message, Req4} = cowboy_req:body(Req3),
+            {Signarute, Req5} = cowboy_req:header(<<"content-type">>, Req4),
             Context = #context{ transport = ?MODULE,
                                 transport_pid = self(),
                                 transport_params = TransportParams,
                                 peer = Peer},
-            hello_listener:async_incoming_message(Context, URL, Message),
-            CompactReq = cowboy_req:compact(Req4),
-            {ok, Req5} = cowboy_req:chunked_reply(200, response_header(<<"TODO:ContentType">>), CompactReq),
-            http_chunked_loop(Req5, State);
+            hello_listener:async_incoming_message(Context, URL, Signarute, Message),
+            CompactReq = cowboy_req:compact(Req5),
+            {ok, Req6} = cowboy_req:chunked_reply(200, response_header(Signarute), CompactReq),
+            http_chunked_loop(Req6, State);
         false ->
             {ok, Req2} = cowboy_req:reply(405, server_header(), Req1),
             {ok, Req2, State}
@@ -90,7 +91,7 @@ http_chunked_loop(Req, State) ->
     receive
         hello_closed ->
             {ok, Req, State};
-        {hello_msg, _TParams, _Peer, BinResp} ->
+        {hello_msg, _TParams, _Peer, _, BinResp} ->
             ok = cowboy_req:chunk(BinResp, Req),
             http_chunked_loop(Req, State)
     end.
@@ -103,11 +104,11 @@ default_port(undefined) -> 80;
 default_port(Port) -> Port.
 
 response_header(ContentType) ->
-    [{<<"Content-Type">>, ContentType}] ++ server_header().
+    [{<<"content-type">>, ContentType}] ++ server_header().
 
 server_header() ->
     {ok, Vsn} = application:get_key(hello, vsn),
-    [{<<"Server">>, erlang:list_to_binary("hello/" ++ Vsn)}].
+    [{<<"server">>, erlang:list_to_binary("hello/" ++ Vsn)}].
 
 req_transport_params(Req1) ->
     {{PeerIP, PeerPort}, Req2} = cowboy_req:peer(Req1),

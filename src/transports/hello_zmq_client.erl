@@ -38,8 +38,8 @@ init_transport(URI, _Options) ->
     ok = ezmq_connect_url(Socket, URI),
     {ok, #zmq_state{socket = Socket, uri = URI}}.
 
-send_request(Message, _, State = #zmq_state{socket = Socket}) ->
-    ezmq:send(Socket, [<<>>, Message]),
+send_request(Message, Signature, State = #zmq_state{socket = Socket}) ->
+    ezmq:send(Socket, [Signature, Message]),
     {ok, State}.
 
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
@@ -54,8 +54,8 @@ handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri 
 handle_info({dnssd, _Ref, Msg}, State) ->
     lager:info("dnssd Msg: ~p", [Msg]),
     {noreply, State};
-handle_info({zmq, _Socket, [<<>>, Msg]}, State) ->
-    {?INCOMING_MSG, {ok, Msg, State}}.
+handle_info({zmq, _Socket, [Signature, Msg]}, State) ->
+    {?INCOMING_MSG, {ok, Signature, Msg, State}}.
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
