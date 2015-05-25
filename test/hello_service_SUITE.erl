@@ -6,4 +6,5 @@
 -include("../include/jsonrpc_internal.hrl").
 
 all() ->
-    [register].
+    [%register
+    ].

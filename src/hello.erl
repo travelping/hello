@@ -25,7 +25,7 @@
          start_listener/1, start_listener/2, start_listener/5,
          stop_listener/1, call_service/2, call_service/3]).
 -export([start/2, stop/1, start/0]).
--export([bind/2, unbind/2]).
+-export([bind/2, bind/7, unbind/2]).
 
 -include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").

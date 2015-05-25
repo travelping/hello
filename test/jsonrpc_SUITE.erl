@@ -9,7 +9,7 @@
 simple_one_shot(_Config) ->
 	Args = get_arg(?SIMPLE_ONE_SHOT),
 	Requests = lists:zip(Args, ?SIMPLE_ONE_SHOT),
-	[ {ok, Arg} = hello_client:call(ClientName, Request) || {_, ClientName} <- ?CLIENT_NAMES, {Arg, Request} <- Requests ].
+    [ {ok, Arg} = hello_client:call(ClientName, Request) || {_, ClientName} <- ?CLIENT_NAMES, {Arg, Request} <- Requests ].
 
 simple_batch(_Config) ->
 	Args = [ get_arg(Batch) || Batch <- ?SIMPLE_BATCH ],
@@ -35,6 +35,7 @@ batch_async_oneshot(_Config) ->
 all_mixed_batch_one_callback(_Config) ->
 	Args = [ get_arg(Batch) || Batch <- ?ALL_MIXED_BATCH_ONE_CALLBACK ],
 	Requests = lists:zip(Args, ?ALL_MIXED_BATCH_ONE_CALLBACK),
+
 	[ {ok, Arg} = hello_client:call(ClientName, Request) || {_, ClientName} <- ?CLIENT_NAMES, {Arg, Request} <- Requests ].
 
 normal_batch_all_callbacks(_Config) ->
@@ -57,23 +58,23 @@ named_parameter(_Config) ->
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-	[simple_one_shot,
-	 simple_batch,
-	 simple_notification,
-	 batch_notification,
-	 simple_async_oneshot,
-	 batch_async_oneshot,
-	 all_mixed_batch_one_callback,
+    [simple_one_shot,
+     simple_batch,
+     simple_notification,
+     batch_notification,
+     simple_async_oneshot,
+     batch_async_oneshot,
+     all_mixed_batch_one_callback,
      normal_batch_all_callbacks,
-     all_mixed_batch_all_callbacks,
-     notify,
+     %all_mixed_batch_all_callbacks,
+     %notify,
      named_parameter
-     ].
+    ].
 
 init_per_suite(Config) ->
     hello:start(),
-    bind_all(),
     [ code:ensure_loaded(Callback) || Callback <- ?CALLBACK_MODS ],
+    bind_all(),
     start_named_clients(),
     Config.
 
@@ -84,29 +85,34 @@ end_per_suite(_Config) ->
 % ---------------------------------------------------------------------
 % -- helpers
 bind_all() ->
-    [ ok = bind_all1(Transport, Handler, Protocol) || Transport <- ?TRANSPORTS, Handler <- ?HANDLER, Protocol <- ?PROTOCOLS ].
+    [ ok = bind_all1(Transport, Handler, Protocol) || Transport <- ?TRANSPORTS, Handler <- ?CALLBACK_MODS, Protocol <- ?PROTOCOLS ].
 
 bind_all1({Url, TransportOpts}, Handler, Protocol) ->
-    [FirstCallback, SecondCallback] = proplists:get_value(Handler, ?CALLBACKS),
     HandlerOpts = proplists:get_value(Handler, ?HANDLER_ARGS),
     ProtocolOpts = proplists:get_value(Protocol, ?PROTOCOL_ARGS),
-    ok = hello:bind(Url, TransportOpts, FirstCallback, Handler, HandlerOpts, Protocol, ProtocolOpts),
-    ok = hello:bind(Url, TransportOpts, SecondCallback, Handler, HandlerOpts, Protocol, ProtocolOpts).
+    Self = self(),
+    spawn(fun() ->
+        hello:start_service(Handler, HandlerOpts),
+        hello:start_listener(Url, TransportOpts, Protocol, ProtocolOpts, hello_router),
+        true = hello:bind(Url, Handler),
+        Self ! next,
+        receive after infinity -> ok end
+    end), 
+    receive next -> ok end.
 
 unbind_all() ->
-    Bindings = hello:bindings(),
-    [ hello:unbind(Url, CallbackMod) || {Url, CallbackMod, _, _} <- Bindings],
-    [] = hello:bindings().
+    [ hello:unbind(Url, CallbackMod) || {Url, _} <- ?TRANSPORTS, CallbackMod <- ?CALLBACK_MODS ],
+    [] = hello_binding:all().
 
 start_named_clients() ->
-	[ start_named_client(Transport) || Transport <- ?TRANSPORTS ].	
+	[ start_named_client(Transport) || Transport <- ?TRANSPORTS ],
+    wait_clients().
 
 start_named_client(Transport) ->
 	Name = proplists:get_value(Transport, ?CLIENT_NAMES),
 	{Url, TransportOpts} = Transport, 
-	NotificationSink = spawn(?MODULE, notification_sink, []),
-	ProtocolOpts = [{protocol, hello_proto_jsonrpc}, {notification_sink, NotificationSink}],
-	{ok, _Pid} = hello_client:start_supervised(Name, Url, TransportOpts, ProtocolOpts, []).
+	ProtocolOpts = [{protocol, hello_proto_jsonrpc}, {notification_sink, fun notification_fun/1}],
+	{ok, _Pid} = hello_client:start_supervised(Name, Url ++ "/test", TransportOpts, ProtocolOpts, []).
 
 shuffle_requests(Reqs) ->
 	[ RandomReq || { _ , RandomReq} <- lists:sort([ {random:uniform(), Req} || Req <- Reqs])].
@@ -116,13 +122,21 @@ get_arg(Requests) when is_list(Requests) ->
 get_arg({_, [Arg], _}) ->
 	Arg.
 
-notification_sink() ->
-	notification_acceptor().
+wait_clients() ->
+    case length(hello_client_sup:clients()) of
+        L when L == length(?TRANSPORTS) -> ok;
+        _ -> timer:sleep(1000), wait_clients()
+    end.
 
-notification_acceptor() ->
-	receive 
-		{notification, ?NOTIFICATION_METHOD, ?NOTIFICATION_ARGS} ->
-			notification_acceptor();
-		_ ->
-			throw(error)
-	end.
+notification_fun(Args) when is_list(Args) ->
+	BatchArgs = [[A || {_, [A], _} <- Requests] || Requests <- ?BATCH_NOTIFICATION],
+    case lists:member(Args, BatchArgs) of
+         true -> ok;
+         false -> throw(error)
+    end;
+notification_fun(Arg) ->
+	SimpleArgs = [A || Request = {_, [A], _} <- ?SIMPLE_NOTIFICATION],
+    case lists:member(Arg, SimpleArgs) of
+         true -> ok;
+         false -> throw(error)
+    end.
