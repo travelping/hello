@@ -85,7 +85,10 @@ await_answer() ->
 handle_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
     {ok, BinResp} = hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signarute, Binary),
-    send(hello_proto:signature(ProtocolMod, ProtocolOpts), BinResp, Context),
+    % for backward compatibility we should to send Signature that we received on listener 
+    send(Signarute, BinResp, Context), 
+    % when we will convinced that there aren't clients with old code we will start to send Signature from protocol
+    % send(hello_proto:signature(ProtocolMod, ProtocolOpts), BinResp, Context),
     close(Context).
 
 send(Signarute, BinResp, Context = #context{transport = TransportMod}) ->
