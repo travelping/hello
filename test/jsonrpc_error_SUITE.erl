@@ -25,7 +25,8 @@ error_batch1(_Config) ->
 
 invalid_request(_Config) ->
     BinRequest = <<"{\"id\":123,\"params\":\"undefined\",\"method\":\"undefined\",\"jsonrpc\":\"2.0\"}">>,
-    {error, #jsonrpc_response{error = #jsonrpc_error{code = -32600}}} = hello_proto_jsonrpc:decode(BinRequest).
+    %{error, #jsonrpc_response{error = #jsonrpc_error{code = -32600}}} = hello_proto_jsonrpc:decode(BinRequest, [], response).
+    {error, _} = hello_proto_jsonrpc:decode(BinRequest, [], response).
 
 invalid_notification(_Config) ->
     BinRequest = <<"{\"id\":null,\"params\":\"undefined\",\"method\":\"undefined\",\"jsonrpc\":\"2.0\"}">>,

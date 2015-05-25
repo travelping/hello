@@ -136,11 +136,11 @@ groups() ->
      {zmq_tcp6, [],  all_ok_test()},
      {http_error, [], [call_http_error, notification_http_error, call_np_http_error]},
      {zmq_tcp_error, [], [call_zmq_tcp_error, notification_zmq_tcp_error, call_np_zmq_tcp_error]},
-     {old_cb_info, [], all_testgroup()},
+     %{old_cb_info, [], all_testgroup()},
      {new_cb_info, [], all_testgroup()}].
 
 all() ->
-	[{group, old_cb_info},
+	[%{group, old_cb_info},
 	 {group, new_cb_info}].
 
 group_config(http) ->
@@ -155,40 +155,40 @@ group_config(http_error) ->
 group_config(zmq_tcp_error) ->
 	{"zmq-tcp://undefined.undefined:5555", false, []}.
 
-init_per_group(old_cb_info, Config) ->
-    Mod = hello_test_stateless_handler,
-    ok = meck:new(Mod, [non_strict, no_link]),
-    ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = M} || M <- [echo, delay, append, enum_test, return_error]]),
-    ok = meck:expect(Mod, param_info,
-        fun
-            (echo) ->
-                [#rpc_param{name = text, type = string, description = "the text to be echoed"}];
-            (delay) ->
-                [#rpc_param{name = delay, type = integer, description = "the delay"}];
-            (append) ->
-                [#rpc_param{name = str1, type = string, optional = true, default  = <<"">>},
-                    #rpc_param{name = str2, type = string, optional = true, default  = <<"">>}];
-            (enum_test) ->
-                [#rpc_param{name = atom, type = {enum, [a, b, c]}, description = "the atom to be echoed, \"a\", \"b\", or \"c\""}];
-            (return_error) ->
-                [#rpc_param{name = code, type = integer},
-                    #rpc_param{name = message, type = string, optional = true, default  = <<"">>}]
-        end),
-    ok = meck:expect(Mod, handle_request,
-        fun
-            (_Context, echo, [Str]) ->
-                {ok, Str};
-            (_Context, delay, [Delay]) ->
-		timer:sleep(Delay),
-                {ok, true};
-            (_Context, append, [Str1, Str2]) ->
-                {ok, <<Str1/binary, Str2/binary>>};
-            (_Context, enum_test, [Atom]) ->
-                {ok, Atom};
-            (_Context, return_error, [Code, Message]) ->
-                {error, Code, Message}
-        end),
-    [{cb_module, Mod}|Config];
+%init_per_group(old_cb_info, Config) ->
+    %Mod = hello_test_stateless_handler,
+    %ok = meck:new(Mod, [non_strict, no_link]),
+    %ok = meck:expect(Mod, method_info, 0, [#rpc_method{name = M} || M <- [echo, delay, append, enum_test, return_error]]),
+    %ok = meck:expect(Mod, param_info,
+        %fun
+            %(echo) ->
+                %[#rpc_param{name = text, type = string, description = "the text to be echoed"}];
+            %(delay) ->
+                %[#rpc_param{name = delay, type = integer, description = "the delay"}];
+            %(append) ->
+                %[#rpc_param{name = str1, type = string, optional = true, default  = <<"">>},
+                    %#rpc_param{name = str2, type = string, optional = true, default  = <<"">>}];
+            %(enum_test) ->
+                %[#rpc_param{name = atom, type = {enum, [a, b, c]}, description = "the atom to be echoed, \"a\", \"b\", or \"c\""}];
+            %(return_error) ->
+                %[#rpc_param{name = code, type = integer},
+                    %#rpc_param{name = message, type = string, optional = true, default  = <<"">>}]
+        %end),
+    %ok = meck:expect(Mod, handle_request,
+        %fun
+            %(_Context, echo, [Str]) ->
+                %{ok, Str};
+            %(_Context, delay, [Delay]) ->
+		%timer:sleep(Delay),
+                %{ok, true};
+            %(_Context, append, [Str1, Str2]) ->
+                %{ok, <<Str1/binary, Str2/binary>>};
+            %(_Context, enum_test, [Atom]) ->
+                %{ok, Atom};
+            %(_Context, return_error, [Code, Message]) ->
+                %{error, Code, Message}
+        %end),
+    %[{cb_module, Mod}|Config];
 
 init_per_group(new_cb_info, Config) ->
     Mod = hello_test_stateless_ts_handler,

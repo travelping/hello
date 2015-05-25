@@ -3,7 +3,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include("hello_test.hrl").
--include("../include/internal.hrl").
+-include("../include/jsonrpc_internal.hrl").
 
 all() ->
     [register].
