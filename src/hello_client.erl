@@ -297,7 +297,7 @@ request_reply([], AsyncMap, Responses) ->
     lists:map(fun(CallRef) -> 
                 NewAcc = lists:filtermap(fun({Ref, Response}) when Ref =:= CallRef -> 
                                                  {true, Response}; 
-                                            (_) -> false end, Responses),
+                                            (_) -> false end, lists:reverse(Responses)),
                 gen_server:reply(CallRef, {ok, NewAcc})
               end, Refs),
     AsyncMap;

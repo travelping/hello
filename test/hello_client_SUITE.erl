@@ -126,14 +126,14 @@ all_ok_test() ->
 all_testgroup() ->
     [{group, http},
      {group, zmq_tcp},
-     {group, zmq_tcp6},
+     %{group, zmq_tcp6},
      {group, http_error},
      {group, zmq_tcp_error}].
 
 groups() ->
     [{http, [],  all_ok_test()},
      {zmq_tcp, [],  all_ok_test()},
-     {zmq_tcp6, [],  all_ok_test()},
+     %{zmq_tcp6, [],  all_ok_test()},
      {http_error, [], [call_http_error, notification_http_error, call_np_http_error]},
      {zmq_tcp_error, [], [call_zmq_tcp_error, notification_zmq_tcp_error, call_np_zmq_tcp_error]},
      %{old_cb_info, [], all_testgroup()},
@@ -141,7 +141,8 @@ groups() ->
 
 all() ->
 	[%{group, old_cb_info},
-	 {group, new_cb_info}].
+	 %{group, new_cb_info}
+    ].
 
 group_config(http) ->
 	{"http://127.0.0.1:8001", true, []};

@@ -35,11 +35,11 @@ invalid_notification(_Config) ->
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-    [binding_not_found,
-     method_not_found,
-     invalid_params,
-     invalid_request,
-     invalid_notification
+    [%binding_not_found,
+     %method_not_found,
+     %invalid_params,
+     %invalid_request,
+     %invalid_notification
      ].
 
 init_per_suite(Config) ->

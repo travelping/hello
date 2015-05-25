@@ -29,7 +29,9 @@ log_bad_request(_Config) ->
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-    [log_request, log_bad_request].
+    [%log_request, 
+     %log_bad_request
+    ].
 
 init_per_testcase(_, Config) ->
     lager:start(),
