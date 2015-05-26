@@ -166,9 +166,9 @@ handle_info({?INCOMING_MSG, Message}, State) ->
     incoming_message(Message, State);
 handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState,
                                          protocol_mod=ProtocolMod, protocol_opts=ProtocolOpts}) ->
-    {ok, MimeType} = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
+    Signature = hello_proto:signature(ProtocolMod, ProtocolOpts),
     BinaryPing = list_to_binary(atom_to_list(?PING)),
-    {ok, NewTransportState} = TransportModule:send_request(BinaryPing, MimeType, TransportState),
+    {ok, NewTransportState} = TransportModule:send_request(BinaryPing, Signature, TransportState),
     {noreply, State#client_state{transport_state = NewTransportState}};
 
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
@@ -195,9 +195,9 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- Helper functions
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
     {noreply, State#client_state{transport_state = NewTransportState}};
-incoming_message({ok, BinResponse, NewTransportState},
+incoming_message({ok, Signature, BinResponse, NewTransportState},
                  State = #client_state{protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts}) ->
-    case hello_proto:decode(ProtocolMod, ProtocolOpts, BinResponse, response) of
+    case hello_proto:decode(ProtocolMod, ProtocolOpts, Signature, BinResponse, response) of
         {ok, Response = #request{id = undefined}} ->
             notification(Response, State),
             {noreply, State#client_state{transport_state = NewTransportState}};
@@ -217,8 +217,8 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
                                                       transport_mod = TransportModule, transport_state = TransportState, async_request_map = AsyncMap}) ->
     case hello_proto:encode(ProtocolMod, ProtocolOpts, Request) of
         {ok, BinRequest} ->
-            {ok, MimeType} = hello_proto:mime_type(ProtocolMod, ProtocolOpts),
-            case TransportModule:send_request(BinRequest, MimeType, TransportState) of
+            Signature = hello_proto:signature(ProtocolMod, ProtocolOpts),
+            case TransportModule:send_request(BinRequest, Signature, TransportState) of
                 {ok, NewTransportState} ->
                     {ok, State#client_state{transport_state = NewTransportState, async_request_map = update_map(Request, From, AsyncMap)}};
                 {error, Reason, NewTransportState} ->

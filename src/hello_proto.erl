@@ -23,24 +23,24 @@
 
 -export([init_client/2]).
 -export([build_request/3]).
--export([encode/3, decode/4, mime_type/2]).
--export([handle_incoming_message/6]).
+-export([encode/3, decode/5, signature/2]).
+-export([handle_incoming_message/7]).
 -export([behaviour_info/1]).
 
 -include("hello.hrl").
 
 behaviour_info(callbacks) ->
     [{init_client, 1},
-     {build_request, 2},
-     {do_request, 5},
-     {do_async_request, 4},
-     {encoding_info, 0},
-     {encode, 1},
-     {decode, 1},
-     {mime_type, 1},
-     {extract_requests, 1},
-     {error_response, 4},
-     {log, 4}
+     {build_request, 3},
+     %{do_request, 5},
+     %{do_async_request, 4},
+     %{encoding_info, 0},
+     {encode, 2},
+     {decode, 3},
+     {signature, 1}
+     %{extract_requests, 1},
+     %{error_response, 4},
+     %{log, 4}
      ];
 behaviour_info(_Other) ->
     undefined.
@@ -63,17 +63,17 @@ build_request({Method, Args, Options}, ProtocolMod, ProtocolState) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- Request/Response handling
 
-handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, Binary) ->
+handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signature, Binary) ->
     Context = Context1#context{connection_pid = self()},
-    case decode(ProtocolMod, ProtocolOpts, Binary, request) of
+    case decode(ProtocolMod, ProtocolOpts, Signature, Binary, request) of
         {ok, Requests} ->
             Result = proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL),
             may_be_encode(ProtocolMod, ProtocolOpts, Result);
         {error, ignore} ->
-            hello_proto:log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
+            %log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
             todo:close(Context);
         {error, Response} ->
-            hello_proto:log(ProtocolMod, Binary, Response, undefined, ExUriURL),
+            %log(ProtocolMod, Binary, Response, undefined, ExUriURL),
             todo:send(Response),
             todo:close(Context);
         {internal, Message} ->
@@ -112,8 +112,16 @@ may_be_encode(ProtocolMod, ProtocolOpts, Answer) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
 encode(Mod, Opts, Request) -> Mod:encode(Request, Opts).
-decode(Mod, Opts, Message, Type) when is_atom(Mod) -> Mod:decode(Message, Opts, Type).
-mime_type(Mod, Opts) when is_atom(Mod) -> Mod:mime_type(Opts).
+decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) -> 
+    case signature(Mod, Opts) of
+        Signature -> Mod:decode(Message, Opts, Type);
+        _ -> 
+            case Message of %% backward compatibility
+                <<"{", _/binary>> -> hello_proto_jsonrpc:decode(Message, Opts, Type);
+                _ -> {error, bad_signature}
+            end
+    end.
+signature(Mod, Opts) when is_atom(Mod) -> Mod:signature(Opts).
 
 proto_answer({error, {Code, Message, ProtoData}}) -> #error{code = Code, message = Message, proto_data = ProtoData};
 proto_answer({ok, Response}) -> Response.

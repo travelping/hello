@@ -23,7 +23,7 @@
 -export([start_link/1]).
 
 -behaviour(hello_listener).
--export([listener_specification/2, send_response/2, close/1, port/2, listener_termination/2]).
+-export([listener_specification/2, send_response/3, close/1, port/2, listener_termination/2]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -39,8 +39,8 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Specs = {{?MODULE, ExUriUrl}, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]},
     {make_child, Specs}.
 
-send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, BinResp}.
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signature, BinResp) ->
+    TPid ! {hello_msg, TParams, Peer, Signature, BinResp}.
 
 close(_Context) ->
     ok.
@@ -74,17 +74,17 @@ init(URL) ->
             {stop, Error}
     end.
 
-handle_info({zmq, Socket, {Peer, [<<>>, Message]}}, State = #state{url = URL, socket = Socket}) ->
+handle_info({zmq, Socket, {Peer, [Signature, Message]}}, State = #state{url = URL, socket = Socket}) ->
     Context = #context{ transport=?MODULE,
                         transport_pid = self(),
                         transport_params = undefined,
                         peer = Peer
                         },
-    hello_listener:async_incoming_message(Context, URL, Message),
+    hello_listener:async_incoming_message(Context, URL, Signature, Message),
     {noreply, State};
 
-handle_info({hello_msg, _Handler, Peer, Message}, State = #state{socket = Socket}) ->
-    ok = ezmq:send(Socket, {Peer, [<<>>, Message]}),
+handle_info({hello_msg, _Handler, Peer, Signature, Message}, State = #state{socket = Socket}) ->
+    ok = ezmq:send(Socket, {Peer, [Signature, Message]}),
     {noreply, State};
 
 handle_info({hello_closed, _HandlerPid, _Peer}, State) ->

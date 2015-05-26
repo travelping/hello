@@ -19,15 +19,15 @@
 % DEALINGS IN THE SOFTWARE.
 
 -module(hello_decoder).
--export([encode/2, decode/2, mime_type/1]).
+-export([encode/2, decode/2, signature/1]).
 
 -callback encode(Term :: term()) -> binary().
 
 -callback decode(Data :: binary()) -> term().
 
--callback mime_type() -> binary().
+-callback signature() -> binary().
 
 
 encode(Mod, Data) -> Mod:encode(Data).
 decode(Mod, Data) -> Mod:decode(Data).
-mime_type(Mod) -> Mod:mime_type().
+signature(Mod) -> Mod:signature().
