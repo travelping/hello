@@ -6,7 +6,7 @@
 
 register_link(HandlerMod, HandlerArgs) ->
     Name = hello_lib:to_binary(HandlerMod:name()),
-    hello_registry:register_link({service, Name}, {HandlerMod, HandlerArgs}).
+    hello_registry:register_link({service, Name}, self(), {HandlerMod, HandlerArgs}).
 
 unregister_link(HandlerMod) ->
     Name = hello_lib:to_binary(HandlerMod:name()),

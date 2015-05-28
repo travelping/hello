@@ -26,7 +26,7 @@
 -compile({no_auto_import,[register/2, unregister/1]}).
 
 -export([
-    start/0, start_link/0, all/1, register_link/2, unregister_link/1,
+    start/0, start_link/0, all/1, register_link/2, register_link/3, unregister_link/1,
     register/2, register/3, unregister/1, lookup/1
 ]).
 
@@ -52,7 +52,10 @@ start_link() ->
 %% --------------------------------------------------------------------------------
 %% -- general API to register, unregister, update or lookup stuff
 register_link(Key, Value) ->
-    register(Key, Value),
+    register_link(Key, undefined, Value).
+
+register_link(Key, Pid, Value) ->
+    register(Key, Pid, Value),
     link(whereis(?SERVER)).
 
 register(Key, Value) ->
@@ -107,10 +110,12 @@ handle_call({unregister, Key}, _From, Table) ->
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
-handle_info({'EXIT', _From, Reason}, Table) ->
-    {stop, Reason, Table};
+handle_info({'EXIT', From, Reason}, Table) ->
+    lager:warning("~p: exit with reason ~p", [From, Reason]),
+    {noreply, Table};
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
-    ets:match_delete(Table, {'_', Pid, '_'}),
+    Objects = ets:match(Table, {'$1', Pid, '_', '_'}),
+    spawn(fun() -> [down(Object)|| Object <- Objects] end),
     {noreply, Table};
 handle_info({dnssd, _Ref, Msg}, State) ->
     lager:info("dnssd Msg: ~p", [Msg]),
@@ -134,10 +139,16 @@ code_change(_FromVsn, _ToVsn, State) ->
 register(Key, Pid, Data, Table) ->
     case Pid =:= undefined orelse is_process_alive(Pid) of
         true ->
-            is_pid(Pid) andalso erlang:monitor(process, Pid),
+            is_pid(Pid) andalso monitor_(Table, Pid),
             bind(Key, Pid, Data, Table);
         false -> {error, pid_not_alive}
     end.
+
+monitor_(Table, Pid) ->
+    ets:select_count(Table, [{{'_', '$1', '_', '_'}, 
+                              [{'==', '$1', Pid}], 
+                              [true]}]) == 0 
+    andalso erlang:monitor(process, Pid).
 
 bind({binding, {_Url, _RouterKey}} = Key, Pid, {Data, Port}, Table) ->
     % TODO: That is very dangarous, as single error on service, will simple crash the whole registry
@@ -145,6 +156,9 @@ bind({binding, {_Url, _RouterKey}} = Key, Pid, {Data, Port}, Table) ->
     Ref = dnss_register(App, Name, Port),
     ets:insert(Table, {Key, Pid, Data, Ref});
 bind(Key, Pid, Data, Table) -> ets:insert(Table, {Key, Pid, Data, undefined}).
+
+down([{listener, Key}]) -> hello_listener:stop(Key);
+down([Key]) -> hello_registry:unregister(Key).
 
 do_dnss_register(App, Name, Port) ->
     lager:info("dnss port: ~p", [Port]),

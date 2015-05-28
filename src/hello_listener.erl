@@ -34,7 +34,7 @@ start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
                                              protocol = Protocol,
                                              protocol_opts = ProtocolOpts,
                                              router = RouterMod},
-                    hello_registry:register({listener, ExUriURL}, ListenerInfo),
+                    hello_registry:register_link({listener, ExUriURL}, self(), ListenerInfo),
                     {ok, ListenerRef};
                 {error, Reason} ->
                     {error, Reason}
@@ -46,8 +46,8 @@ start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
 stop(ExUriURL = #ex_uri{scheme = Scheme}) ->
     TransportMod = transport_module(Scheme),
     case lookup(ExUriURL) of
-        {ok, _, ListenerRef} ->
-            hello_registry:unregister(ExUriURL),
+        {ok, _, #listener{ref = ListenerRef}} ->
+            hello_registry:unregister_link({listener, ExUriURL}),
             case TransportMod:listener_termination(ExUriURL, ListenerRef) of
                 child -> hello_listener_supervisor:stop_child(TransportMod, ExUriURL);
                 _     -> ok

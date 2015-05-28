@@ -48,20 +48,20 @@ behaviour_info(_) ->
 
 %% API to start without supervisor
 start(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
-    gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
+    gen_server:start(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
 start(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
-    gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
+    gen_server:start(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
 stop(Client) ->
     gen_server:call(Client, terminate).
 
 %% callbacks for supervisor
 start_link(URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
-    start(URI, TransportOpts, ProtocolOpts, ClientOpts).
+    gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
 start_link(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
-    start(Name, URI, TransportOpts, ProtocolOpts, ClientOpts).
+    gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
 %% API to start with hello supervisor
 start_supervised(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
