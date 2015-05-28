@@ -89,7 +89,7 @@ encode_single(#request{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSON
     [{<<"id">>, maybe_null(ReqId)}, {<<"params">>, Params}, {<<"method">>, Method}, {<<"jsonrpc">>, <<"2.0">>}];
 
 %% response encoding
-%% note in v1.0, The result must be null in case there was an error invoking the method. 
+%% note in v1.0, The result must be null in case there was an error invoking the method.
 encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSONRPC_1}, response = #error{} = Error}) ->
     [{<<"error">>, encode_single(Error)}, {<<"result">>, null}, {<<"id">>, ReqId}];
 %% note in v2.0, The result member MUST NOT exist if there was an error invoking the method.
@@ -102,7 +102,8 @@ encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSO
 
 %% error encoding
 encode_single(#error{code = Code, message = Message, proto_data = Data}) ->
-    [{<<"data">>, maybe_null(Data)}, {<<"message">>, maybe_null(Message)}, {<<"code">>, maybe_null(Code)}];
+    DataPart = [{<<"data">>, Data} || (Data =/= null andalso Data =/= undefined)],
+    [{<<"message">>, maybe_null(Message)}, {<<"code">>, maybe_null(Code)} | DataPart];
 encode_single(undefined) ->
     null.
 
