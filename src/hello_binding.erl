@@ -29,7 +29,7 @@ register_link(ExUriURL, HandlerMod) ->
     RouterKey = hello_lib:to_binary(HandlerMod:router_key()),
     Name = hello_lib:to_binary(HandlerMod:name()),
     Port = hello_listener:port(ExUriURL),
-    hello_registry:register_link({binding, {ExUriURL, RouterKey}}, {Name, Port}).
+    hello_registry:register_link({binding, {ExUriURL, RouterKey}}, self(), {Name, Port}).
 
 lookup(ExUriURL, RouterKey) ->
     hello_registry:lookup({binding, {ExUriURL, RouterKey}}).
