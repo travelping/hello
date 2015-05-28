@@ -94,7 +94,7 @@ encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSO
     [{<<"error">>, encode_single(Error)}, {<<"result">>, null}, {<<"id">>, ReqId}];
 %% note in v2.0, The result member MUST NOT exist if there was an error invoking the method.
 encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSONRPC_2}, response = #error{} = Error}) ->
-    [{<<"error">>, encode_single(Error)}, {<<"id">>, ReqId}];
+    [{<<"error">>, encode_single(Error)}, {<<"id">>, ReqId}, {<<"jsonrpc">>, <<"2.0">>}];
 encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSONRPC_1}, response = Result}) ->
     [{<<"error">>, null}, {<<"result">>, Result}, {<<"id">>, ReqId}, {<<"jsonrpc">>, <<"1.0">>}];
 encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSONRPC_2}, response = Result}) ->
