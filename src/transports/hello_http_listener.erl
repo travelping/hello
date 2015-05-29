@@ -73,14 +73,14 @@ handle(Req, State = #http_listener_state{url = URL}) ->
             {TransportParams, Req2} = req_transport_params(Req1),
             {Peer, Req3} = cowboy_req:peer(Req2),
             {ok, Message, Req4} = cowboy_req:body(Req3),
-            {Signarute, Req5} = cowboy_req:header(<<"content-type">>, Req4),
+            {ContentType, Req5} = cowboy_req:header(<<"content-type">>, Req4),
             Context = #context{ transport = ?MODULE,
                                 transport_pid = self(),
                                 transport_params = TransportParams,
                                 peer = Peer},
-            hello_listener:async_incoming_message(Context, URL, Signarute, Message),
+            hello_listener:async_incoming_message(Context, URL, signature(ContentType), Message),
             CompactReq = cowboy_req:compact(Req5),
-            {ok, Req6} = cowboy_req:chunked_reply(200, response_header(Signarute), CompactReq),
+            {ok, Req6} = cowboy_req:chunked_reply(200, response_header(ContentType), CompactReq),
             http_chunked_loop(Req6, State);
         false ->
             {ok, Req2} = cowboy_req:reply(405, server_header(), Req1),
@@ -102,6 +102,15 @@ terminate(_Reason, _Req, _State) ->
 %% helpers
 default_port(undefined) -> 80;
 default_port(Port) -> Port.
+
+signature(ContentType) ->
+    Json = hello_json:signature(),
+    MsgPack = hello_msgpack:signature(),
+    case ContentType of
+        <<"application/json">> -> Json;
+        <<"application/x-msgpack">> -> MsgPack;
+        _ -> [] 
+    end.
 
 response_header(ContentType) ->
     [{<<"content-type">>, ContentType}] ++ server_header().
