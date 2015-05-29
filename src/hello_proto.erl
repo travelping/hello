@@ -116,9 +116,9 @@ decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) ->
     case signature(Mod, Opts) of
         Signature -> Mod:decode(Message, Opts, Type);
         _ -> 
-            case Message of %% backward compatibility
-                <<"{", _/binary>> -> hello_proto_jsonrpc:decode(Message, Opts, Type);
-                _ -> {error, bad_signature}
+            case jsx:is_json(Message) of %% backward compatibility
+                true -> hello_proto_jsonrpc:decode(Message, Opts, Type);
+                false -> {error, bad_signature}
             end
     end.
 signature(Mod, Opts) when is_atom(Mod) -> Mod:signature(Opts).
