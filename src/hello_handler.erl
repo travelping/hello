@@ -123,37 +123,14 @@ init({Identifier, HandlerMod, HandlerArgs}) ->
     end.
 
 %% @hidden
-handle_cast({request, Request = #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = HandlerState}) ->
+handle_cast({request, Request = #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = _HandlerState}) ->
     % TODO: fix logging, request should be loged with answer. If no answer, should be logged, no answer
-    case hello_validate:validate_request(Request, Mod) of
-        {ok, ValMethod, ValParams} ->
-            try Mod:handle_request(Context, ValMethod, ValParams, HandlerState) of
-                {reply, Response, NewHandlerState} ->
-                    lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
-                    send(Context, Response),
-                    {noreply, State#state{state = NewHandlerState}};
-                {noreply, NewModState} ->
-                    {noreply, State#state{state = NewModState}};
-                {stop, Reason, Response, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
-                    send(Context, Response),
-                    {stop, Reason, State#state{state = NewModState}};
-                {stop, Reason, NewModState} ->
-                    {stop, Reason, State#state{mod=NewModState}};
-                {stop, NewModState} ->
-                    {stop, State#state{mod=NewModState}};
-                {ignore, NewModState} ->
-                    {noreply, State#state{state = NewModState}};
-                _FalseAnswer ->
-                    % TODO: log it
-                    {noreply, State}
-            catch
-                Error:Reason ->
-                    lager:error("service: ~p handler thrown an error for method: ~p, args: ~p error: ~p", [Mod, Method, Args, {Error, Reason, erlang:get_stacktrace()}]),
-                    {noreply, State}
-            end;
-        {error, Reason} ->
-            {error, Reason}
+    try do_request(Request, State)
+    catch
+        Error:Reason ->
+            send(Context, {error, {server_error, "handler error", undefined}}),
+            lager:error("service: ~p handler thrown an error for method: ~p, args: ~p error: ~p", [Mod, Method, Args, {Error, Reason, erlang:get_stacktrace()}]),
+            {stop, normal, State}
     end;
 handle_cast({set_idle_timeout, Timeout}, State = #state{timer = Timer}) ->
     NewTimer = Timer#timer{idle_timeout = Timeout},
@@ -220,10 +197,39 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 %% @hidden
-do_request(Request, _State = #state{mod = Mod, state = ModState}) ->
-    Context = Request#request.context,
-    ReqContext = #request_context{req_ref = make_ref(), handler_pid = self(), context = Context, protocol_info = undefined},
-    hello_proto:do_request(?MODULE, Mod, ModState, ReqContext, Request).
+do_request(Request = #request{context = Context, method = Method, args = Args}, State = #state{mod = Mod, state = HandlerState}) ->
+    case hello_validate:validate_request(Request, Mod) of
+        {ok, ValMethod, ValParams} ->
+            case Mod:handle_request(Context, ValMethod, ValParams, HandlerState) of
+                {reply, Response, NewHandlerState} ->
+                    lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
+                    send(Context, Response),
+                    {noreply, State#state{state = NewHandlerState}};
+                {noreply, NewModState} ->
+                    {noreply, State#state{state = NewModState}};
+                {stop, Reason, Response, NewModState} ->
+                    lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
+                    send(Context, Response),
+                    {stop, Reason, State#state{state = NewModState}};
+                {stop, Reason, NewModState} ->
+                    {stop, Reason, State#state{mod=NewModState}};
+                {stop, NewModState} ->
+                    {stop, State#state{mod=NewModState}};
+                {ignore, NewModState} ->
+                    {noreply, State#state{state = NewModState}}
+            end;
+        {error, {_Code, _Message, _Data} = Reason} ->
+            send(Context,  {error, Reason}),
+            {stop, normal, State};
+        _FalseAnswer ->
+            send(Context, {error, {server_error, "validation returned wrong error format", null}}),
+            {stop, normal, State}
+    end.
+
+%do_request(Request, _State = #state{mod = Mod, state = ModState}) ->
+%    Context = Request#request.context,
+%    ReqContext = #request_context{req_ref = make_ref(), handler_pid = self(), context = Context, protocol_info = undefined},
+%    hello_proto:do_request(?MODULE, Mod, ModState, ReqContext, Request).
 
 %% --------------------------------------------------------------------------------
 %% -- finally used to send back a response message to hello_binding
