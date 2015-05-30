@@ -155,7 +155,6 @@ decode_single(response, #{<<"error">> := Error} = _Object, #jsonrpc_info{version
                        proto_data = undefined},
     {ok, #response{response = ErrorRec, proto_data = Info, id = Info#jsonrpc_info.reqid}};
 decode_single(response, #{<<"error">> := Error} = _Object, Info) when (Error =/= null) and (Error =/= nil) ->
-    io:format(user, "error: ~p~n", [{Error, Error =/= nil}]),
     throw({invalid, Info, <<"JSON-RPC 2.0 requires \"error\" to be an object">>});
 decode_single(response, #{<<"result">> := Result}, Info) ->
     {ok, #response{response = Result, proto_data = Info, id = Info#jsonrpc_info.reqid}};

@@ -71,11 +71,9 @@ handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, S
             may_be_encode(ProtocolMod, ProtocolOpts, Result);
         {error, ignore} ->
             %log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
-            todo:close(Context);
+            ignore;
         {error, Response} ->
-            %log(ProtocolMod, Binary, Response, undefined, ExUriURL),
-            todo:send(Response),
-            todo:close(Context);
+            may_be_encode(ProtocolMod, ProtocolOpts, Response);
         {internal, Message} ->
             todo:handle_internal(Context, Message)
     end.
@@ -112,10 +110,10 @@ may_be_encode(ProtocolMod, ProtocolOpts, Answer) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
 encode(Mod, Opts, Request) -> Mod:encode(Request, Opts).
-decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) -> 
+decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) ->
     case signature(Mod, Opts) of
         Signature -> Mod:decode(Message, Opts, Type);
-        _ -> 
+        _ ->
             case jsx:is_json(Message) of %% backward compatibility
                 true -> hello_proto_jsonrpc:decode(Message, Opts, Type);
                 false -> {error, bad_signature}
