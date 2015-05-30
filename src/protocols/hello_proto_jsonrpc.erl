@@ -24,7 +24,6 @@
 
 -export([init_client/1,
          build_request/3,
-         build_error/4,
          encode/2,
          decode/3,
          signature/1
@@ -101,7 +100,8 @@ encode_single(#response{proto_data = #jsonrpc_info{reqid = ReqId, version = ?JSO
     [{<<"result">>, Result}, {<<"id">>, ReqId}, {<<"jsonrpc">>, <<"2.0">>}];
 
 %% error encoding
-encode_single(#error{code = Code, message = Message, proto_data = Data}) ->
+encode_single(#error{} = Error) ->
+    #error{code = Code, message = Message, proto_data = Data} = build_error(Error),
     DataPart = [{<<"data">>, Data} || (Data =/= null andalso Data =/= undefined)],
     [{<<"message">>, maybe_null(Message)}, {<<"code">>, maybe_null(Code)} | DataPart];
 encode_single(undefined) ->
@@ -134,10 +134,10 @@ decode_single(Object, Type) ->
 decode_single(request, #{<<"method">> := Method} = Object, #jsonrpc_info{version = JsonRPC} = Info)
   when is_list(Method) orelse is_binary(Method) ->
     Params = case get(Object, <<"params">>, []) of
-                  List when is_list(List) -> List;
-                  Obj = #{} when JsonRPC > ?JSONRPC_1 -> Obj;
-                  _ -> throw({invalid, Info, <<"\"params\" must be array or object">>})
-              end,
+                 List when is_list(List) -> List;
+                 Obj = #{} when JsonRPC > ?JSONRPC_1 -> Obj;
+                 _ -> throw({invalid, Info, <<"\"params\" must be array or object">>})
+             end,
     Request = #request{method = Method, args = Params, proto_data = Info},
     {ok, Request};
 decode_single(request, #{<<"method">> := _Method} = _Object, Info) ->
@@ -166,7 +166,7 @@ invalid(request)  -> invalid_request;
 invalid(response) -> invalid_response.
 
 %% @doc Create a response object representing a JSON-RPC error.
-build_error(Code, Message, Data, _ProtocolOpts) ->
+build_error(#error{code = Code, message = Message, proto_data = Data}) ->
     {NumCode, MsgPrefix} = case Code of
         parse_error ->
             {-32700, <<"Parse error">>};

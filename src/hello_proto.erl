@@ -87,7 +87,7 @@ proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Con
             may_be_wait(Type, Request, Context);
         {error, Error} = _ ->
             #response{proto_data = Info,
-                      response = ProtocolMod:build_error(Error, "the required method is not registered", undefined, ProtocolOpts)}
+                      response = #error{code = Error, message = "the required method is not registered"}}
     end.
 
 may_be_wait(sync, #request{proto_data = Info}, _Context) ->
