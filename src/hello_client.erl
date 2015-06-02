@@ -196,13 +196,16 @@ code_change(_FromVsn, _ToVsn, State) ->
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
     {noreply, State#client_state{transport_state = NewTransportState}};
 incoming_message({ok, Signature, BinResponse, NewTransportState},
-                 State = #client_state{protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts}) ->
+                 State = #client_state{async_request_map = AsyncMap, protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts}) ->
     case hello_proto:decode(ProtocolMod, ProtocolOpts, Signature, BinResponse, response) of
         {ok, Response = #request{id = undefined}} ->
             notification(Response, State),
             {noreply, State#client_state{transport_state = NewTransportState}};
         {ok, Response = #response{}} ->
-            NewAsyncMap = request_reply(Response, State),
+            NewAsyncMap = request_reply(Response, AsyncMap),
+            {noreply, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
+        {ok, Responses = [{ok, #response{}} | _]} ->
+            NewAsyncMap = request_reply([R || {_, R} <- Responses], AsyncMap),
             {noreply, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
         {error, _Reason} ->
             {noreply, State#client_state{transport_state = NewTransportState}};
@@ -230,6 +233,10 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
             {ok, State}
     end.
 
+update_map(Requests, From, AsyncMap0) when is_list(Requests) -> 
+    lists:foldl(fun(Request, AsyncMap) ->
+                        update_map(Request, From, AsyncMap)
+                end, AsyncMap0, Requests);
 update_map(#request{id = undefined}, _From, AsyncMap) -> AsyncMap;
 update_map(#request{id = RequestId} = Request, From, AsyncMap) -> gb_trees:enter(RequestId, {From, Request}, AsyncMap).
 
@@ -267,11 +274,28 @@ notification(#response{response = Response}, _State = #client_state{notification
             ignore
     end.
 
-request_reply(#response{id = RequestId, response = Response}, _State = #client_state{async_request_map = AsyncMap}) ->
+request_reply(#response{} = Response, AsyncMap) ->
+    request_reply([Response], AsyncMap, []);
+request_reply(Responses, AsyncMap) ->
+    request_reply(Responses, AsyncMap, []).
+
+request_reply([], AsyncMap, [{CallRef, Response}]) -> 
+    gen_server:reply(CallRef, {ok, Response}),
+    AsyncMap;
+request_reply([], AsyncMap, Responses) ->
+    Refs = proplists:get_keys(Responses),
+    lists:map(fun(CallRef) -> 
+                NewAcc = lists:filtermap(fun({Ref, Response}) when Ref =:= CallRef -> 
+                                                 {true, Response}; 
+                                            (_) -> false end, Responses),
+                gen_server:reply(CallRef, {ok, NewAcc})
+              end, Refs),
+    AsyncMap;
+request_reply([#response{id = RequestId, response = Response} | Tail], AsyncMap, Responses) ->
     case gb_trees:lookup(RequestId, AsyncMap) of
         {value, {CallRef, _Request}} ->
-            gen_server:reply(CallRef, {ok, Response}),
-            gb_trees:delete(RequestId, AsyncMap);
+            NewAsyncMap = gb_trees:delete(RequestId, AsyncMap),
+            request_reply(Tail, NewAsyncMap, [{CallRef, Response} | Responses]);
         none ->
             lager:warning("get not existing request_id ~p", [RequestId]),
             AsyncMap
