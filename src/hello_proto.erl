@@ -121,5 +121,6 @@ decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) ->
     end.
 signature(Mod, Opts) when is_atom(Mod) -> Mod:signature(Opts).
 
+proto_answer({error, timeout}) -> #error{code = server_error, message = "doesn't answer within a timeout"};
 proto_answer({error, {Code, Message, ProtoData}}) -> #error{code = Code, message = Message, proto_data = ProtoData};
 proto_answer({ok, Response}) -> Response.
