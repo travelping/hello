@@ -6,7 +6,9 @@
     transport_pid           :: pid(),
     transport_params        :: term(),
     peer                    :: term(),
-    session_id              :: term()
+    session_id              :: term(),
+    req_ref                 :: reference(),
+    handler_pid             :: pid()
 }).
 
 -record(request, {
@@ -43,12 +45,6 @@
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- internal records used by hello_handler
--record(request_context, {
-    req_ref                 :: reference(),
-    handler_pid             :: pid(),
-    protocol_info           :: term(),
-    context                 :: #context{}
-    }).
 -record(timer, {
     idle_timer              :: term(), %% the current timer
     idle_timeout_ref        :: reference(),
@@ -61,7 +57,7 @@
 -type request()             :: #request{}.
 -type response()            :: #response{}.
 -type binding()             :: #binding{}.
--type request_context()     :: #request_context{}.
+-type context()             :: #context{}.
 -type timer()               :: #timer{}.
 -type callback()            :: module().
 -type handler()             :: hello_handler.

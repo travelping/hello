@@ -21,14 +21,14 @@
 
 % -callback init( binding() -> {ok, State :: term()}.
 %
-% -callback handle_request(request_context(), method(), params(), State :: term()) -> {reply, reply(), NewState}
+% -callback handle_request(context(), method(), params(), State :: term()) -> {reply, reply(), NewState}
 %                                                                        | {noreply, NewState}
 %                                                                        | {stop, Reason, NewState}
 %                                                                        | {stop, Reason, reply(), NewState}.
 %
-% -callback handle_info(request_context(), Info :: term(), State :: term()) -> term().
+% -callback handle_info(context(), Info :: term(), State :: term()) -> term().
 %
-% -callback terminate(request_context(), Reason :: term(), State :: term()) -> term().
+% -callback terminate(context(), Reason :: term(), State :: term()) -> term().
 
 %% @doc RPC handler behaviour.
 -module(hello_handler).
@@ -101,13 +101,13 @@ set_idle_timeout(HandlerPid, Timeout) ->
 %%   If you want to use asynchronous replies,  your handler module must
 %%   return ``{noreply, State}'' from ``handle_request/4''.
 %%   ``reply/2'' can be called from any process, not just the handler process.
-reply(ReqContext = #request_context{handler_pid = HandlerPid}, Result) ->
+reply(ReqContext = #context{handler_pid = HandlerPid}, Result) ->
     gen_server:cast(HandlerPid, {async_reply, ReqContext, Result}).
 
 %% --------------------------------------------------------------------------------
 %% -- jsonrpc specific stuff
 %% @doc Send an RPC notification with positional or named (given as proplist) parameters to the client.
--spec notify(request_context(), hello_client:method(), [hello_json:value()]) -> ok.
+-spec notify(context(), hello_client:method(), [hello_json:value()]) -> ok.
 notify(Context, Method, Params) when is_list(Params) ->
     hello_proto_jsonrpc:send_notification(Context, Method, Params).
 
@@ -117,7 +117,7 @@ notify(Context, Method, Params) when is_list(Params) ->
 init({Identifier, HandlerMod, HandlerArgs}) ->
     case HandlerMod:init(Identifier, HandlerArgs) of
         Result when is_tuple(Result) and (element(1, Result) == ok) ->
-            setelement(2, Result, #state{mod = HandlerMod, state = element(2, Result)});
+            setelement(2, Result, #state{mod = HandlerMod, state = element(2, Result), async_reply_map = gb_trees:empty()});
         Other ->
             Other
     end.
@@ -135,21 +135,13 @@ handle_cast({request, Request = #request{context = Context, method = Method, arg
 handle_cast({set_idle_timeout, Timeout}, State = #state{timer = Timer}) ->
     NewTimer = Timer#timer{idle_timeout = Timeout},
     {noreply, reset_idle_timeout(State#state{timer = NewTimer})};
-handle_cast({async_reply, ReqContext, Result}, State = #state{async_reply_map = AsyncMap, protocol = ProtocolMod, mod = Mod, url = ExUriUrl}) ->
-    #request_context{req_ref = ReqRef, protocol_info = ProtocolInfo} = ReqContext,
+handle_cast({async_reply, ReqContext, Result}, State = #state{async_reply_map = AsyncMap, mod = Mod}) ->
+    #context{req_ref = ReqRef} = ReqContext,
     case gb_trees:lookup(ReqRef, AsyncMap) of
-        {value, {Request, RequestInfo}} ->
-            case hello_proto:do_async_request(Request, RequestInfo, ProtocolInfo, Result) of
-                {reply, ProtoResponse} ->
-                    Response = hello_proto:build_response(Request, ProtoResponse),
-                    hello_proto:log(ProtocolMod, Request, Response, Mod, ExUriUrl),
-                    send(Mod, Response),
-                    {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}};
-                {noreply, ReplaceInfo} ->
-                    {noreply, State#state{async_reply_map = gb_trees:enter(ReqRef, {Request, ReplaceInfo}, AsyncMap)}};
-                noreply ->
-                    {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}}
-            end;
+        {value, Request} ->
+            lager:info("service: ~p, response ~p for request ~p", [Mod, Result, Request]),
+            send(ReqContext, {ok, Result}),
+            {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}};
         none ->
             error_logger:warning_report([{hello_handler, State#state.mod},
                                          {unknown_async_reply, ReqRef, Result}]),
@@ -197,19 +189,21 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 %% @hidden
-do_request(Request = #request{context = Context, method = Method, args = Args}, State = #state{mod = Mod, state = HandlerState}) ->
+do_request(Request = #request{context = Context, method = Method, args = Args}, State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState}) ->
+    ReqRef = make_ref(),
+    Context1 = Context#context{req_ref = ReqRef, handler_pid = self()},
     case hello_validate:validate_request(Request, Mod) of
         {ok, ValMethod, ValParams} ->
-            case Mod:handle_request(Context, ValMethod, ValParams, HandlerState) of
+            case Mod:handle_request(Context1, ValMethod, ValParams, HandlerState) of
                 {reply, Response, NewHandlerState} ->
                     lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
-                    send(Context, Response),
+                    send(Context1, Response),
                     {noreply, State#state{state = NewHandlerState}};
                 {noreply, NewModState} ->
-                    {noreply, State#state{state = NewModState}};
+                    {noreply, State#state{state = NewModState, async_reply_map = gb_trees:enter(ReqRef, Request, AsyncMap)}};
                 {stop, Reason, Response, NewModState} ->
                     lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
-                    send(Context, Response),
+                    send(Context1, Response),
                     {stop, Reason, State#state{state = NewModState}};
                 {stop, Reason, NewModState} ->
                     {stop, Reason, State#state{mod=NewModState}};
@@ -219,10 +213,10 @@ do_request(Request = #request{context = Context, method = Method, args = Args}, 
                     {noreply, State#state{state = NewModState}}
             end;
         {error, {_Code, _Message, _Data} = Reason} ->
-            send(Context,  {error, Reason}),
+            send(Context1,  {error, Reason}),
             {stop, normal, State};
         _FalseAnswer ->
-            send(Context, {error, {server_error, "validation returned wrong error format", null}}),
+            send(Context1, {error, {server_error, "validation returned wrong error format", null}}),
             {stop, normal, State}
     end.
 
