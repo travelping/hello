@@ -198,14 +198,17 @@ incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged
 incoming_message({ok, Signature, BinResponse, NewTransportState},
                  State = #client_state{async_request_map = AsyncMap, protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts}) ->
     case hello_proto:decode(ProtocolMod, ProtocolOpts, Signature, BinResponse, response) of
-        {ok, Response = #request{id = undefined}} ->
+        {ok, #response{id = null, response = Response}} ->
             notification(Response, State),
             {noreply, State#client_state{transport_state = NewTransportState}};
         {ok, Response = #response{}} ->
             NewAsyncMap = request_reply(Response, AsyncMap),
             {noreply, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
         {ok, Responses = [{ok, #response{}} | _]} ->
-            NewAsyncMap = request_reply([R || {_, R} <- Responses], AsyncMap),
+            NotificationRespopses = [R || {_, #response{id = null} = R} <- Responses],
+            NotificationRespopses /= [] andalso notification([R || #response{response = R} <- NotificationRespopses], State),
+            Responses1 = [R || {_, R} <- Responses] -- NotificationRespopses,
+            NewAsyncMap = request_reply(Responses1, AsyncMap),
             {noreply, State#client_state{transport_state = NewTransportState, async_request_map = NewAsyncMap}};
         {error, _Reason} ->
             {noreply, State#client_state{transport_state = NewTransportState}};
@@ -223,7 +226,7 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
             Signature = hello_proto:signature(ProtocolMod, ProtocolOpts),
             case TransportModule:send_request(BinRequest, Signature, TransportState) of
                 {ok, NewTransportState} ->
-                    {ok, State#client_state{transport_state = NewTransportState, async_request_map = update_map(Request, From, AsyncMap)}};
+                    maybe_noreply(NewTransportState, Request, From, AsyncMap, State);
                 {error, Reason, NewTransportState} ->
                     {error, Reason, State#client_state{transport_state = NewTransportState}}
             end;
@@ -257,6 +260,13 @@ handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInte
 handle_internal(Message, State) ->
     ?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
 
+maybe_noreply(NewTransportState, [#request{type = async} | _], _, _, State) ->
+    {ok, ok, State#client_state{transport_state = NewTransportState}};
+maybe_noreply(NewTransportState, #request{type = async}, _, _, State) ->
+    {ok, ok, State#client_state{transport_state = NewTransportState}};
+maybe_noreply(NewTransportState, Request, From, AsyncMap, State) ->
+    {ok, State#client_state{transport_state = NewTransportState, async_request_map = update_map(Request, From, AsyncMap)}}.
+
 uri_client_module(URI = #ex_uri{scheme = "http"})     -> {URI, hello_http_client};
 uri_client_module(URI = #ex_uri{scheme = "https"})    -> {URI, hello_http_client};
 uri_client_module(URI = #ex_uri{scheme = "zmq-tcp"})  -> {URI, hello_zmq_client};
@@ -264,7 +274,7 @@ uri_client_module(URI = #ex_uri{scheme = "zmq-tcp6"}) -> {URI, hello_zmq_client}
 uri_client_module(_) ->
     badscheme.
 
-notification(#response{response = Response}, _State = #client_state{notification_sink = NotificationSink}) ->
+notification(Response, _State = #client_state{notification_sink = NotificationSink}) ->
     if
         is_pid(NotificationSink) ->
             NotificationSink ! {notification, Response};

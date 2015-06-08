@@ -53,7 +53,7 @@ build_request(SingleRequest, Options, State = #jsonrpc_info{ reqid = ReqId }) ->
         true ->
             State#jsonrpc_info{reqid = undefined}
     end,
-    Request = SingleRequest#request{proto_data = Info, id = ReqId},
+    Request = SingleRequest#request{type = type(Info#jsonrpc_info.reqid), proto_data = Info, id = ReqId},
     {ok, Request, State#jsonrpc_info{ reqid = ReqId+1 }}.
 
 encode(Batch, _Opts) when is_list(Batch)  ->
@@ -131,14 +131,14 @@ decode_single(Object, Type) ->
             {error, Response}
     end.
 
-decode_single(request, #{<<"method">> := Method} = Object, #jsonrpc_info{version = JsonRPC} = Info)
+decode_single(request, #{<<"method">> := Method} = Object, #jsonrpc_info{reqid = ReqId, version = JsonRPC} = Info)
   when is_list(Method) orelse is_binary(Method) ->
     Params = case get(Object, <<"params">>, []) of
                  List when is_list(List) -> List;
                  Obj = #{} when JsonRPC > ?JSONRPC_1 -> Obj;
                  _ -> throw({invalid, Info, <<"\"params\" must be array or object">>})
              end,
-    Request = #request{method = Method, args = Params, proto_data = Info},
+    Request = #request{method = Method, type=type(ReqId), args = Params, proto_data = Info},
     {ok, Request};
 decode_single(request, #{<<"method">> := _Method} = _Object, Info) ->
     throw({invalid, Info, <<"\"method\" must be a string">>});
@@ -229,12 +229,14 @@ request_id(JsonRPC, Object) ->
     case get(Object, <<"id">>, null) of
         null when JsonRPC == ?JSONRPC_1 ->
             throw({invalid, #jsonrpc_info{version = JsonRPC}, <<"JSON-RPC 1.0 requires \"id\"">>});
-        null ->
-            undefined;
+        <<"undefined">> -> undefined;
         Value ->
             Value
     end.
 
+type(null) -> async;
+type(undefined) -> async;
+type(_) -> sync.
+
 maybe_null(undefined) -> null;
-maybe_null(null)      -> null;
 maybe_null(Term)      -> Term.

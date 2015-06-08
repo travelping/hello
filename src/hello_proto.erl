@@ -90,7 +90,7 @@ proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Con
                       response = #error{code = Error, message = "the required method is not registered"}}
     end.
 
-may_be_wait(sync, #request{proto_data = Info}, _Context) ->
+may_be_wait(_, #request{proto_data = Info}, _Context) ->
     Answer = hello_service:await(5000),
     #response{proto_data = Info, response = proto_answer(Answer)};
 may_be_wait(async, _Request, _Context) ->
