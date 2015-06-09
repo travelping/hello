@@ -65,8 +65,8 @@ handle_info({dnssd, _Ref, Msg}, State) ->
     {noreply, State}.
 
 build_url(Scheme, Host, Path, Port) ->
-    ex_uri:encode(#ex_uri{scheme = Scheme, 
-                          authority = #ex_uri_authority{host = clean_host(Host), port = Port}, 
+    ex_uri:encode(#ex_uri{scheme = Scheme,
+                          authority = #ex_uri_authority{host = clean_host(Host), port = Port},
                           path = Path}).
 
 clean_host(Host) ->
@@ -86,7 +86,7 @@ content_type(Signarute) ->
     case Signarute of
         Json -> "application/json";
         MsgPack -> "application/x-msgpack";
-        _ -> [] 
+        _ -> []
     end.
 
 %% http client helpers
@@ -94,7 +94,7 @@ http_send(Client, Request, Signarute, State = #http_state{url = URL, options = O
     #http_options{method = Method, ib_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
     Headers = [{"Content-Type", content_type(Signarute)},
-               {"Accept", Signarute},
+               {"Accept", content_type(Signarute)},
                {"User-Agent", "hello/" ++ Vsn}],
     case ibrowse:send_req(URL, Headers, Method, Request, Opts) of
         {ok, _HttpCode, _, []} -> %% empty responses are ignored
