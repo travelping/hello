@@ -92,8 +92,12 @@ http_chunked_loop(Req, State) ->
         hello_closed ->
             {ok, Req, State};
         {hello_msg, _TParams, _Peer, _, BinResp} ->
-            ok = cowboy_req:chunk(BinResp, Req),
-            http_chunked_loop(Req, State)
+            case cowboy_req:chunk(BinResp, Req) of
+                ok -> http_chunked_loop(Req, State);
+                R -> 
+                    lager:error("cowboy_req:chunk result ~p during send ~p to ~p", [R, BinResp, Req]),
+                    {ok, Req, State}
+            end
     end.
 
 terminate(_Reason, _Req, _State) ->
