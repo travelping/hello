@@ -3,6 +3,8 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include("hello_test.hrl").
+-include("../include/jsonrpc_internal.hrl").
+-include("../include/hello.hrl").
 
 % ---------------------------------------------------------------------
 % -- test cases
@@ -55,6 +57,32 @@ all_mixed_batch_all_callbacks(_Config) ->
 
 named_parameter(_Config) ->
 	[ {ok, [<<"arg1">>, <<"arg2">>]} = hello_client:call(ClientName, ?NAMED_PARAMETER_REQ) || {_, ClientName} <- ?CLIENT_NAMES ].
+
+%% error tests
+binding_not_found(_Config) ->
+	%[ {ok, {binding_not_found, _Msg, _Data}} = hello_client:call(ClientName, ?DUMMY_REQ1) || {_, ClientName} <- ?CLIENT_NAMES ].
+	[ {ok, #error{code = -32601}} = hello_client:call(ClientName, ?DUMMY_REQ1) || {_, ClientName} <- ?CLIENT_NAMES ].
+
+method_not_found(_Config) ->
+	[ {ok, #error{code = -32601}} = hello_client:call(ClientName, ?DUMMY_REQ2) || {_, ClientName} <- ?CLIENT_NAMES ].
+
+invalid_params(_Config) ->
+	[ {ok, #error{code = -32602}} = hello_client:call(ClientName, ?DUMMY_REQ3) || {_, ClientName} <- ?CLIENT_NAMES ],
+	[ {ok, #error{code = -32602}} = hello_client:call(ClientName, ?DUMMY_REQ4) || {_, ClientName} <- ?CLIENT_NAMES ].
+
+error_batch1(_Config) ->
+	[ {ok, [{binding_not_found, _, _}, {binding_not_found, _, _}]} =
+							hello_client:call(ClientName, ?DUMMY_BATCH1) || {_, ClientName} <- ?CLIENT_NAMES ],
+	[ {ok, [?ARG11, {binding_not_found, _, _}]} =
+							hello_client:call(ClientName, ?DUMMY_BATCH1) || {_, ClientName} <- ?CLIENT_NAMES ].
+
+invalid_request(_Config) ->
+    BinRequest = <<"{\"id\":123,\"params\":\"undefined\",\"method\":\"undefined\",\"jsonrpc\":\"2.0\"}">>,
+    {error, #response{response = #error{code = -32600}}} = hello_proto_jsonrpc:decode(BinRequest, [], request).
+
+invalid_notification(_Config) ->
+    BinRequest = <<"{\"id\":null,\"params\":\"undefined\",\"method\":\"undefined\",\"jsonrpc\":\"2.0\"}">>,
+    ignore = hello_proto_jsonrpc:decode(BinRequest, [], request).
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
@@ -68,7 +96,12 @@ all() ->
      normal_batch_all_callbacks,
      %all_mixed_batch_all_callbacks,
      %notify,
-     named_parameter
+     named_parameter,
+     binding_not_found,
+     method_not_found,
+     invalid_params,
+     invalid_request,
+     invalid_notification
     ].
 
 init_per_suite(Config) ->
@@ -85,7 +118,7 @@ end_per_suite(_Config) ->
 % ---------------------------------------------------------------------
 % -- helpers
 bind_all() ->
-    [ ok = bind_all1(Transport, Handler, Protocol) || Transport <- ?TRANSPORTS, Handler <- ?CALLBACK_MODS, Protocol <- ?PROTOCOLS ].
+    [ ok = bind_all1(Transport, Handler, hello_proto_jsonrpc) || Transport <- ?TRANSPORTS, Handler <- ?CALLBACK_MODS].
 
 bind_all1({Url, TransportOpts}, Handler, Protocol) ->
     HandlerOpts = proplists:get_value(Handler, ?HANDLER_ARGS),
