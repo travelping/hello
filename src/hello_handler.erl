@@ -189,33 +189,44 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 %% @hidden
-do_request(Request = #request{context = Context, method = Method, args = Args}, State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState}) ->
+do_request(Request = #request{context = Context, method = Method, args = Args}, 
+           State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState}) ->
     ReqRef = make_ref(),
     Context1 = Context#context{req_ref = ReqRef, handler_pid = self()},
     case hello_validate:validate_request(Request, Mod) of
         {ok, ValMethod, ValParams} ->
-            case Mod:handle_request(Context1, ValMethod, ValParams, HandlerState) of
+            lager:info("~p do_request: ~p", [Mod, Request]),
+            {Time, Value} = timer:tc(Mod, handle_request, [Context1, ValMethod, ValParams, HandlerState]),
+            TimeMS = Time / 1000, % in ms
+            case Value of
                 {reply, Response, NewHandlerState} ->
-                    lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
+                    lager:info("service: ~p method: ~p args: ~p, reply response: ~p (~p ms)", [Mod, Method, Args, Response, TimeMS]),
                     send(Context1, Response),
                     {noreply, State#state{state = NewHandlerState}};
                 {noreply, NewModState} ->
+                    lager:info("service: ~p method: ~p args: ~p noreply (~p ms)", [Mod, Method, Args, TimeMS]),
                     {noreply, State#state{state = NewModState, async_reply_map = gb_trees:enter(ReqRef, Request, AsyncMap)}};
                 {stop, Reason, Response, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p response: ~p", [Mod, Method, Args, Response]),
+                    lager:info("service: ~p method: ~p args: ~p, stop with reason: ~p, response: ~p (~p ms)", 
+                               [Mod, Method, Args, Reason, Response, TimeMS]),
                     send(Context1, Response),
                     {stop, Reason, State#state{state = NewModState}};
                 {stop, Reason, NewModState} ->
+                    lager:info("service: ~p method: ~p args: ~p, stop with reason: ~p (~p ms)", [Mod, Method, Args, Reason, TimeMS]),
                     {stop, Reason, State#state{mod=NewModState}};
                 {stop, NewModState} ->
+                    lager:info("service: ~p method: ~p args: ~p, stop (~p ms)", [Mod, Method, Args, TimeMS]),
                     {stop, State#state{mod=NewModState}};
                 {ignore, NewModState} ->
+                    lager:info("service: ~p method: ~p args: ~p, ignore (~p ms)", [Mod, Method, Args, TimeMS]),
                     {noreply, State#state{state = NewModState}}
             end;
         {error, {_Code, _Message, _Data} = Reason} ->
+            lager:info("service: ~p method: ~p args: ~p, validation error ~p", [Mod, Method, Args, Reason]),
             send(Context1,  {error, Reason}),
             {stop, normal, State};
         _FalseAnswer ->
+            lager:info("service: ~p method: ~p args: ~p, unknown result ~p", [Mod, Method, Args, _FalseAnswer]),
             send(Context1, {error, {server_error, "validation returned wrong error format", null}}),
             {stop, normal, State}
     end.
