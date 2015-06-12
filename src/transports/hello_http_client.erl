@@ -142,4 +142,6 @@ validate_options([], Opts) ->
 
 http_connect_url(#ex_uri{authority = #ex_uri_authority{host = Host}, path = [$/|Path]}) ->
     dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
-    ok.
+    ok;
+http_connect_url(URI) ->
+    URI.
