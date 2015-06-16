@@ -97,7 +97,7 @@ timeout_call(Client, Call, Timeout) ->
     protocol_mod :: atom(),
     protocol_opts :: list(),
     protocol_state ::term(),
-    async_request_map :: gb_tree:tree(),
+    async_request_map = gb_trees:empty() :: gb_tree:tree(),
     keep_alive_interval :: number(),
     keep_alive_ref :: term(),
     notification_sink :: pid() | function()
@@ -109,37 +109,10 @@ init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
         {ok, URIRec = #ex_uri{}, _} ->
             case uri_client_module(URIRec) of
                 {NewURIRec, TransportModule} ->
-                    case TransportModule:init_transport(NewURIRec, TransportOpts) of
-                        {ok, TransportState} ->
-                            NotificationSink = proplists:get_value(notification_sink, ProtocolOpts, undefined),
-                            ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
-                            case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
-                                {ok, ProtocolState} ->
-                                    State = #client_state{  transport_mod = TransportModule,
-                                                            transport_state = TransportState,
-                                                            protocol_mod = ProtocolMod,
-                                                            protocol_opts = ProtocolOpts,
-                                                            protocol_state = ProtocolState,
-                                                            async_request_map = gb_trees:empty(),
-                                                            notification_sink = NotificationSink
-                                                            },
-                                    case evaluate_client_options(ClientOpts, State) of
-                                        {ok, State1} ->
-                                            {ok, State1};
-                                        {error, Reason} ->
-                                            {error, Reason}
-                                    end;
-                                {error, Reason} ->
-                                    {stop, Reason}
-                            end;
-                        {error, Reason} ->
-                            {stop, Reason}
-                    end;
-                badscheme ->
-                    {stop, badscheme}
+                    init_transport(TransportModule, NewURIRec, TransportOpts, ProtocolOpts, ClientOpts);
+                badscheme -> {stop, badscheme}
             end;
-        _Other ->
-            {stop, badurl}
+        _Other -> {stop, badurl}
     end.
 
 %% @hidden
@@ -148,12 +121,9 @@ handle_call({call, Call}, From, State = #client_state{protocol_mod = ProtocolMod
         {ok, Request, NewProtocolState} ->
             State1 = State#client_state{protocol_state = NewProtocolState},
             case outgoing_message(Request, From, State1) of
-                {ok, State2} ->
-                    {noreply, State2};
-                {ok, Reply, State2} ->
-                    {reply, Reply, State2};
-                {error, Reason, State2} ->
-                    {reply, Reason, State2}
+                {ok, State2} -> {noreply, State2};
+                {ok, Reply, State2} -> {reply, Reply, State2};
+                {error, Reason, State2} -> {reply, Reason, State2}
             end;
         {error, Reason, NewProtocolState} ->
             {reply, Reason, State#client_state{protocol_state = NewProtocolState}}
@@ -193,6 +163,35 @@ code_change(_FromVsn, _ToVsn, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
+init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts) ->
+    case TransportModule:init_transport(URIRec, TransportOpts) of
+        {ok, TransportState} ->
+            NotificationSink = proplists:get_value(notification_sink, ProtocolOpts, undefined),
+            ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
+            case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
+                {ok, ProtocolState} ->
+                    State = #client_state{transport_mod = TransportModule,
+                                          transport_state = TransportState,
+                                          protocol_mod = ProtocolMod,
+                                          protocol_opts = ProtocolOpts,
+                                          protocol_state = ProtocolState,
+                                          notification_sink = NotificationSink},
+                    evaluate_client_options(ClientOpts, State);
+                {error, Reason} -> {stop, Reason}
+            end;
+        {error, Reason} -> {stop, Reason}
+    end.
+
+evaluate_client_options(ClientOpts, State) ->
+    KeepAliveInterval = proplists:get_value(keep_alive_interval, ClientOpts, -1),
+    if
+        KeepAliveInterval =< 0 ->
+            {ok, State#client_state{keep_alive_interval = -1}};
+        KeepAliveInterval > 0 ->
+            timer:send_after(KeepAliveInterval, self(), ?PING),
+            {ok, State#client_state{keep_alive_interval = KeepAliveInterval}}
+    end.
+
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
     {noreply, State#client_state{transport_state = NewTransportState}};
 incoming_message({ok, Signature, BinResponse, NewTransportState},
@@ -220,7 +219,8 @@ incoming_message({ok, Signature, BinResponse, NewTransportState},
     end.
 
 outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod, protocol_opts = ProtocolOpts,
-                                                      transport_mod = TransportModule, transport_state = TransportState, async_request_map = AsyncMap}) ->
+                                                      transport_mod = TransportModule, transport_state = TransportState, 
+                                                      async_request_map = AsyncMap}) ->
     case hello_proto:encode(ProtocolMod, ProtocolOpts, Request) of
         {ok, BinRequest} ->
             Signature = hello_proto:signature(ProtocolMod, ProtocolOpts),
@@ -230,10 +230,8 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
                 {error, Reason, NewTransportState} ->
                     {error, Reason, State#client_state{transport_state = NewTransportState}}
             end;
-        {error, Reason, State} ->
-            {error, Reason, State};
-        ignore ->
-            {ok, State}
+        {error, Reason, State} -> {error, Reason, State};
+        ignore -> {ok, State}
     end.
 
 update_map(Requests, From, AsyncMap0) when is_list(Requests) -> 
@@ -242,17 +240,6 @@ update_map(Requests, From, AsyncMap0) when is_list(Requests) ->
                 end, AsyncMap0, Requests);
 update_map(#request{id = undefined}, _From, AsyncMap) -> AsyncMap;
 update_map(#request{id = RequestId} = Request, From, AsyncMap) -> gb_trees:enter(RequestId, {From, Request}, AsyncMap).
-
-evaluate_client_options(ClientOpts, State) ->
-    KeepAliveInterval = proplists:get_value(keep_alive_interval, ClientOpts, -1),
-    if
-        KeepAliveInterval =< 0 ->
-            {ok, State#client_state{keep_alive_interval = -1}};
-        KeepAliveInterval > 0 ->
-            timer:send_after(KeepAliveInterval, self(), ?PING),
-            {ok, State#client_state{keep_alive_interval = KeepAliveInterval}}
-    end.
-
 
 handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInterval}) ->
     {ok, TimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
