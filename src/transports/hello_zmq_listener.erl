@@ -30,6 +30,7 @@
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
+-include("hello_log.hrl").
 -define(SHUTDOWN_TIMEOUT, 500).
 
 %% --------------------------------------------------------------------------------
@@ -71,6 +72,7 @@ init(URL) ->
             State = #state{socket = Socket, url = URL},
             {ok, State};
         {error, Error} ->
+            ?LOG_ERROR("ezmq_bind_url error: ~p", [Error]),
             {stop, Error}
     end.
 
@@ -92,7 +94,7 @@ handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
 handle_info({'EXIT', _Reason}, State) ->
     {noreply, State};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    lager:info("dnssd Msg: ~p", [Msg]),
+    ?LOG_INFO("dnssd Msg: ~p", [Msg]),
     {noreply, State}.
 
 terminate(_Reason, State) ->

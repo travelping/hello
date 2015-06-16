@@ -1,6 +1,7 @@
 -module(hello_service).
 -export([register_link/2, unregister_link/1, call/3, await/1, outgoing_message/2, all/0]).
 -include("hello.hrl").
+-include("hello_log.hrl").
 
 -define(REG_NAME(Name), Name}).
 
@@ -20,7 +21,7 @@ call(Name, Identifier, Request) ->
             Handler = hello_handler:get_handler(Name, Identifier, HandlerMod, HandlerArgs),
             hello_handler:process(Handler, Request);
         {error, not_found} ->
-            lager:warning("Service ~s not found", [Name]),
+            ?LOG_WARNING("Service ~s not found", [Name]),
             {error, method_not_found}
     end.
 

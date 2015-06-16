@@ -36,6 +36,7 @@
 -export([behaviour_info/1]).
 
 -include("hello.hrl").
+-include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 -define(DEFAULT_TIMEOUT, 10000).
 
@@ -123,9 +124,12 @@ handle_call({call, Call}, From, State = #client_state{protocol_mod = ProtocolMod
             case outgoing_message(Request, From, State1) of
                 {ok, State2} -> {noreply, State2};
                 {ok, Reply, State2} -> {reply, Reply, State2};
-                {error, Reason, State2} -> {reply, Reason, State2}
+                {error, Reason, State2} ->
+                    ?LOG_ERROR("unsuccessful send request: ~p, reason: ~p", [Request, Reason]),
+                    {reply, Reason, State2}
             end;
         {error, Reason, NewProtocolState} ->
+            ?LOG_ERROR("unsuccessful build request for call: ~p, reason: ~p", [Call, Reason]),
             {reply, Reason, State#client_state{protocol_state = NewProtocolState}}
     end;
 handle_call(terminate, _From, State) ->
@@ -295,6 +299,6 @@ request_reply([#response{id = RequestId, response = Response} | Tail], AsyncMap,
             NewAsyncMap = gb_trees:delete(RequestId, AsyncMap),
             request_reply(Tail, NewAsyncMap, [{CallRef, Response} | Responses]);
         none ->
-            lager:warning("get not existing request_id ~p", [RequestId]),
+            ?LOG_WARNING("get not existing request_id ~p", [RequestId]),
             AsyncMap
     end.

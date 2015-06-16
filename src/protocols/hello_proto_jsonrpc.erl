@@ -30,6 +30,7 @@
          ]).
 
 -include("hello.hrl").
+-include("hello_log.hrl").
 -include("jsonrpc_internal.hrl").
 -import(hello_lib, [get_in/2, get/2, get/3, to_binary/1]).
 
@@ -42,6 +43,7 @@ init_client(Proplist) ->
         true ->
             {ok, #jsonrpc_info{ reqid = 0, version = JsonRPCVersion} };
         _ ->
+            ?LOG_ERROR("Unsupported JSONRPC version ~p", [JsonRPCVersion]),
             {error, invalid_json_version}
     end.
 
@@ -73,7 +75,7 @@ decode(Binary, _Opts, Type) ->
         end
     catch
         Error:Reason ->
-            io:format(user, "Error ~p Reason ~p ~p~n", [Error, Reason, erlang:get_stacktrace()]),
+            ?LOG_ERROR("Error ~p Reason ~p ~p~n", [Error, Reason, erlang:get_stacktrace()]),
             {error, #error{code = parse_error}}
     end.
 
@@ -123,7 +125,7 @@ decode_single(Object, Type) ->
         decode_single(Type, Object, Info)
     catch
         throw:{_Invalid, #jsonrpc_info{reqid = null}, _Reason} -> %% just a notification, no need to tell anyone
-            lager:error([{class, hello}], "get invalid notification: ~p", [Object]),
+            ?LOG_ERROR("get invalid notification: ~p", [Object]),
             ignore;
         throw:{invalid, Info1, Reason} -> %% an invalid response, this should never happen
             Error =  build_error(#error{code = invalid(Type), message = Reason}),

@@ -35,6 +35,7 @@
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
+-include("hello_log.hrl").
 
 -define(TABLE, hello_registry_tab).
 -define(SERVER, hello_registry).
@@ -111,14 +112,15 @@ handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info({'EXIT', From, Reason}, Table) ->
-    lager:warning("~p: exit with reason ~p", [From, Reason]),
+    ?LOG_WARNING("~p: exit with reason ~p", [From, Reason]),
     {noreply, Table};
-handle_info({'DOWN', _MRef, process, Pid, _Reason}, Table) ->
+handle_info({'DOWN', _MRef, process, Pid, Reason}, Table) ->
     Objects = ets:match(Table, {'$1', Pid, '_', '_'}),
+    ?LOG_WARNING("~p: down ~p with reason ~p", [Pid, Objects, Reason]),
     spawn(fun() -> [down(Object)|| Object <- Objects] end),
     {noreply, Table};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    lager:info("dnssd Msg: ~p", [Msg]),
+    ?LOG_DEBUG("dnssd Msg: ~p", [Msg]),
     {noreply, State};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
@@ -140,8 +142,11 @@ register(Key, Pid, Data, Table) ->
     case Pid =:= undefined orelse is_process_alive(Pid) of
         true ->
             is_pid(Pid) andalso monitor_(Table, Pid),
+            ?LOG_DEBUG("Register ~p for pid ~p with data: ~p", [Key, Pid, Data]),
             bind(Key, Pid, Data, Table);
-        false -> {error, pid_not_alive}
+        false -> 
+            ?LOG_ERROR("Tried to register ~p for pid ~p, but pid not alive", [Key, Pid]),
+            {error, pid_not_alive}
     end.
 
 monitor_(Table, Pid) ->
@@ -161,7 +166,7 @@ down([{listener, Key}]) -> hello_listener:stop(Key);
 down([Key]) -> hello_registry:unregister(Key).
 
 do_dnss_register(App, Name, Port) ->
-    lager:info("dnss port: ~p", [Port]),
+    ?LOG_INFO("dnss register ~p/~p on port ~p", [App, Name, Port]),
     case dnssd:register(Name, <<"_", App/binary, "._tcp">>, Port) of
         {ok, Ref} -> Ref;
         _ -> ok
