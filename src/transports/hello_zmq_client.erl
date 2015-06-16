@@ -26,6 +26,7 @@
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
+-include("hello_log.hrl").
 
 -record(zmq_state, {
     client  :: pid(),
@@ -46,13 +47,13 @@ terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
     ezmq:close(Socket).
 
 handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri = URI, socket = Socket}) ->
-    lager:info("dnssd Service: ~p:~w", [Host, Port]),
+    ?LOG_INFO("dnssd Service: ~p:~w", [Host, Port]),
     Protocol = zmq_protocol(URI),
     R = ezmq:connect(Socket, tcp, clean_host(Host), Port, [Protocol]),
-    lager:debug("ezmq:connect: ~p", [R]),
+    ?LOG_INFO("ezmq:connect: ~p", [R]),
     {noreply, State};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    lager:info("dnssd Msg: ~p", [Msg]),
+    ?LOG_INFO("dnssd Msg: ~p", [Msg]),
     {noreply, State};
 handle_info({zmq, _Socket, [Signature, Msg]}, State) ->
     {?INCOMING_MSG, {ok, Signature, Msg, State}}.

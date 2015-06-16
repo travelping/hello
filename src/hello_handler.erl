@@ -44,6 +44,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("hello.hrl").
+-include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 %% ----------------------------------------------------------------------------------------------------
@@ -73,8 +74,11 @@ behaviour_info(_Other) ->
 get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
     case hello_registry:lookup({handler, Name, Identifier}) of
         {error, not_found} ->
+            ?LOG_DEBUG("Hadler for service ~p and identifier ~p not found, "
+                      "it will have been started", [Name, Identifier]),
             start_handler(Identifier, HandlerMod, HandlerArgs);
         {ok, Handler} ->
+            ?LOG_DEBUG("Found hadler ~p for service ~p and identifier ~p", [Handler, Name, Identifier]),
             Handler
     end.
 
@@ -123,13 +127,13 @@ init({Identifier, HandlerMod, HandlerArgs}) ->
     end.
 
 %% @hidden
-handle_cast({request, Request = #request{context = Context, method = Method, args = Args}}, State = #state{mod = Mod, state = _HandlerState}) ->
+handle_cast({request, Request = #request{context = Context}}, State = #state{mod = Mod, state = _HandlerState}) ->
     % TODO: fix logging, request should be loged with answer. If no answer, should be logged, no answer
     try do_request(Request, State)
     catch
         Error:Reason ->
             send(Context, {error, {server_error, "handler error", undefined}}),
-            lager:error("service: ~p handler thrown an error for method: ~p, args: ~p error: ~p", [Mod, Method, Args, {Error, Reason, erlang:get_stacktrace()}]),
+            ?LOG_REQUEST_bad_request(Mod, self(), Request, {Error, Reason, erlang:get_stacktrace()}),
             {stop, normal, State}
     end;
 handle_cast({set_idle_timeout, Timeout}, State = #state{timer = Timer}) ->
@@ -139,7 +143,7 @@ handle_cast({async_reply, ReqContext, Result}, State = #state{async_reply_map = 
     #context{req_ref = ReqRef} = ReqContext,
     case gb_trees:lookup(ReqRef, AsyncMap) of
         {value, Request} ->
-            lager:info("service: ~p, response ~p for request ~p", [Mod, Result, Request]),
+            ?LOG_REQUEST_async_reply(Mod, self(), Request, {ok, Result}),
             send(ReqContext, {ok, Result}),
             {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}};
         none ->
@@ -189,44 +193,42 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- internal functions
 %% @hidden
-do_request(Request = #request{context = Context, method = Method, args = Args}, 
-           State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState}) ->
+do_request(Request = #request{context = Context}, State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState}) ->
     ReqRef = make_ref(),
-    Context1 = Context#context{req_ref = ReqRef, handler_pid = self()},
+    HandlerPid = self(),
+    Context1 = Context#context{req_ref = ReqRef, handler_pid = HandlerPid},
     case hello_validate:validate_request(Request, Mod) of
         {ok, ValMethod, ValParams} ->
-            lager:info("~p do_request: ~p", [Mod, Request]),
             {Time, Value} = timer:tc(Mod, handle_request, [Context1, ValMethod, ValParams, HandlerState]),
             TimeMS = Time / 1000, % in ms
             case Value of
                 {reply, Response, NewHandlerState} ->
-                    lager:info("service: ~p method: ~p args: ~p, reply response: ~p (~p ms)", [Mod, Method, Args, Response, TimeMS]),
+                    ?LOG_REQUEST_request(Mod, HandlerPid, Request, Response, TimeMS),
                     send(Context1, Response),
                     {noreply, State#state{state = NewHandlerState}};
                 {noreply, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p noreply (~p ms)", [Mod, Method, Args, TimeMS]),
+                    ?LOG_REQUEST_request_no_reply(Mod, HandlerPid, Request, TimeMS),
                     {noreply, State#state{state = NewModState, async_reply_map = gb_trees:enter(ReqRef, Request, AsyncMap)}};
                 {stop, Reason, Response, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p, stop with reason: ~p, response: ~p (~p ms)", 
-                               [Mod, Method, Args, Reason, Response, TimeMS]),
+                    ?LOG_REQUEST_request_stop(Mod, HandlerPid, Request, Response, Reason, TimeMS),
                     send(Context1, Response),
                     {stop, Reason, State#state{state = NewModState}};
                 {stop, Reason, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p, stop with reason: ~p (~p ms)", [Mod, Method, Args, Reason, TimeMS]),
-                    {stop, Reason, State#state{mod=NewModState}};
+                    ?LOG_REQUEST_request_stop_no_reply(Mod, HandlerPid, Request, Reason, TimeMS),
+                    {stop, Reason, State#state{mod = NewModState}};
                 {stop, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p, stop (~p ms)", [Mod, Method, Args, TimeMS]),
+                    ?LOG_REQUEST_request_stop_no_reply(Mod, HandlerPid, Request, TimeMS),
                     {stop, State#state{mod=NewModState}};
                 {ignore, NewModState} ->
-                    lager:info("service: ~p method: ~p args: ~p, ignore (~p ms)", [Mod, Method, Args, TimeMS]),
+                    ?LOG_REQUEST_request(Mod, HandlerPid, Request, ignore, TimeMS),
                     {noreply, State#state{state = NewModState}}
             end;
         {error, {_Code, _Message, _Data} = Reason} ->
-            lager:info("service: ~p method: ~p args: ~p, validation error ~p", [Mod, Method, Args, Reason]),
+            ?LOG_REQUEST_bad_request(Mod, HandlerPid, Request, Reason),
             send(Context1,  {error, Reason}),
             {stop, normal, State};
         _FalseAnswer ->
-            lager:info("service: ~p method: ~p args: ~p, unknown result ~p", [Mod, Method, Args, _FalseAnswer]),
+            ?LOG_REQUEST_bad_request(Mod, HandlerPid, Request, _FalseAnswer),
             send(Context1, {error, {server_error, "validation returned wrong error format", null}}),
             {stop, normal, State}
     end.
