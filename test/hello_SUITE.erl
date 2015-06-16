@@ -3,43 +3,41 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include("hello_test.hrl").
--include("../include/internal.hrl").
+-include("../include/jsonrpc_internal.hrl").
 
 % ---------------------------------------------------------------------
 % -- test cases
 bind_http(_Config) ->
-    bind_url(?HTTP).
+    [bind_url(?HTTP, Protocol) || Protocol <- ?PROTOCOLS].
 
 bind_zmq_tcp(_Config) ->
-    bind_url(?ZMQ_TCP).
-
-bind_zmq_ipc(_Config) ->
-    bind_url(?ZMQ_IPC).
+    [bind_url(?ZMQ_TCP, Protocol) || Protocol <- ?PROTOCOLS].
 
 unbind_all(_Config) ->
-    Bindings = hello:bindings(),
-    [ hello:unbind(Url, CallbackMod) || {Url, CallbackMod, _, _} <- Bindings],
-    [] = hello:bindings().
+    Bindings = hello_binding:all(),
+    (2 * length(?PROTOCOLS) * length(?CALLBACK_MODS)) == length(Bindings),
+    [ hello:unbind(Url, CallbackMod) || {Url, _} <- ?TRANSPORTS, CallbackMod <- ?CALLBACK_MODS ],
+    [] = hello_binding:all().
 
 start_supervised(_Config) ->
     [ start_client(Transport) || Transport <- ?TRANSPORTS ],
-    [ hello_client_sup:stop_client(Url) || {Url, _} <- ?TRANSPORTS ],
+    [ hello_client_sup:stop_client(Url ++ "/test") || {Url, _} <- ?TRANSPORTS ],
     [] = hello_client_sup:clients(),
     ok.
 
 start_named_supervised(_Config) ->
     [ start_named_client(Transport) || Transport <- ?TRANSPORTS ],
-    [ hello_client_sup:stop_client(Url) || {Url, _} <- ?TRANSPORTS ],
+    [ hello_client_sup:stop_client(Url ++ "/test") || {Url, _} <- ?TRANSPORTS ],
     [] = hello_client_sup:clients(),
     ok.
 
 keep_alive(_Config) ->
-    bind_url(?HTTP),
+    [bind_url(?HTTP, Protocol) || Protocol <- ?PROTOCOLS],
     {Url, TransportOpts} = ?HTTP,
     meck:new(hello_client, [passthrough]),
     true = meck:validate(hello_client),
     ok = meck:expect(hello_client, handle_internal, fun(Message, State) -> ct:log("got pong"), meck:passthrough([Message, State]) end),
-    {ok, _Client} = hello_client:start_supervised(Url, TransportOpts, [{protocol, hello_proto_jsonrpc}], [{keep_alive_interval, 100}] ),
+    {ok, _Client} = hello_client:start_supervised(Url ++ "/test", TransportOpts, [{protocol, hello_proto_jsonrpc}], [{keep_alive_interval, 100}] ),
     timer:sleep(310), %% lets wait for some pongs, should be around 3-4; look them up in the ct log
     meck:unload(hello_client),
     ok.
@@ -49,7 +47,6 @@ keep_alive(_Config) ->
 all() ->
     [bind_http,
      bind_zmq_tcp,
-     bind_zmq_ipc,
      unbind_all,
      start_supervised,
      start_named_supervised,
@@ -66,32 +63,22 @@ end_per_suite(_Config) ->
 
 % ---------------------------------------------------------------------
 % -- helpers
-bind_url(Transport) ->
-    [ ok = bind_url1(Transport, Handler, Protocol) || Handler <- ?HANDLER, Protocol <- ?PROTOCOLS ].
-
-bind_url1({Url, TransportOpts}, Handler, Protocol) ->
-    [FirstCallback, SecondCallback] = proplists:get_value(Handler, ?CALLBACKS),
-    HandlerOpts = proplists:get_value(Handler, ?HANDLER_ARGS),
-    ProtocolOpts = proplists:get_value(Protocol, ?PROTOCOL_ARGS),
-
-    %% bind the first callback module
-    ok = hello:bind(Url, TransportOpts, FirstCallback, Handler, HandlerOpts, Protocol, ProtocolOpts),
-
-    %% binding the same module returns already_started
-    {error, callback_already_defined} = hello:bind(Url, TransportOpts, FirstCallback, Handler, HandlerOpts, Protocol, ProtocolOpts),
-
-    %% binding a different (the second) callback should also be possible
-    ok = hello:bind(Url, TransportOpts, SecondCallback, Handler, HandlerOpts, Protocol, ProtocolOpts).
+bind_url({Url, _TransportOpts}, Protocol) ->
+    spawn(fun() ->
+        hello:start_listener(Url, [], Protocol, [], hello_router),
+        [true = hello:bind(Url, Handler) || Handler <- ?CALLBACK_MODS],
+        receive ok -> ok end
+    end).
 
 start_client(Transport) ->
     {Url, TransportOpts} = Transport,
     ProtocolOpts = [{protocol, hello_proto_jsonrpc}],
-    {ok, Pid} = hello_client:start_supervised(Url, TransportOpts, ProtocolOpts, []),
+    {ok, Pid} = hello_client:start_supervised(Url ++ "/test", TransportOpts, ProtocolOpts, []),
     Pid.
 
 start_named_client(Transport) ->
     Name = proplists:get_value(Transport, ?CLIENT_NAMES),
     {Url, TransportOpts} = Transport,
     ProtocolOpts = [{protocol, hello_proto_jsonrpc}],
-    {ok, _Pid} = hello_client:start_supervised(Name, Url, TransportOpts, ProtocolOpts, []),
+    {ok, _Pid} = hello_client:start_supervised(Name, Url ++ "/test", TransportOpts, ProtocolOpts, []),
     Name.

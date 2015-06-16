@@ -122,11 +122,11 @@ decode_single(Object, Type) ->
         Info    = #jsonrpc_info{reqid = ReqId, version = JsonRPC},
         decode_single(Type, Object, Info)
     catch
-        throw:{_Invalid, #jsonrpc_info{reqid = undefined}, _Reason} -> %% just a notification, no need to tell anyone
+        throw:{_Invalid, #jsonrpc_info{reqid = null}, _Reason} -> %% just a notification, no need to tell anyone
             lager:error([{class, hello}], "get invalid notification: ~p", [Object]),
             ignore;
         throw:{invalid, Info1, Reason} -> %% an invalid response, this should never happen
-            Error =  #error{code = invalid(Type), message = Reason},
+            Error =  build_error(#error{code = invalid(Type), message = Reason}),
             Response = #response{proto_data = Info1, response = Error},
             {error, Response}
     end.

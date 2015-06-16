@@ -4,8 +4,7 @@
 %% URLs with transport parameters
 -define(HTTP, {"http://127.0.0.1:6000", []}).
 -define(ZMQ_TCP, {"zmq-tcp://127.0.0.1:6001", []}).
--define(ZMQ_IPC, {"zmq-ipc://hello_test", []}).
--define(TRANSPORTS, [?HTTP, ?ZMQ_TCP, ?ZMQ_IPC]).
+-define(TRANSPORTS, [?HTTP, ?ZMQ_TCP]).
 
 %% callbacks 
 -define(STATEFUL_CALLBACKS, [handler1, handler2]).
@@ -14,7 +13,7 @@
 %% possible paramters for handlers
 -define(STATEFUL_ARGS, [{callback_args, 0}]).
 %% handler with parameters
--define(HANDLER_ARGS, [{hello_handler, ?STATEFUL_ARGS}]).
+-define(HANDLER_ARGS, [{handler1, 0}, {handler2, 1}]).
 %% handler with callbacks
 -define(CALLBACKS, [{hello_handler, ?STATEFUL_CALLBACKS}]).
 
@@ -26,7 +25,7 @@
 %% used callback modules for code loading
 -define(CALLBACK_MODS, [handler1, handler2]).
 
--define(CLIENT_NAMES, [{?HTTP, http_client}, {?ZMQ_TCP, zmq_tcp_client}, {?ZMQ_IPC, zmq_ipc_client}]).
+-define(CLIENT_NAMES, [{?HTTP, http_client}, {?ZMQ_TCP, zmq_tcp_client}]).
 
 -define(NOTIFICATION_METHOD, <<"notification">>).
 -define(NOTIFICATION_ARGS, [<<"notification_arg1">>, <<"notification_arg2">>]).
