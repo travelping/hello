@@ -73,5 +73,6 @@
 -define(INCOMING_MSG, '$hello_incoming_message').
 
 %% for keep alive initiated by a client
--define(PING, '$PING').
--define(PONG, '$PONG').
+-define(PING, <<"$PING">>).
+-define(PONG, <<"$PONG">>).
+-define(INTERNAL_SIGNATURE, <<16#AA, 16#AA>>).
