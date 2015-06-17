@@ -135,11 +135,11 @@ handle_call(terminate, _From, State) ->
 handle_info({?INCOMING_MSG, Message}, State) ->
     incoming_message(Message, State);
 handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState,
-                                         protocol_mod=ProtocolMod, protocol_opts=ProtocolOpts}) ->
-    Signature = hello_proto:signature(ProtocolMod, ProtocolOpts),
-    BinaryPing = list_to_binary(atom_to_list(?PING)),
-    {ok, NewTransportState} = TransportModule:send_request(BinaryPing, Signature, TransportState),
-    {noreply, State#client_state{transport_state = NewTransportState}};
+                                         keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}) ->
+    {ok, NewTransportState} = TransportModule:send_request(?PING, ?INTERNAL_SIGNATURE, TransportState),
+    timer:cancel(TimerRef),
+    {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
+    {noreply, State#client_state{transport_state = NewTransportState, keep_alive_ref = NewTimerRef}};
 
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
     case TransportModule:handle_info(Info, TransportState) of
@@ -188,8 +188,8 @@ evaluate_client_options(ClientOpts, State) ->
         KeepAliveInterval =< 0 ->
             {ok, State#client_state{keep_alive_interval = -1}};
         KeepAliveInterval > 0 ->
-            timer:send_after(KeepAliveInterval, self(), ?PING),
-            {ok, State#client_state{keep_alive_interval = KeepAliveInterval}}
+            {ok, TimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
+            {ok, State#client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}}
     end.
 
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
@@ -241,9 +241,10 @@ update_map(Requests, From, AsyncMap0) when is_list(Requests) ->
 update_map(#request{id = undefined}, _From, AsyncMap) -> AsyncMap;
 update_map(#request{id = RequestId} = Request, From, AsyncMap) -> gb_trees:enter(RequestId, {From, Request}, AsyncMap).
 
-handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInterval}) ->
-    {ok, TimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
-    {ok, State#client_state{keep_alive_ref = TimerRef}};
+handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}) ->
+    timer:cancel(TimerRef),
+    {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
+    {ok, State#client_state{keep_alive_ref = NewTimerRef}};
 handle_internal(Message, State) ->
     ?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
 

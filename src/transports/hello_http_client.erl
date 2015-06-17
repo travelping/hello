@@ -86,7 +86,7 @@ content_type(Signarute) ->
     case Signarute of
         Json -> "application/json";
         MsgPack -> "application/x-msgpack";
-        _ -> []
+        _ -> "application/octet-stream"
     end.
 
 %% http client helpers
@@ -112,9 +112,10 @@ http_send(Client, Request, Signarute, State = #http_state{url = URL, options = O
 
 outgoing_message(Client, Signarute, Body, State) ->
     Body1 = list_to_binary(Body),
-    Signarute1 = list_to_binary(Signarute),
+    Json = hello_json:signature(),
+    Signarute1 = hello_http_listener:signature(list_to_binary(Signarute)),
     case Signarute1 of
-        <<"application/json">> ->
+        Json ->
             Body2 = binary:replace(Body1, <<"}{">>, <<"}$$${">>, [global]),
             Body3 = binary:replace(Body2, <<"]{">>, <<"]$$${">>, [global]),
             Body4 = binary:replace(Body3, <<"}[">>, <<"}$$$[">>, [global]),
