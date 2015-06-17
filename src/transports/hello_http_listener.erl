@@ -22,7 +22,7 @@
 -module(hello_http_listener).
 
 -behaviour(hello_listener).
--export([listener_specification/2, send_response/3, close/1, listener_termination/2, port/2]).
+-export([listener_specification/2, send_response/3, close/1, listener_termination/2, port/2, signature/1]).
 
 %% cowboy http handler callbacks
 -export([init/3, handle/2, terminate/3]).
@@ -113,6 +113,7 @@ signature(ContentType) ->
     case ContentType of
         <<"application/json">> -> Json;
         <<"application/x-msgpack">> -> MsgPack;
+        <<"application/octet-stream">> -> ?INTERNAL_SIGNATURE;
         _ -> [] 
     end.
 
