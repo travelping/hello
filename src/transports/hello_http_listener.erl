@@ -28,6 +28,7 @@
 -export([init/3, handle/2, terminate/3]).
 
 -include("hello.hrl").
+-include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 -record(http_listener_state, {
@@ -95,7 +96,7 @@ http_chunked_loop(Req, State) ->
             case cowboy_req:chunk(BinResp, Req) of
                 ok -> http_chunked_loop(Req, State);
                 R -> 
-                    lager:error("cowboy_req:chunk result ~p during send ~p to ~p", [R, BinResp, Req]),
+                    ?LOG_ERROR("cowboy_req:chunk result ~p during send ~p to ~p", [R, BinResp, Req]),
                     {ok, Req, State}
             end
     end.

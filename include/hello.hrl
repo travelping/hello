@@ -1,3 +1,6 @@
+-ifndef(HELLO).
+-define(HELLO, 1).
+
 %% ----------------------------------------------------------------------------------------------------
 %% -- these records are used for abstraction of request and responses independent of the used protocol
 -record(context, {
@@ -76,3 +79,5 @@
 -define(PING, <<"$PING">>).
 -define(PONG, <<"$PONG">>).
 -define(INTERNAL_SIGNATURE, <<16#AA, 16#AA>>).
+
+-endif.

@@ -27,6 +27,7 @@
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
+-include("hello_log.hrl").
 -record(http_options, {
     ib_opts :: list({atom(), term()}),
     method = post :: 'put' | 'post'
@@ -45,6 +46,7 @@ init_transport(URL, Options) ->
             http_connect_url(URL),
             {ok, #http_state{url = ex_uri:encode(URL), scheme = URL#ex_uri.scheme, path = URL#ex_uri.path, options = ValOpts}};
         {error, Reason} ->
+            ?LOG_ERROR("Invalid options for init http client, reason: ~p", [Reason]),
             {error, Reason}
     end.
 
@@ -58,10 +60,10 @@ terminate_transport(_Reason, _State) ->
     ok.
 
 handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #http_state{scheme = Scheme, path = Path}) ->
-    lager:info("dnssd Service: ~p:~w", [Host, Port]),
+    ?LOG_INFO("dnssd Service: ~p:~w", [Host, Port]),
     {noreply, State#http_state{url = build_url(Scheme, Host, Path, Port)}};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    lager:info("dnssd Msg: ~p", [Msg]),
+    ?LOG_INFO("dnssd Msg: ~p", [Msg]),
     {noreply, State}.
 
 build_url(Scheme, Host, Path, Port) ->
@@ -106,6 +108,8 @@ http_send(Client, Request, Signarute, State = #http_state{url = URL, options = O
             Client ! {?INCOMING_MSG, {error, list_to_integer(HttpCode), State}},
             exit(normal);
         {error, Reason} ->
+            ?LOG_ERROR("error during ibrowse:send_req to, url: ~p, headers: ~p, request: ~p, reason: ~p", 
+                       [URL, Headers, Request, Reason]),
             Client ! {?INCOMING_MSG, {error, Reason, State}},
             exit(normal)
     end.
