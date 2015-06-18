@@ -20,7 +20,7 @@
 
 % @private
 -module(hello_binding).
--export([register_link/2, unregister_link/2, lookup/2, all/0]).
+-export([register_link/2, unregister_link/2, lookup/2, all/0, binds_for_uri/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
@@ -40,3 +40,5 @@ unregister_link(ExUriURL, HandlerMod) ->
 
 all() -> hello_registry:all(binding).
 
+binds_for_uri(ExUriURL) ->
+    hello_registry:match(binding, {ExUriURL, '_'}).

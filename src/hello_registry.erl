@@ -27,7 +27,7 @@
 
 -export([
     start/0, start_link/0, all/1, register_link/2, register_link/3, unregister_link/1,
-    register/2, register/3, unregister/1, lookup/1
+    register/2, register/3, unregister/1, lookup/1, match/2
 ]).
 
 %% gen_server Callbacks
@@ -83,6 +83,9 @@ lookup(Key) ->
 all(Type) ->
     Table = ?TABLE,
     [{Name, Pid, Args, Ref} || [Name, Pid, Args, Ref] <- ets:match(Table, {{Type, '$1'}, '$2', '$3', '$4'})].
+
+match(Type, Match) ->
+    [{Name, Pid, Args, Ref} || {{_, Name}, Pid, Args, Ref} <- ets:match_object(?TABLE, {{Type, Match}, '_', '_', '_'})].
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
@@ -150,9 +153,9 @@ register(Key, Pid, Data, Table) ->
     end.
 
 monitor_(Table, Pid) ->
-    ets:select_count(Table, [{{'_', '$1', '_', '_'}, 
-                              [{'==', '$1', Pid}], 
-                              [true]}]) == 0 
+    ets:select_count(Table, [{{'_', '$1', '_', '_'},
+                              [{'==', '$1', Pid}],
+                              [true]}]) == 0
     andalso erlang:monitor(process, Pid).
 
 bind({binding, {_Url, _RouterKey}} = Key, Pid, {Data, Port}, Table) ->
