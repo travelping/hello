@@ -85,6 +85,9 @@ proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Con
         {ok, ServiceName, Identifier} ->
             hello:call_service(ServiceName, Identifier, Request#request{context = Context}),
             may_be_wait(Type, Request, Context);
+	{ok, ServiceName, Identifier, NewRequest} ->
+            hello:call_service(ServiceName, Identifier, NewRequest#request{context = Context}),
+            may_be_wait(Type, NewRequest, Context);
         {error, Error} = _ ->
             #response{proto_data = Info,
                       response = #error{code = Error, message = "the required method is not registered"}}
