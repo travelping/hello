@@ -125,9 +125,8 @@ bind_all1({Url, TransportOpts}, Handler, Protocol) ->
     ProtocolOpts = proplists:get_value(Protocol, ?PROTOCOL_ARGS),
     Self = self(),
     spawn(fun() ->
-        hello:start_service(Handler, HandlerOpts),
         hello:start_listener(Url, TransportOpts, Protocol, ProtocolOpts, hello_router),
-        true = hello:bind(Url, Handler),
+        true = hello:bind(Url, Handler, HandlerOpts),
         Self ! next,
         receive after infinity -> ok end
     end), 

@@ -1,5 +1,5 @@
 -module(hello_service).
--export([register_link/2, unregister_link/1, call/3, await/1, outgoing_message/2, all/0]).
+-export([register_link/2, unregister_link/1, lookup/1, call/3, await/1, outgoing_message/2, all/0]).
 -include("hello.hrl").
 -include("hello_log.hrl").
 
@@ -12,6 +12,10 @@ register_link(HandlerMod, HandlerArgs) ->
 unregister_link(HandlerMod) ->
     Name = hello_lib:to_binary(HandlerMod:name()),
     hello_registry:unregister_link({service, Name}).
+
+lookup(HandlerMod) ->
+    Name = hello_lib:to_binary(HandlerMod:name()),
+    hello_registry:lookup({service, Name}).
 
 call(Name, Identifier, {Method, Args}) ->
     call(Name, Identifier, #request{method = Method, args = Args});
