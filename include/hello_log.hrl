@@ -8,7 +8,7 @@
 -define(BAD_TRACES(Mod, Method), [{class, hello}, {hello_request, error}, {hello_handler, Mod}, {hello_method, Method}]).
 
 -define(LOG_REQUEST_async_reply(CallbackModule, HandlerPid, Request, Response),
-    lager:info(?REQ_TRACES(CallbackModule, Response#request.method), 
+    lager:info(?REQ_TRACES(CallbackModule, Request#request.method), 
                "async reply on ~p. ~s - ~s", 
                [HandlerPid, hello_log:fmt_request(Request), hello_log:fmt_response(Response)])).
 
