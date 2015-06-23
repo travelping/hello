@@ -25,25 +25,23 @@
 -export([build_request/3]).
 -export([encode/3, decode/5, signature/2]).
 -export([handle_incoming_message/7]).
--export([behaviour_info/1]).
 
 -include("hello.hrl").
 
-behaviour_info(callbacks) ->
-    [{init_client, 1},
-     {build_request, 3},
-     %{do_request, 5},
-     %{do_async_request, 4},
-     %{encoding_info, 0},
-     {encode, 2},
-     {decode, 3},
-     {signature, 1}
-     %{extract_requests, 1},
-     %{error_response, 4},
-     %{log, 4}
-     ];
-behaviour_info(_Other) ->
-    undefined.
+
+-callback init_client(protocol_opts()) -> 
+    {ok, State :: term()} | {error, Reason :: term()}.
+
+-callback build_request(request(), [proplists:property()], State:: term()) -> 
+    {ok, request(), NewState :: term()}.
+
+-callback encode([request() | response()] | request() | response(), protocol_opts()) -> 
+    {ok, jsx:json_text()}.
+
+-callback decode(jsx:json_text(), protocol_opts(), request | response) -> 
+    {ok, response()} | {ok, request()} | {error, #error{}} | {ok, [{ok, response()} | {ok, request()}]}.
+
+-callback signature(protocol_opts()) -> binary().
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Request/Response handling

@@ -1,28 +1,34 @@
 -module(hello_listener).
 -export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, handle_incoming_message/4]).
--export([behaviour_info/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
+
+-type listener_ref() :: pid() | reference().
+
+%% Behaviour callbacks
+-callback listener_specification(#ex_uri{}, trans_opts()) -> 
+    {make_child, Specs :: supervisor:child_spec()} | {other_supervisor, Result :: term()}.
+
+-callback send_response(context(), signature(), Response :: binary()) -> ok.
+
+-callback close(Context :: context()) -> ok.
+
+-callback port(URI :: #ex_uri{}, ListenerRef :: listener_ref()) -> integer().
+
+-callback listener_termination(URI :: #ex_uri{}, ListenerRef :: listener_ref()) -> 
+    child | ok | {error, not_found}.
+
+
 %% --------------------------------------------------------------------------------
 %% -- start and stop a listener
 -record(listener, {
-    exuri,
-    ref,
-    protocol,
-    protocol_opts,
-    router
+    exuri :: #ex_uri{},
+    ref :: listener_ref(),
+    protocol :: protocol(),
+    protocol_opts :: protocol_opts(),
+    router :: module()
 }).
-
-behaviour_info(callbacks) ->
-    [{listener_specification, 2},
-     {send_response, 3},
-     {close, 1},
-     {port, 2},
-     {listener_termination, 2}
-     ];
-behaviour_info(_) ->
-    undefined.
 
 start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
     case lookup(ExUriURL) of

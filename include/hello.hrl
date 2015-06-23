@@ -62,6 +62,7 @@
 -type binding()             :: #binding{}.
 -type context()             :: #context{}.
 -type timer()               :: #timer{}.
+-type signature()           :: binary().
 -type callback()            :: module().
 -type handler()             :: hello_handler.
 -type protocol()            :: hello_proto_jsonrpc.
