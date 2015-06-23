@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--export([start_link/2, start_link/3,
+-export([start_link/2, start_link/3, start_link/4, start_link/5,
          start/4, start/5, stop/1,
          start_supervised/4, start_supervised/5, stop_supervised/1,
          call/2, call/3]).
@@ -58,10 +58,18 @@ stop(Client) ->
     gen_server:call(Client, terminate).
 
 %% callbacks for supervisor
+% @deprecated
 start_link(URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
     gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+% @deprecated
 start_link(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
+    gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
+
+start_link(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
+
+start_link(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
 %% API to start with hello supervisor
