@@ -25,7 +25,7 @@
          start_listener/1, start_listener/2, start_listener/5,
          stop_listener/1, call_service/2, call_service/3]).
 -export([start/2, stop/1, start/0]).
--export([bind/2, bind/7, unbind/2]).
+-export([bind/2, bind/3, bind/7, unbind/2]).
 
 -include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -114,11 +114,13 @@ bind(URL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, Protoco
 
 %% API
 
-start_service(HandlerMod, HandlerArgs) ->
-    hello_service:register_link(HandlerMod, HandlerArgs).
+start_service(_HandlerMod, _HandlerArgs) ->
+    %hello_service:register_link(HandlerMod, HandlerArgs).
+    ok.
 
-stop_service(HandlerMod) ->
-    hello_service:unregister_link(HandlerMod).
+stop_service(_HandlerMod) ->
+    %hello_service:unregister_link(HandlerMod).
+    ok.
 
 start_listener(URL) ->
     start_listener(URL, []).
@@ -132,11 +134,20 @@ start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
 stop_listener(URL) ->
     stop_listener(URL).
 
-bind(URL, HandlerMod) ->
-    on_ex_uri(URL, fun(ExUriURL) -> hello_binding:register_link(ExUriURL, HandlerMod) end).
+bind(URL, HandlerMod) -> bind(URL, HandlerMod, []).
+bind(URL, HandlerMod, HandlerArgs) ->
+    on_ex_uri(URL, fun(ExUriURL) -> 
+                           hello_service:lookup(HandlerMod) == {error, not_found} andalso 
+                               hello_service:register_link(HandlerMod, HandlerArgs),
+                           hello_binding:register_link(ExUriURL, HandlerMod) 
+                   end).
 
 unbind(URL, HandlerMod) ->
-    on_ex_uri(URL, fun(ExUriURL) -> hello_binding:unregister_link(ExUriURL, HandlerMod) end).
+    on_ex_uri(URL, fun(ExUriURL) -> 
+                           hello_binding:unregister_link(ExUriURL, HandlerMod),
+                           hello_binding:lookup(ExUriURL, HandlerMod:router_key()) == {error, not_found} andalso 
+                               hello_service:unregister_link(HandlerMod)
+                   end).
 
 call_service(Name, {Method, Args}) ->
     Ref = make_ref(),
