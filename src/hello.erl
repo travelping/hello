@@ -26,7 +26,7 @@
 -export([start/2, stop/1, start/0]).
 -export([start_service/2, stop_service/1,
          start_listener/1, start_listener/2, start_listener/5,
-         stop_listener/1]).
+         stop_listener/1, call_service/2, call_service/3]).
 -export([bind_handler/3, bind/2, bind/3, bind/7, unbind/2]).
 
 -include("hello.hrl").
@@ -154,6 +154,13 @@ unbind(URL, HandlerMod) ->
                            hello_binding:lookup(ExUriURL, HandlerMod:router_key()) == {error, not_found} andalso 
                                hello_service:unregister_link(HandlerMod)
                    end).
+
+-spec call_service(Name :: binary(), request() | {Method :: binary(), Args :: list()}) -> term().
+call_service(Name, Request) -> call_service(Name, undefined, Request).
+
+-spec call_service(Name :: binary(), Identifier :: term(), request() | {Method :: binary(), Args :: list()}) -> 
+    term().
+call_service(Name, UniqId, Request) -> hello_service:call(Name, UniqId, Request).
 
 %% --------------------------------------------------------------------------------
 %% -- Helpers
