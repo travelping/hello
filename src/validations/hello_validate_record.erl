@@ -21,7 +21,7 @@
 % @private
 -module(hello_validate_record).
 
--export([request_params/3, request_params/4, type/2]).
+-export([find_method/2, request_params/3, request_params/4, type/2]).
 -export_type([json_type/0, param_type/0]).
 
 -include("hello.hrl").

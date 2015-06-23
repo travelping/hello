@@ -1,5 +1,5 @@
 -module(hello_listener).
--export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, await_answer/0, handle_incoming_message/4]).
+-export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, handle_incoming_message/4]).
 -export([behaviour_info/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -72,15 +72,6 @@ all() ->
 
 async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Signarute, Binary]).
-
-await_answer() ->
-    receive
-        {?INCOMING_MSG, Response} ->
-            Response
-    after
-        5000 ->
-            {error, timeout}
-    end.
 
 handle_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),

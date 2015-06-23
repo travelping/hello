@@ -20,12 +20,14 @@
 
 % @doc This module is the main interface to the hello application.
 -module(hello).
+
 -behaviour(application).
+
+-export([start/2, stop/1, start/0]).
 -export([start_service/2, stop_service/1,
          start_listener/1, start_listener/2, start_listener/5,
-         stop_listener/1, call_service/2, call_service/3]).
--export([start/2, stop/1, start/0]).
--export([bind/2, bind/3, bind/7, unbind/2]).
+         stop_listener/1]).
+-export([bind_handler/3, bind/2, bind/3, bind/7, unbind/2]).
 
 -include("hello.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -34,7 +36,7 @@
 
 %% --------------------------------------------------------------------------------
 %% -- type definitions
--type url()         :: #ex_uri{}.
+-type url()         :: decoded_url() | string() | binary().
 -type bind_errors() ::  {error, callback_not_loaded} |
                         {error, callback_already_defined} |
                         {error, typespec_not_loaded} |
@@ -95,46 +97,49 @@ bind_handler(URL, CallbackMod, CallbackArg) ->
 %   This function is independent from protocol or transport specific arguments. It should only be used
 %   for developing purposes. A more convenient shortcut is bind_handler/3 which should be capable of everything
 %   you want.
+% @deprecated
 -spec bind(url(), trans_opts(), callback(), handler(), handler_opts(), protocol(), protocol_opts()) -> ok | bind_errors().
-bind(URL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts) ->
-    case (catch ex_uri:decode(URL)) of
-        {ok, ExUriURL, _} ->
-            case code:is_loaded(CallbackMod) of
-                {file, _Loaded} ->
-                    case hello_binding:do_binding(ExUriURL, TransportOpts, CallbackMod, HandlerMod, HandlerOpts, Protocol, ProtocolOpts) of
-                        {ok, _Pid}     -> ok;
-                        {error, Error} -> {error, Error}
-                    end;
-                false ->
-                    {error, callback_not_loaded}
-            end;
-        Other ->
-            {error, {badurl, Other}}
-    end.
+bind(URL, TransportOpts, CallbackMod, _HandlerMod, HandlerOpts, Protocol, ProtocolOpts) ->
+    start_listener(URL, TransportOpts, Protocol, ProtocolOpts, hello_router),
+    bind(URL, CallbackMod, HandlerOpts).
 
 %% API
 
+% @deprecated
 start_service(_HandlerMod, _HandlerArgs) ->
     %hello_service:register_link(HandlerMod, HandlerArgs).
     ok.
 
+% @deprecated
 stop_service(_HandlerMod) ->
     %hello_service:unregister_link(HandlerMod).
     ok.
 
+-spec start_listener(URL :: url()) -> ok | {error, Reason :: term()}.
 start_listener(URL) ->
     start_listener(URL, []).
 
+-spec start_listener(URL :: url(), TransportOpts :: list()) -> ok | {error, Reason :: term()}.
 start_listener(URL, TransportOpts) ->
     start_listener(URL, TransportOpts, hello_proto_jsonrpc, [{decoder, hello_msgpack}], hello_router).
 
+-spec start_listener(URL :: url(), TransportOpts :: list(), Protocol :: module(), 
+                     ProtocolOpts :: list(), RouterMod :: module()) -> 
+    ok | {error, Reason :: term()}.
 start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
-    on_ex_uri(URL, fun(ExUriURL) -> hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) end).
+    on_ex_uri(URL, fun(ExUriURL) -> 
+                           hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) 
+                   end).
 
+-spec stop_listener(URL :: url()) -> ok | {error, Reason :: term()}.
 stop_listener(URL) ->
-    stop_listener(URL).
+    on_ex_uri(URL, fun(ExUriURL) -> hello_listener:stop(ExUriURL) end).
 
-bind(URL, HandlerMod) -> bind(URL, HandlerMod, []).
+-spec bind(URL :: url(), HandlerMod :: module()) -> ok | {error, Reason :: term()}.
+bind(URL, HandlerMod) -> 
+    bind(URL, HandlerMod, []).
+
+-spec bind(URL :: url(), HandlerMod :: module(), HandlerArgs :: list()) -> ok | {error, Reason :: term()}.
 bind(URL, HandlerMod, HandlerArgs) ->
     on_ex_uri(URL, fun(ExUriURL) -> 
                            hello_service:lookup(HandlerMod) == {error, not_found} andalso 
@@ -142,6 +147,7 @@ bind(URL, HandlerMod, HandlerArgs) ->
                            hello_binding:register_link(ExUriURL, HandlerMod) 
                    end).
 
+-spec unbind(URL :: url(), HandlerMod :: module()) -> ok.
 unbind(URL, HandlerMod) ->
     on_ex_uri(URL, fun(ExUriURL) -> 
                            hello_binding:unregister_link(ExUriURL, HandlerMod),
@@ -149,15 +155,10 @@ unbind(URL, HandlerMod) ->
                                hello_service:unregister_link(HandlerMod)
                    end).
 
-call_service(Name, {Method, Args}) ->
-    Ref = make_ref(),
-    Context = #context{connection_pid = self(), peer = Ref},
-    call_service(Name, undefined, #request{context = Context, method = Method, args = Args}),
-    hello_service:await(5000).
-
-call_service(Name, UniqId, Request) ->
-    hello_service:call(Name, UniqId, Request).
-
+%% --------------------------------------------------------------------------------
+%% -- Helpers
+on_ex_uri(URL, Fun) when is_binary(URL) -> on_ex_uri(binary_to_list(URL), Fun); 
+on_ex_uri(#ex_uri{} = URL, Fun) -> Fun(URL);
 on_ex_uri(URL, Fun) ->
     case (catch ex_uri:decode(URL)) of
         {ok, ExUriURL, _} ->

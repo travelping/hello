@@ -66,7 +66,7 @@ end_per_suite(_Config) ->
 bind_url({Url, _TransportOpts}, Protocol) ->
     spawn(fun() ->
         hello:start_listener(Url, [], Protocol, [], hello_router),
-        [true = hello:bind(Url, Handler) || Handler <- ?CALLBACK_MODS],
+        [ok = hello:bind(Url, Handler) || Handler <- ?CALLBACK_MODS],
         receive ok -> ok end
     end).
 

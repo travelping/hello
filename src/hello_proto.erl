@@ -83,10 +83,10 @@ proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, E
 proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Context, _ProtocolMod, _ProtocolOpts, Router, ExUriURL) ->
     case Router:route(Context, Request, ExUriURL) of
         {ok, ServiceName, Identifier} ->
-            hello:call_service(ServiceName, Identifier, Request#request{context = Context}),
+            hello_service:call(ServiceName, Identifier, Request#request{context = Context}),
             may_be_wait(Type, Request, Context);
-	{ok, ServiceName, Identifier, NewRequest} ->
-            hello:call_service(ServiceName, Identifier, NewRequest#request{context = Context}),
+        {ok, ServiceName, Identifier, NewRequest} ->
+            hello_service:call(ServiceName, Identifier, NewRequest#request{context = Context}),
             may_be_wait(Type, NewRequest, Context);
         {error, Error} = _ ->
             #response{proto_data = Info,
