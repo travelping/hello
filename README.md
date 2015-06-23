@@ -10,40 +10,15 @@ over HTTP and ZeroMQ transports.
 
 # Building and installing
 
-## Dependencies:
+Use [rebar](https://github.com/rebar/rebar) for building:
+    
+    rebar get-deps compile
 
-You can build an install hello using tetrapak. It will
-automatically download necessary dependencies if your
-version is up to date.
+You can use hello in your own project:
 
-If you don't want to use tetrapak here is the list of
-dependencies. You can also lookup the commit id in the
-list of (tested) dependencies for tetrapak in the file
-<config.ini>.
-
-* [jsx](https://some_link.com)
-* [cowboy](https://github.com/extend/cowboy)
-* [ex_uri](https://github.com/extend/ex_uri)
-* [erlzmq2](https://github.com/zeromq/erlzmq2)
-* [ibrowse](https://github.com/cmullaparthi/ibrowse)
-
-## Building
-
-We use [tetrapak](https://github.com/travelping/tetrapak) for
-development. Hello follows standard OTP practice though, so you
-can use any build tool that supports OTP applications.
-
-In order to build hello using tetrapak, simply execute
-
-	tetrapak build
-
-in your working copy.
-
-Use
-
-	tetrapak doc
-
-to generate EDoc reference documentation.
+    {deps, [
+        {hello, ".*", {git, "https://github.com/travelping/hello.git", "hello_v3"}}
+    ]}.
 
 # RPC Server Model
 
@@ -53,6 +28,10 @@ RPC endpoints are called bindings.
 A binding represents a mapping from a unique transport
 URL to a handler module.
 
+Example:
+
+    hello:bind("http://127.0.0.1:8080", handler_module),
+
 ## Listeners
 
 A listener usually wraps a network socket (e.g. a TCP acceptor).
@@ -60,11 +39,28 @@ Listeners are created on demand when the first binding that references
 them is created. It is also automatically removed if no bindings
 exists that could use it.
 
-Quick example, creating a stateless HTTP binding like this:
+Quick example, starting HTTP listener like this:
 
-	hello:bind_stateless("http://127.0.0.1:8080/example", my_handler).
+    hello:start_listener("http://127.0.0.1:8080").
+
+You can customize listener:
+
+    TransportOpts = [],
+    Protocol = hello_proto_jsonrpc,
+    ProtocolOpts = [],
+    Router = hello_router,
+    hello:start_listener("http://127.0.0.1:8080", TransportOpts, Protocol, ProtocolOpts, Router).
 
 will start an HTTP server automatically.
+
+## Routes 
+
+You can implement your own router (see [hello_router](/src/hello_router.erl)). 
+For this you have to write module with function:
+    
+    route(content(), request(), #ex_uri{}) -> 
+        {error, Reason :: term()} | 
+        {ok, ServiceName :: binary(), Id : term()}.
 
 ## Handlers
 
@@ -74,20 +70,14 @@ This mechanism relies on transport specific implementations like the
 ZeroMQ peer identit.
 If started without that option the handler is available for N clients.
 
-There are two types of handlers:
+There is hello_handler:
 
-- the hello_handler which has full capabilities including
+    - sync replies
     - async replies
+    - is stateless (or statefull if you use register handler)
     - a state to hold a rpc session
     - receiving messages from other processes of the same node
     - full jsonrpc support (e.g. two sided communication)
-
-- the hello_simple_handler which has restricted capabilities:
-    - can just handle pure request-response patterns
-    - is stateless
-    - no async replies are possible, an immediate response is
-      expected
-    - cannot be started in single-client mode
     - covers the most 'usecases'
 
 # Client
@@ -96,8 +86,17 @@ Hello also contains an RPC client which is also capable of handling different
 rpc protocols. Out of the box it supports jsonrpc as well.
 Connecting to a server can be as simple as:
 
-	{ok, Client} = hello_client:start_link("http://127.0.0.1:8080/example", []),
-	hello_client:call(Client, "my_method", [1, 2, <<"argument">>]).
+
+    TransportOpts = [],
+    ProtocolOpts = [],
+    ClientOpts = [],
+	{ok, Client} = hello_client:start_link("http://127.0.0.1:8080/example", TransportOpts, ProtocolOpts, ClientOpts),
+	hello_client:call(Client, {<<"my_method">>, [1, 2, <<"argument">>], []}).
+
+You can start client with keep alive support:
+
+    ClientOpts = [{keep_alive_interval, 3000}],
+	{ok, Client} = hello_client:start_link("http://127.0.0.1:8080/example", [], [], ClientOpts).
 
 # Logging
 
@@ -105,23 +104,49 @@ Hello log request and responses through lager on level INFO. Lager metadata fiel
 'hello_request' and 'hello_handler' are set to support tracing.
 'hello_request' is set to 'api' for normal request and to 'error' for undecoded (bad)
 requests. 'hello_handler' is set to the name of the handler module.
+'class' is set to 'hello' for tracing all hello logs. 'hello_method' if set for method tracing.
 
 To write all bad request to a file use:
 
-  {lager, [
-    {handlers, [
-      {lager_file_backend, [{file, "bad_request.log"}, {level, none}]}
-    ]},
-    {traces, [
-      {{lager_file_backend, "bad_request.log"}, [{hello_request, error}], info}]}
-  ]}
+    {lager, [
+        {handlers, [
+            {lager_file_backend, [{file, "bad_request.log"}, {level, none}]}
+        ]},
+        {traces, [
+            {{lager_file_backend, "bad_request.log"}, [{hello_request, error}], info}
+            ]}
+    ]}
 
 To write all requests for a module hello_stateful_handler_example to a file use:
 
-  {lager, [
-    {handlers, [
-      {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
-    ]},
-    {traces, [
-      {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_handler, hello_stateful_handler_example}], info}]}
-  ]}
+    {lager, [
+        {handlers, [
+            {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
+        ]},
+        {traces, [
+            {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_handler, hello_handler_example}], info}
+        ]}
+    ]}
+
+To write all requests for a method `Test.try` to a file use:
+
+    {lager, [
+        {handlers, [
+            {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
+        ]},
+        {traces, [
+            {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_method, <<"Test.try">>}], info}
+        ]}
+    ]}
+
+# For Developers
+
+If you want to implement server on another framework you have to know two things about protocols:
+
+1. JSON RPC have signature:
+    * For HTTP it is `application/json` in Content-Type header.
+    * For ZMTP it is  0xAA, 0xFF as first frame.
+2. Hello have keep alive mechanism via ping-pong messaging:
+    * Client send `$PING` message and server reply with `$PONG` message.
+    * HTTP signature for those messages is `application/octet-stream` in Content-Type header.
+    * For ZMTP is  0xAA, 0xAA as first frame.
