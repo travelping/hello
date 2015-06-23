@@ -32,20 +32,20 @@
 %% for tests
 -export([handle_internal/2]).
 
-%% client transport implementation API
--export([behaviour_info/1]).
-
 -include("hello.hrl").
 -include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 -define(DEFAULT_TIMEOUT, 10000).
 
-behaviour_info(callbacks) ->
-    [{init_transport,2},
-     {send_request,3},
-     {terminate_transport,2}];
-behaviour_info(_) ->
-    undefined.
+%% Behaviour callbacks
+-callback init_transport(#ex_uri{}, trans_opts()) -> 
+    {ok, ClientState :: term()} | {error, Reason :: term()}.
+
+-callback send_request(Reqquest :: binary(), signature(), ClientState :: term()) -> 
+    {ok, NewClietnState :: term()} | {error, Reason :: term(), ClietnState :: term()}.
+
+-callback terminate_transport(Reason :: term(), ClientState :: term()) -> ok.
+
 
 %% API to start without supervisor
 start(URI, TransportOpts, ProtocolOpts, ClientOpts) ->

@@ -37,8 +37,6 @@
          set_idle_timeout/2,
          reply/2
          ]).
-%-export([notify/3]).
--export([behaviour_info/1]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -61,15 +59,24 @@
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Callback Module API
--spec behaviour_info(callbacks) -> [{atom(), integer()}].
-behaviour_info(callbacks) ->
-    [{init,1},
-     {handle_request,4},
-     {handle_info,3},
-     {terminate,3}
-     ];
-behaviour_info(_Other) ->
-    undefined.
+-type handle_request_response() :: {error, Reason :: term()} | {error, integer(), iodata(), term()} | {ok, term()}.
+
+-callback init(Identifier :: term(), handler_opts()) -> 
+    {ok, State :: term()} | term().
+
+-callback handle_request(Context :: context(), Method :: binary(), Args :: list(), State :: term()) -> 
+    {reply, Response :: handle_request_response(), NewState :: term()} |
+    {noreply, NewState :: term()} |
+    {stop, Reason :: term(), Response :: handle_request_response(), NewState :: term()} |
+    {stop, Reason :: term(), NewState :: term()} |
+    {stop, NewState :: term()} |
+    {ignore, NewState :: term()}.
+
+-callback handle_info(Context :: context(), Message :: term(), State :: term()) -> 
+    {noreply, NewState :: term()} | {stop, Reason :: term(), NewState :: term()}.
+
+-callback terminate(Context :: context(), Reason :: term(), State :: term()) -> ok.
+
 
 get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
     case hello_registry:lookup({handler, Name, Identifier}) of

@@ -58,7 +58,7 @@ close(#context{transport_pid = TPid}) ->
     TPid ! hello_closed.
 
 listener_termination(ExUriUrl, _ListenerRef) ->
-    ranch:stop_listener({?MODULE, ExUriUrl}).
+    cowboy:stop_listener({?MODULE, ExUriUrl}).
 
 port(#ex_uri{authority = #ex_uri_authority{port = Port}}, _) ->
     default_port(Port).
