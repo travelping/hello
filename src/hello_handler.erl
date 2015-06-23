@@ -37,7 +37,7 @@
          set_idle_timeout/2,
          reply/2
          ]).
--export([notify/3]).
+%-export([notify/3]).
 -export([behaviour_info/1]).
 
 -behaviour(gen_server).
@@ -111,9 +111,9 @@ reply(ReqContext = #context{handler_pid = HandlerPid}, Result) ->
 %% --------------------------------------------------------------------------------
 %% -- jsonrpc specific stuff
 %% @doc Send an RPC notification with positional or named (given as proplist) parameters to the client.
--spec notify(context(), hello_client:method(), [hello_json:value()]) -> ok.
-notify(Context, Method, Params) when is_list(Params) ->
-    hello_proto_jsonrpc:send_notification(Context, Method, Params).
+%-spec notify(context(), hello_client:method(), [hello_json:value()]) -> ok.
+%notify(Context, Method, Params) when is_list(Params) ->
+    %hello_proto_jsonrpc:send_notification(Context, Method, Params).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks

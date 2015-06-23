@@ -209,17 +209,17 @@ build_error(#error{code = Code, message = Message, proto_data = Data}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% HELPERS
-decode_error_code(Code) ->
-    case Code of
-        -32700 -> parse_error;
-        -32600 -> invalid_request;
-        -32601 -> method_not_found;
-        -32602 -> invalid_params;
-        -32603 -> internal_error;
-        -32000 -> binding_not_found;
-        -32001 -> invalid_response;
-        -32002 -> server_error
-    end.
+%decode_error_code(Code) ->
+    %case Code of
+        %-32700 -> parse_error;
+        %-32600 -> invalid_request;
+        %-32601 -> method_not_found;
+        %-32602 -> invalid_params;
+        %-32603 -> internal_error;
+        %-32000 -> binding_not_found;
+        %-32001 -> invalid_response;
+        %-32002 -> server_error
+    %end.
 
 req_version(#{<<"jsonrpc">> := <<"2.0">>}) -> ?JSONRPC_2;
 req_version(#{<<"jsonrpc">> := <<"1.2">>}) -> ?JSONRPC_2;

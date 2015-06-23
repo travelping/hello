@@ -126,7 +126,7 @@ bind_all1({Url, TransportOpts}, Handler, Protocol) ->
     Self = self(),
     spawn(fun() ->
         hello:start_listener(Url, TransportOpts, Protocol, ProtocolOpts, hello_router),
-        true = hello:bind(Url, Handler, HandlerOpts),
+        ok = hello:bind(Url, Handler, HandlerOpts),
         Self ! next,
         receive after infinity -> ok end
     end), 
