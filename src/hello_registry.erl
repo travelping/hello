@@ -160,10 +160,9 @@ monitor_(Table, Pid) ->
                               [true]}]) == 0
     andalso erlang:monitor(process, Pid).
 
-bind({binding, {_Url, _RouterKey}} = Key, Pid, {Data, Port}, Table) ->
-    % TODO: That is very dangarous, as single error on service, will simple crash the whole registry
-    [App, Name] = string:tokens(binary_to_list(Data), "/"),
-    Ref = dnss_register(App, Name, Port),
+bind({binding, {#ex_uri{scheme = Scheme} = _Url, _RouterKey}} = Key, Pid, {Data, Port}, Table) ->
+    %% replace / to _ for backwards compatibility
+    Ref = dnssd_register(Scheme, Data, Port),
     ets:insert(Table, {Key, Pid, Data, Ref});
 bind(Key, Pid, Data, Table) -> ets:insert(Table, {Key, Pid, Data, undefined}).
 
@@ -176,17 +175,20 @@ update_metric({listener, _}, Value) -> hello_metrics:listener(Value);
 update_metric(Key, _) -> 
     ?LOG_INFO("unknown key ~p for register_metric", [Key]).
 
-do_dnss_register(App, Name, Port) ->
-    ?LOG_INFO("dnss register ~p/~p on port ~p", [App, Name, Port]),
-    case dnssd:register(Name, <<"_", App/binary, "._tcp">>, Port) of
-        {ok, Ref} -> Ref;
+dnssd_register(Scheme, App, Port) when is_binary(Scheme); is_binary(App); is_integer(Port) ->
+    ?LOG_INFO("dnssd register ~p ~p on port ~p", [Scheme, App, Port]),
+    {ok, Hostname} = inet:gethostname(),
+    HostnameBin = hello_lib:to_binary(Hostname),
+    PortBin = integer_to_binary(Port),
+    Name = <<(list_to_binary(Scheme))/binary, App/binary, HostnameBin/binary, PortBin/binary,
+             (base64:encode(crypto:strong_rand_bytes(2)))/binary>>,
+    case dnssd:register(Name, hello_lib:dnssd_service_type(Scheme, App), Port) of
+        {ok, Ref} -> 
+            ?LOG_INFO("dnss register ref ~p", [Ref]),
+            Ref;
         _ -> ok
-    end.
-
-dnss_register(App, Name, Port)
-  when is_list(App), is_list(Name), is_integer(Port) ->
-    do_dnss_register(list_to_binary(App), list_to_binary(Name), Port);
-dnss_register(_, _, _) -> ok.
+    end;
+dnssd_register(_Scheme, _App, _Port) -> ok.
 
 dnssd_clean(Ref) when is_reference(Ref) -> dnssd:stop(Ref);
 dnssd_clean(_) -> ok.
