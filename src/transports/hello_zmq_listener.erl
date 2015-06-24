@@ -41,7 +41,7 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     {make_child, Specs}.
 
 send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signature, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, Signature, BinResp}.
+    TPid ! {hello_msg, TParams, Peer, Signature, BinResp}, ok.
 
 close(_Context) ->
     ok.

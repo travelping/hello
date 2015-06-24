@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--export([start_link/2, start_link/3,
+-export([start_link/2, start_link/3, start_link/4, start_link/5,
          start/4, start/5, stop/1,
          start_supervised/4, start_supervised/5, stop_supervised/1,
          call/2, call/3]).
@@ -32,53 +32,79 @@
 %% for tests
 -export([handle_internal/2]).
 
-%% client transport implementation API
--export([behaviour_info/1]).
-
 -include("hello.hrl").
 -include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 -define(DEFAULT_TIMEOUT, 10000).
 
-behaviour_info(callbacks) ->
-    [{init_transport,2},
-     {send_request,3},
-     {terminate_transport,2}];
-behaviour_info(_) ->
-    undefined.
+-type client_name()  :: {local, atom()} | {global, atom()} | {via, atom(), term()}.
+-type start_result() :: {ok, pid()} | ignore | {error, {already_started, pid()} | term()}.
+-type call() :: {Method :: binary(), Args :: list(), Options :: [proplists:property()]}.
+-type batch_call() :: list(call()).
+
+%% Behaviour callbacks
+-callback init_transport(#ex_uri{}, trans_opts()) -> 
+    {ok, ClientState :: term()} | {error, Reason :: term()}.
+
+-callback send_request(Reqquest :: binary(), signature(), ClientState :: term()) -> 
+    {ok, NewClietnState :: term()} | {error, Reason :: term(), ClietnState :: term()}.
+
+-callback terminate_transport(Reason :: term(), ClientState :: term()) -> ok.
+
 
 %% API to start without supervisor
+-spec start(URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result(). 
 start(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec start(client_name(), URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result(). 
 start(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec stop(client_name()) -> term().
 stop(Client) ->
     gen_server:call(Client, terminate).
 
 %% callbacks for supervisor
+% @deprecated
 start_link(URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
     gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+% @deprecated
 start_link(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
     gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec start_link(URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result().
+start_link(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
+
+-spec start_link(client_name(), URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result(). 
+start_link(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
+    gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
+
 %% API to start with hello supervisor
+-spec start_supervised(URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> 
+    supervisor:startchild_ret(). 
 start_supervised(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     hello_client_sup:start_client(URI, {TransportOpts, ProtocolOpts, ClientOpts}).
 
+-spec start_supervised(atom(), URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> 
+    {ok, pid()}. 
 start_supervised(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     hello_client_sup:start_named_client(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}).
 
+-spec stop_supervised(client_name()) -> ok | {error, Reason :: term()}. 
 stop_supervised(Client) ->
     hello_client_sup:stop_client(Client).
 
+-spec call(client_name(), Call :: call() | batch_call()) ->  term().
 call(Client, Call) ->
     timeout_call(Client, {call, Call}, ?DEFAULT_TIMEOUT).
 
+-spec call(client_name(), Call :: call() | batch_call(), Timeout :: integer()) -> term().
 call(Client, Call, Timeout) ->
     timeout_call(Client, {call, Call}, Timeout).
+
 
 timeout_call(Client, Call, infinity) ->
     gen_server:call(Client, Call, infinity);
@@ -98,7 +124,7 @@ timeout_call(Client, Call, Timeout) ->
     protocol_mod :: atom(),
     protocol_opts :: list(),
     protocol_state ::term(),
-    async_request_map = gb_trees:empty() :: gb_tree:tree(),
+    async_request_map = gb_trees:empty() :: gb_trees:tree(),
     keep_alive_interval :: number(),
     keep_alive_ref :: term(),
     notification_sink :: pid() | function()
@@ -249,8 +275,9 @@ handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInte
     timer:cancel(TimerRef),
     {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
     {ok, State#client_state{keep_alive_ref = NewTimerRef}};
-handle_internal(Message, State) ->
-    ?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
+handle_internal(_Message, State) ->
+    %?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
+    {ok, State}.
 
 maybe_noreply(NewTransportState, [#request{type = async} | _], _, _, State) ->
     {ok, ok, State#client_state{transport_state = NewTransportState}};

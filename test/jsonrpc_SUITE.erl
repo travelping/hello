@@ -8,6 +8,13 @@
 
 % ---------------------------------------------------------------------
 % -- test cases
+call_service(_Config) ->
+    {Req1, [Args1], _} = ?REQ11,
+    {ok, Args1} = hello:call_service(atom_to_binary(handler1:name(), latin1), {Req1, [Args1]}),
+    {Req2, [Args2], _} = ?REQ21,
+    {ok, Args2} = hello:call_service(atom_to_binary(handler2:name(), latin1), {Req2, [Args2]}).
+
+
 simple_one_shot(_Config) ->
 	Args = get_arg(?SIMPLE_ONE_SHOT),
 	Requests = lists:zip(Args, ?SIMPLE_ONE_SHOT),
@@ -86,7 +93,8 @@ invalid_notification(_Config) ->
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
-    [simple_one_shot,
+    [call_service,
+     simple_one_shot,
      simple_batch,
      simple_notification,
      batch_notification,
@@ -126,7 +134,7 @@ bind_all1({Url, TransportOpts}, Handler, Protocol) ->
     Self = self(),
     spawn(fun() ->
         hello:start_listener(Url, TransportOpts, Protocol, ProtocolOpts, hello_router),
-        true = hello:bind(Url, Handler, HandlerOpts),
+        ok = hello:bind(Url, Handler, HandlerOpts),
         Self ! next,
         receive after infinity -> ok end
     end), 
@@ -167,7 +175,7 @@ notification_fun(Args) when is_list(Args) ->
          false -> throw(error)
     end;
 notification_fun(Arg) ->
-	SimpleArgs = [A || Request = {_, [A], _} <- ?SIMPLE_NOTIFICATION],
+	SimpleArgs = [A || _Request = {_, [A], _} <- ?SIMPLE_NOTIFICATION],
     case lists:member(Arg, SimpleArgs) of
          true -> ok;
          false -> throw(error)

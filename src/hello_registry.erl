@@ -56,8 +56,8 @@ register_link(Key, Value) ->
     register_link(Key, undefined, Value).
 
 register_link(Key, Pid, Value) ->
-    register(Key, Pid, Value),
-    link(whereis(?SERVER)).
+    link(whereis(?SERVER)),
+    register(Key, Pid, Value).
 
 register(Key, Value) ->
     gen_server:call(?SERVER, {register, Key, undefined, Value}).
@@ -66,8 +66,8 @@ register(Key, Pid, Value) ->
     gen_server:call(?SERVER, {register, Key, Pid, Value}).
 
 unregister_link(Name) ->
-    unregister(Name),
-    unlink(whereis(?SERVER)).
+    unlink(whereis(?SERVER)),
+    unregister(Name).
 
 unregister(Name) ->
     gen_server:call(?SERVER, {unregister, Name}).
@@ -96,7 +96,7 @@ init({}) ->
 
 handle_call({register, Key, Pid, Data}, _From, Table) ->
     case register(Key, Pid, Data, Table) of
-        ok -> {reply, ok, Table};
+        true -> {reply, ok, Table};
         Error -> {reply, Error, Table}
     end;
 

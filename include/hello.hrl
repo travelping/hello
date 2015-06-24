@@ -31,7 +31,7 @@
 }).
 
 -record(error, {
-    code                    :: integer(),
+    code                    :: atom() | integer(),
     message = <<"">>        :: iodata(),
     proto_data              :: term()
 }).
@@ -62,13 +62,16 @@
 -type binding()             :: #binding{}.
 -type context()             :: #context{}.
 -type timer()               :: #timer{}.
+-type signature()           :: binary().
 -type callback()            :: module().
 -type handler()             :: hello_handler.
 -type protocol()            :: hello_proto_jsonrpc.
 -type trans_opts()          :: [{term(), term()}].
 -type handler_opts()        :: [{term(), term()}].
 -type protocol_opts()       :: [{term(), term()}].
+-type client_opts()         :: [{term(), term()}].
 -type url_string()          :: string().
+-type listener_ref()        :: pid() | reference().
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- internal definitions

@@ -21,7 +21,7 @@
 % @private
 -module(hello_validate_record).
 
--export([request_params/3, request_params/4, type/2]).
+-export([find_method/2, request_params/3, request_params/4, type/2]).
 -export_type([json_type/0, param_type/0]).
 
 -include("hello.hrl").
@@ -112,7 +112,7 @@ strip_keys(Proplist) ->
     lists:map(fun ({_K, V}) -> V end, Proplist).
 
 %old request_params_gen(#rpc_method{params_as = WantParamEncoding}, Info, Mod, #request{params = ParamsIn}) ->
-request_params_gen(WantParamEncoding, Info, Mod, ParamsIn) ->
+request_params_gen(#rpc_method{params_as = WantParamEncoding}, Info, Mod, ParamsIn) ->
     try
         case is_record(Info, rpc_bulk) of
             false ->

@@ -1,28 +1,33 @@
 -module(hello_listener).
--export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, await_answer/0, handle_incoming_message/4]).
--export([behaviour_info/1]).
+-export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, handle_incoming_message/4]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
+
+
+%% Behaviour callbacks
+-callback listener_specification(#ex_uri{}, trans_opts()) -> 
+    {make_child, Specs :: supervisor:child_spec()} | {other_supervisor, Result :: term()}.
+
+-callback send_response(context(), signature(), Response :: binary()) -> ok.
+
+-callback close(Context :: context()) -> ok.
+
+-callback port(URI :: #ex_uri{}, ListenerRef :: listener_ref()) -> integer().
+
+-callback listener_termination(URI :: #ex_uri{}, ListenerRef :: listener_ref()) -> 
+    child | ok | {error, not_found}.
+
+
 %% --------------------------------------------------------------------------------
 %% -- start and stop a listener
 -record(listener, {
-    exuri,
-    ref,
-    protocol,
-    protocol_opts,
-    router
+    exuri :: #ex_uri{},
+    ref :: listener_ref(),
+    protocol :: protocol(),
+    protocol_opts :: protocol_opts(),
+    router :: module()
 }).
-
-behaviour_info(callbacks) ->
-    [{listener_specification, 2},
-     {send_response, 3},
-     {close, 1},
-     {port, 2},
-     {listener_termination, 2}
-     ];
-behaviour_info(_) ->
-    undefined.
 
 start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
     case lookup(ExUriURL) of
@@ -73,15 +78,6 @@ all() ->
 async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Signarute, Binary]).
 
-await_answer() ->
-    receive
-        {?INCOMING_MSG, Response} ->
-            Response
-    after
-        5000 ->
-            {error, timeout}
-    end.
-
 handle_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
     case hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signarute, Binary) of
@@ -109,8 +105,7 @@ start1(ExUriURL = #ex_uri{scheme = Scheme}, TransportOpts) ->
             {ok, Pid};
         {other_supervisor, _Result} ->
             {ok, make_ref()};
-        {error, Reason} ->
-            erlang:error(Reason)
+        {error, Reason} -> {error, Reason}
     end.
 
 transport_module("zmq-tcp")  -> hello_zmq_listener;

@@ -37,8 +37,6 @@
          set_idle_timeout/2,
          reply/2
          ]).
--export([notify/3]).
--export([behaviour_info/1]).
 
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -54,22 +52,31 @@
     state                   :: term(),
     context                 :: #context{},
     protocol                :: module(),
-    async_reply_map         :: gb_tree:tree(),
+    async_reply_map         :: gb_trees:tree(),
     timer = #timer{}        :: #timer{},
     url                     :: #ex_uri{}
 }).
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- Callback Module API
--spec behaviour_info(callbacks) -> [{atom(), integer()}].
-behaviour_info(callbacks) ->
-    [{init,1},
-     {handle_request,4},
-     {handle_info,3},
-     {terminate,3}
-     ];
-behaviour_info(_Other) ->
-    undefined.
+-type handle_request_response() :: {error, Reason :: term()} | {error, integer(), iodata(), term()} | {ok, term()}.
+
+-callback init(Identifier :: term(), handler_opts()) -> 
+    {ok, State :: term()} | term().
+
+-callback handle_request(Context :: context(), Method :: binary(), Args :: list(), State :: term()) -> 
+    {reply, Response :: handle_request_response(), NewState :: term()} |
+    {noreply, NewState :: term()} |
+    {stop, Reason :: term(), Response :: handle_request_response(), NewState :: term()} |
+    {stop, Reason :: term(), NewState :: term()} |
+    {stop, NewState :: term()} |
+    {ignore, NewState :: term()}.
+
+-callback handle_info(Context :: context(), Message :: term(), State :: term()) -> 
+    {noreply, NewState :: term()} | {stop, Reason :: term(), NewState :: term()}.
+
+-callback terminate(Context :: context(), Reason :: term(), State :: term()) -> ok.
+
 
 get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
     case hello_registry:lookup({handler, Name, Identifier}) of
@@ -77,7 +84,7 @@ get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
             ?LOG_DEBUG("Hadler for service ~p and identifier ~p not found, "
                       "it will have been started", [Name, Identifier]),
             start_handler(Identifier, HandlerMod, HandlerArgs);
-        {ok, Handler} ->
+        {ok, _, Handler} ->
             ?LOG_DEBUG("Found hadler ~p for service ~p and identifier ~p", [Handler, Name, Identifier]),
             Handler
     end.
@@ -111,9 +118,9 @@ reply(ReqContext = #context{handler_pid = HandlerPid}, Result) ->
 %% --------------------------------------------------------------------------------
 %% -- jsonrpc specific stuff
 %% @doc Send an RPC notification with positional or named (given as proplist) parameters to the client.
--spec notify(context(), hello_client:method(), [hello_json:value()]) -> ok.
-notify(Context, Method, Params) when is_list(Params) ->
-    hello_proto_jsonrpc:send_notification(Context, Method, Params).
+%-spec notify(context(), hello_client:method(), [hello_json:value()]) -> ok.
+%notify(Context, Method, Params) when is_list(Params) ->
+    %hello_proto_jsonrpc:send_notification(Context, Method, Params).
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
