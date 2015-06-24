@@ -44,10 +44,16 @@
 
 %% Behaviour callbacks
 -callback init_transport(#ex_uri{}, trans_opts()) -> 
-    {ok, ClientState :: term()} | {error, Reason :: term()}.
+    {ok | browse, ClientState :: term()} | {error, Reason :: term()}.
 
 -callback send_request(Reqquest :: binary(), signature(), ClientState :: term()) -> 
     {ok, NewClietnState :: term()} | {error, Reason :: term(), ClietnState :: term()}.
+
+-callback handle_info(Msg :: term(), ClientState :: term()) -> 
+    {?INCOMING_MSG, Message :: term} | {noreply, NewClietnState :: term()}.
+
+-callback update_service({dnssd:name(), dnssd:type(), dnssd:domain()}, ClientState :: term()) -> 
+    {ok, NewClietnState :: term()}.
 
 -callback terminate_transport(Reason :: term(), ClientState :: term()) -> ok.
 
@@ -119,6 +125,7 @@ timeout_call(Client, Call, Timeout) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(client_state, {
+    uri = #ex_uri{},
     transport_mod :: module(),
     transport_state :: term(),
     protocol_mod :: atom(),
@@ -127,7 +134,8 @@ timeout_call(Client, Call, Timeout) ->
     async_request_map = gb_trees:empty() :: gb_trees:tree(),
     keep_alive_interval :: number(),
     keep_alive_ref :: term(),
-    notification_sink :: pid() | function()
+    notification_sink :: pid() | function(),
+    services = [] :: list({binary(), binary(), binary()})
 }).
 
 %% @hidden
@@ -172,13 +180,33 @@ handle_info(?PING, State = #client_state{transport_mod=TransportModule, transpor
     {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
     {noreply, State#client_state{transport_state = NewTransportState, keep_alive_ref = NewTimerRef}};
 
+handle_info({dnssd, _Ref, {browse, _, _} = Msg}, 
+            #client_state{transport_mod = TransportModule, transport_state = TransportState,
+                          uri = URI, services = Services} = State) ->
+    ?LOG_DEBUG("dnssd Msg: ~p", [Msg]),
+    NewServices = update_services(Msg, Services),
+    ?LOG_DEBUG("Services: ~p for ~p", [NewServices, ex_uri:encode(URI)]),
+    case NewServices of
+        [] -> 
+            ?LOG_WARNING("service ~p not available", [ex_uri:encode(URI)]),
+            NewTransportState = TransportState;
+        [{Name, Type, Domain} | _] ->
+            {ok, Service} = dnssd:resolve_sync(Name, Type, Domain),
+            ?LOG_INFO("Update service ~p for ~p", [Service, ex_uri:encode(URI)]),
+            {ok, NewTransportState} = TransportModule:update_service(Service, TransportState)
+    end,
+    {noreply, State#client_state{transport_state = NewTransportState, services = NewServices}};
+
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
     case TransportModule:handle_info(Info, TransportState) of
         {?INCOMING_MSG, Message} ->
             incoming_message(Message, State);
         {noreply, NewTransportState} ->
             {noreply, State#client_state{transport_state = NewTransportState}}
-    end.
+    end;
+
+handle_info(Info, _State) ->
+    ?LOG_INFO("unhandeld message ~p in handle_info", [Info]).
 
 %% @hidden
 terminate(Reason, #client_state{transport_mod = TransportModule, transport_state = TransportState, keep_alive_ref = TimerRef}) ->
@@ -197,13 +225,15 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- Helper functions
 init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts) ->
     case TransportModule:init_transport(URIRec, TransportOpts) of
-        {ok, TransportState} ->
+        {OkOrBrowse, TransportState} when OkOrBrowse =:= ok; OkOrBrowse =:= browse ->
             NotificationSink = proplists:get_value(notification_sink, ProtocolOpts, undefined),
             ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
+            OkOrBrowse =:= browse andalso browse(URIRec),
             case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
                 {ok, ProtocolState} ->
                     hello_metrics:client(1),
-                    State = #client_state{transport_mod = TransportModule,
+                    State = #client_state{uri = URIRec,
+                                          transport_mod = TransportModule,
                                           transport_state = TransportState,
                                           protocol_mod = ProtocolMod,
                                           protocol_opts = ProtocolOpts,
@@ -267,12 +297,19 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
         ignore -> {ok, State}
     end.
 
+update_services({browse, add, Service}, Services) -> Services ++ [Service];
+update_services({browse, remove, Service}, Services) -> Services -- [Service];
+update_services(_, Services) -> Services.
+
 update_map(Requests, From, AsyncMap0) when is_list(Requests) -> 
     lists:foldl(fun(Request, AsyncMap) ->
                         update_map(Request, From, AsyncMap)
                 end, AsyncMap0, Requests);
 update_map(#request{id = undefined}, _From, AsyncMap) -> AsyncMap;
 update_map(#request{id = RequestId} = Request, From, AsyncMap) -> gb_trees:enter(RequestId, {From, Request}, AsyncMap).
+
+browse(#ex_uri{scheme = Scheme, authority = #ex_uri_authority{host = Host}, path = [$/|Path]}) ->
+    dnssd:browse(hello_lib:dnssd_service_type(Scheme, Host, Path)).
 
 handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}) ->
     timer:cancel(TimerRef),

@@ -22,7 +22,7 @@
 -module(hello_zmq_client).
 
 -behaviour(hello_client).
--export([init_transport/2, send_request/3, terminate_transport/2, handle_info/2]).
+-export([init_transport/2, send_request/3, terminate_transport/2, handle_info/2, update_service/2]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
@@ -36,8 +36,8 @@
 
 init_transport(URI, _Options) ->
     {ok, Socket} = ezmq:socket([{type, dealer}, {active, true}]),
-    ok = ezmq_connect_url(Socket, URI),
-    {ok, #zmq_state{socket = Socket, uri = URI}}.
+    Res = ezmq_connect_url(Socket, URI),
+    {Res, #zmq_state{socket = Socket, uri = URI}}.
 
 send_request(Message, Signature, State = #zmq_state{socket = Socket}) ->
     ezmq:send(Socket, [Signature, Message]),
@@ -48,15 +48,12 @@ send_request(Message, Signature, State = #zmq_state{socket = Socket}) ->
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
     ezmq:close(Socket).
 
-handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri = URI, socket = Socket}) ->
-    ?LOG_INFO("dnssd Service: ~p:~w", [Host, Port]),
+update_service({Host, Port, _Txt}, State = #zmq_state{uri = URI, socket = Socket}) ->
     Protocol = zmq_protocol(URI),
     R = ezmq:connect(Socket, tcp, clean_host(Host), Port, [Protocol]),
-    ?LOG_INFO("ezmq:connect: ~p", [R]),
-    {noreply, State};
-handle_info({dnssd, _Ref, Msg}, State) ->
-    ?LOG_INFO("dnssd Msg: ~p", [Msg]),
-    {noreply, State};
+    ?LOG_DEBUG("ezmq:connect: ~p", [R]),
+    {ok, State}.
+
 handle_info({zmq, _Socket, [Signature, Msg]}, State) ->
     {?INCOMING_MSG, {ok, Signature, Msg, State}};
 handle_info({zmq, _Socket, [<<>>, Signature, Msg]}, State) ->
@@ -69,18 +66,13 @@ zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
 
 %% use dnssd to resolve port AND host
 %% map host to Type and Path to Name
-ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{host = Host, port = undefined}, path = [$/|Path]}) ->
-    dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
-    ok;
+ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{port = undefined}}) ->
+    browse;
 
 ezmq_connect_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port}}) ->
     Protocol = zmq_protocol(URI),
-    case ezmq_ip(Protocol, Host) of
-        {ok, IP} ->
-            ezmq:connect(Socket, tcp, IP, Port, [Protocol]);
-        Other ->
-            Other
-    end.
+    {ok, IP} = ezmq_ip(Protocol, Host),
+    ezmq:connect(Socket, tcp, IP, Port, [Protocol]).
 
 ezmq_ip(inet, "*") -> {ok, {0,0,0,0}};
 ezmq_ip(inet, Host) -> inet:parse_ipv4_address(Host);
