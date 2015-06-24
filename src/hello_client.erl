@@ -37,6 +37,11 @@
 -include_lib("ex_uri/include/ex_uri.hrl").
 -define(DEFAULT_TIMEOUT, 10000).
 
+-type client_name()  :: {local, atom()} | {global, atom()} | {via, atom(), term()}.
+-type start_result() :: {ok, pid()} | ignore | {error, {already_started, pid()} | term()}.
+-type call() :: {Method :: binary(), Args :: list(), Options :: [proplists:property()]}.
+-type batch_call() :: list(call()).
+
 %% Behaviour callbacks
 -callback init_transport(#ex_uri{}, trans_opts()) -> 
     {ok, ClientState :: term()} | {error, Reason :: term()}.
@@ -48,12 +53,15 @@
 
 
 %% API to start without supervisor
+-spec start(URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result(). 
 start(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec start(client_name(), URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result(). 
 start(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec stop(client_name()) -> term().
 stop(Client) ->
     gen_server:call(Client, terminate).
 
@@ -66,27 +74,37 @@ start_link(URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
 start_link(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}) ->
     gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec start_link(URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result().
 start_link(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start_link(?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
+-spec start_link(client_name(), URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> start_result(). 
 start_link(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     gen_server:start_link(Name, ?MODULE, {URI, TransportOpts, ProtocolOpts, ClientOpts}, []).
 
 %% API to start with hello supervisor
+-spec start_supervised(URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> 
+    supervisor:startchild_ret(). 
 start_supervised(URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     hello_client_sup:start_client(URI, {TransportOpts, ProtocolOpts, ClientOpts}).
 
+-spec start_supervised(atom(), URI :: string(), trans_opts(), protocol_opts(), client_opts()) -> 
+    {ok, pid()}. 
 start_supervised(Name, URI, TransportOpts, ProtocolOpts, ClientOpts) ->
     hello_client_sup:start_named_client(Name, URI, {TransportOpts, ProtocolOpts, ClientOpts}).
 
+-spec stop_supervised(client_name()) -> ok | {error, Reason :: term()}. 
 stop_supervised(Client) ->
     hello_client_sup:stop_client(Client).
 
+-spec call(client_name(), Call :: call() | batch_call()) ->  term().
 call(Client, Call) ->
     timeout_call(Client, {call, Call}, ?DEFAULT_TIMEOUT).
 
+-spec call(client_name(), Call :: call() | batch_call(), Timeout :: integer()) -> term().
 call(Client, Call, Timeout) ->
     timeout_call(Client, {call, Call}, Timeout).
+
 
 timeout_call(Client, Call, infinity) ->
     gen_server:call(Client, Call, infinity);
