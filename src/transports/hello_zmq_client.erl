@@ -31,7 +31,7 @@
 -record(zmq_state, {
     client  :: pid(),
     uri     :: #ex_uri{},
-    socket  :: ezmq:socket()
+    socket  :: pid()
 }).
 
 init_transport(URI, _Options) ->

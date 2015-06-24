@@ -52,10 +52,10 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     {other_supervisor, Result}.
 
 send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signarute, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, Signarute, BinResp}.
+    TPid ! {hello_msg, TParams, Peer, Signarute, BinResp}, ok.
 
 close(#context{transport_pid = TPid}) ->
-    TPid ! hello_closed.
+    TPid ! hello_closed, ok.
 
 listener_termination(ExUriUrl, _ListenerRef) ->
     cowboy:stop_listener({?MODULE, ExUriUrl}).
