@@ -115,17 +115,17 @@ stop_service(_HandlerMod) ->
     %hello_service:unregister_link(HandlerMod).
     ok.
 
--spec start_listener(URL :: url()) -> ok | {error, Reason :: term()}.
+-spec start_listener(URL :: url()) -> {ok, listener_ref()} | {error, Reason :: term()}.
 start_listener(URL) ->
     start_listener(URL, []).
 
--spec start_listener(URL :: url(), TransportOpts :: list()) -> ok | {error, Reason :: term()}.
+-spec start_listener(URL :: url(), TransportOpts :: list()) -> {ok, listener_ref()} | {error, Reason :: term()}.
 start_listener(URL, TransportOpts) ->
     start_listener(URL, TransportOpts, hello_proto_jsonrpc, [{decoder, hello_msgpack}], hello_router).
 
 -spec start_listener(URL :: url(), TransportOpts :: list(), Protocol :: module(), 
                      ProtocolOpts :: list(), RouterMod :: module()) -> 
-    ok | {error, Reason :: term()}.
+    {ok, listener_ref()} | {error, Reason :: term()}.
 start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
     on_ex_uri(URL, fun(ExUriURL) -> 
                            hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) 

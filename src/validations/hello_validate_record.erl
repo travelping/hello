@@ -112,7 +112,7 @@ strip_keys(Proplist) ->
     lists:map(fun ({_K, V}) -> V end, Proplist).
 
 %old request_params_gen(#rpc_method{params_as = WantParamEncoding}, Info, Mod, #request{params = ParamsIn}) ->
-request_params_gen(WantParamEncoding, Info, Mod, ParamsIn) ->
+request_params_gen(#rpc_method{params_as = WantParamEncoding}, Info, Mod, ParamsIn) ->
     try
         case is_record(Info, rpc_bulk) of
             false ->

@@ -4,7 +4,6 @@
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
 
--type listener_ref() :: pid() | reference().
 
 %% Behaviour callbacks
 -callback listener_specification(#ex_uri{}, trans_opts()) -> 
@@ -106,8 +105,7 @@ start1(ExUriURL = #ex_uri{scheme = Scheme}, TransportOpts) ->
             {ok, Pid};
         {other_supervisor, _Result} ->
             {ok, make_ref()};
-        {error, Reason} ->
-            erlang:error(Reason)
+        {error, Reason} -> {error, Reason}
     end.
 
 transport_module("zmq-tcp")  -> hello_zmq_listener;

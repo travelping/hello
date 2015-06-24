@@ -124,7 +124,7 @@ timeout_call(Client, Call, Timeout) ->
     protocol_mod :: atom(),
     protocol_opts :: list(),
     protocol_state ::term(),
-    async_request_map = gb_trees:empty() :: gb_tree:tree(),
+    async_request_map = gb_trees:empty() :: gb_trees:tree(),
     keep_alive_interval :: number(),
     keep_alive_ref :: term(),
     notification_sink :: pid() | function()
@@ -275,8 +275,9 @@ handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInte
     timer:cancel(TimerRef),
     {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
     {ok, State#client_state{keep_alive_ref = NewTimerRef}};
-handle_internal(Message, State) ->
-    ?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
+handle_internal(_Message, State) ->
+    %?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
+    {ok, State}.
 
 maybe_noreply(NewTransportState, [#request{type = async} | _], _, _, State) ->
     {ok, ok, State#client_state{transport_state = NewTransportState}};

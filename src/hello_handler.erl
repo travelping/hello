@@ -52,7 +52,7 @@
     state                   :: term(),
     context                 :: #context{},
     protocol                :: module(),
-    async_reply_map         :: gb_tree:tree(),
+    async_reply_map         :: gb_trees:tree(),
     timer = #timer{}        :: #timer{},
     url                     :: #ex_uri{}
 }).
@@ -84,7 +84,7 @@ get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
             ?LOG_DEBUG("Hadler for service ~p and identifier ~p not found, "
                       "it will have been started", [Name, Identifier]),
             start_handler(Identifier, HandlerMod, HandlerArgs);
-        {ok, Handler} ->
+        {ok, _, Handler} ->
             ?LOG_DEBUG("Found hadler ~p for service ~p and identifier ~p", [Handler, Name, Identifier]),
             Handler
     end.

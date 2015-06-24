@@ -31,7 +31,7 @@
 }).
 
 -record(error, {
-    code                    :: integer(),
+    code                    :: atom() | integer(),
     message = <<"">>        :: iodata(),
     proto_data              :: term()
 }).
@@ -71,6 +71,7 @@
 -type protocol_opts()       :: [{term(), term()}].
 -type client_opts()         :: [{term(), term()}].
 -type url_string()          :: string().
+-type listener_ref()        :: pid() | reference().
 
 %% ----------------------------------------------------------------------------------------------------
 %% -- internal definitions
