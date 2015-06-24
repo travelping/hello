@@ -69,6 +69,7 @@
 -type trans_opts()          :: [{term(), term()}].
 -type handler_opts()        :: [{term(), term()}].
 -type protocol_opts()       :: [{term(), term()}].
+-type client_opts()         :: [{term(), term()}].
 -type url_string()          :: string().
 
 %% ----------------------------------------------------------------------------------------------------
