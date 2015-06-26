@@ -1,0 +1,7 @@
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install avahi-daemon libavahi-compat-libdnssd-dev
+language: erlang
+otp_release:
+   - 17.4
+script: "rebar get-deps compile && rebar ct skip_deps=true"
