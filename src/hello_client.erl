@@ -193,7 +193,7 @@ handle_info({dnssd, _Ref, {browse, _, _} = Msg},
         [{Name, Type, Domain} | _] ->
             {ok, Service} = dnssd:resolve_sync(Name, Type, Domain),
             ?LOG_INFO("Update service ~p for ~p", [Service, ex_uri:encode(URI)]),
-            {ok, NewTransportState} = TransportModule:update_service(Service, TransportState)
+            {ok, NewTransportState} = TransportModule:update_service(clean_host(Service), TransportState)
     end,
     {noreply, State#client_state{transport_state = NewTransportState, services = NewServices}};
 
@@ -254,6 +254,17 @@ evaluate_client_options(ClientOpts, State) ->
             {ok, TimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
             {ok, State#client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}}
     end.
+
+clean_host({Host, Port, Txt}) ->
+    HostSize = erlang:byte_size(Host),
+    CleanedHost = case binary:match(Host, <<".local.">>) of
+        {M, L} when HostSize == (M + L) ->
+            <<HostCuted:M/binary, _/binary>> = Host,
+            HostCuted;
+        _ ->
+            Host
+    end,
+    {binary_to_list(CleanedHost), Port, Txt}.
 
 incoming_message({error, _Reason, NewTransportState}, State) -> %%will be logged later
     {noreply, State#client_state{transport_state = NewTransportState}};
