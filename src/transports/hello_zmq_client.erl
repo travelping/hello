@@ -50,8 +50,8 @@ terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
     ezmq:close(Socket).
 
 update_service({Host, Port, _Txt}, State = #zmq_state{uri = URI, socket = Socket}) ->
-    Protocol = zmq_protocol(URI),
-    R = ezmq:connect(Socket, tcp, clean_host(Host), Port, [Protocol]),
+    Protocol = hello_zmq_listener:zmq_protocol(URI),
+    R = ezmq:connect(Socket, tcp, Host, Port, [Protocol]),
     ?LOG_DEBUG("ezmq:connect: ~p", [R]),
     {ok, State}.
 
@@ -62,38 +62,9 @@ handle_info({zmq, _Socket, [<<>>, Signature, Msg]}, State) ->
 
 %% --------------------------------------------------------------------------------
 %% -- helpers
-zmq_protocol(#ex_uri{scheme = "zmq-tcp"})  -> inet;
-zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
-
-%% use dnssd to resolve port AND host
-%% map host to Type and Path to Name
-ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{port = undefined}}) ->
-    browse;
+ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{port = undefined}}) -> browse;
 
 ezmq_connect_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port}}) ->
-    Protocol = zmq_protocol(URI),
-    {ok, IP} = ezmq_ip(Protocol, Host),
+    Protocol = hello_zmq_listener:zmq_protocol(URI),
+    {ok, IP} = hello_zmq_listener:ezmq_ip(Protocol, Host),
     ezmq:connect(Socket, tcp, IP, Port, [Protocol]).
-
-ezmq_ip(inet, "*") -> {ok, {0,0,0,0}};
-ezmq_ip(inet, Host) -> inet:parse_ipv4_address(Host);
-
-ezmq_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
-ezmq_ip(inet6, Host) ->
-    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
-        {match, ["[::1]", IP]} ->
-            inet:parse_ipv6_address(IP);
-        _ ->
-            inet:parse_ipv6_address(Host)
-    end.
-
-clean_host(Host) ->
-    HostSize = erlang:byte_size(Host),
-    CleanedHost = case binary:match(Host, <<".local.">>) of
-        {M, L} when HostSize == (M + L) ->
-            <<HostCuted:M/binary, _/binary>> = Host,
-            HostCuted;
-        _ ->
-            Host
-    end,
-    binary_to_list(CleanedHost).

@@ -66,19 +66,8 @@ handle_info(_Msg, State) ->
 
 build_url(Scheme, Host, Path, Port) ->
     ex_uri:encode(#ex_uri{scheme = Scheme,
-                          authority = #ex_uri_authority{host = clean_host(Host), port = Port},
+                          authority = #ex_uri_authority{host = Host, port = Port},
                           path = Path}).
-
-clean_host(Host) ->
-    HostSize = erlang:byte_size(Host),
-    CleanedHost = case binary:match(Host, <<".local.">>) of
-        {M, L} when HostSize == (M + L) ->
-            <<HostCuted:M/binary, _/binary>> = Host,
-            HostCuted;
-        _ ->
-            Host
-    end,
-    binary_to_list(CleanedHost).
 
 content_type(Signarute) ->
     Json = hello_json:signature(),
