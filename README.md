@@ -1,3 +1,5 @@
+# Hello [![Build Status](https://travis-ci.org/travelping/hello.svg)](https://travis-ci.org/travelping/hello)
+
 Hello is a pragmatic RPC toolkit for Erlang.
 It enables you to rapidly create rich RPC services.
 Hello is also built for extensibility,
