@@ -86,26 +86,25 @@ content_type(Signarute) ->
     Json = hello_json:signature(),
     MsgPack = hello_msgpack:signature(),
     case Signarute of
-        Json -> "application/json";
-        MsgPack -> "application/x-msgpack";
-        _ -> "application/octet-stream"
+        Json -> <<"application/json">>;
+        MsgPack -> <<"application/x-msgpack">>;
+        _ -> <<"application/octet-stream">>
     end.
 
 %% http client helpers
 http_send(Client, Request, Signarute, State = #http_state{url = URL, options = Options}) ->
     #http_options{method = Method, ib_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
-    Headers = [{"Content-Type", content_type(Signarute)},
-               {"Accept", content_type(Signarute)},
-               {"User-Agent", "hello/" ++ Vsn}],
-    case ibrowse:send_req(URL, Headers, Method, Request, Opts) of
-        {ok, _HttpCode, _, []} -> %% empty responses are ignored
-            ok;
-        {ok, Success, RespHeaders, Body} when Success =:= "200"; Success =:= "201"; Success =:= "202" ->
-            Signarute1 = proplists:get_value("content-type", RespHeaders, "undefined"),
+    Headers = [{<<"Content-Type">>, content_type(Signarute)},
+               {<<"Accept">>, content_type(Signarute)},
+               {<<"User-Agent">>, <<"hello/", (list_to_binary(Vsn))/binary>>}],
+    case hackney:Method(URL, Headers, Request, Opts) of
+        {ok, Success, RespHeaders, ClientRef} when Success =:= 200; Success =:= 201; Success =:= 202 ->
+            {ok, Body} = hackney:body(ClientRef),
+            Signarute1 = proplists:get_value(<<"Content-Type">>, RespHeaders, <<"undefined">>),
             outgoing_message(Client, Signarute1, Body, State);
-        {ok, HttpCode, _, _Body} ->
-            Client ! {?INCOMING_MSG, {error, list_to_integer(HttpCode), State}},
+        {ok, HttpCode, _, _} ->
+            Client ! {?INCOMING_MSG, {error, HttpCode, State}},
             exit(normal);
         {error, Reason} ->
             ?LOG_ERROR("error during ibrowse:send_req to, url: ~p, headers: ~p, request: ~p, reason: ~p", 
@@ -115,18 +114,17 @@ http_send(Client, Request, Signarute, State = #http_state{url = URL, options = O
     end.
 
 outgoing_message(Client, Signarute, Body, State) ->
-    Body1 = list_to_binary(Body),
     Json = hello_json:signature(),
-    Signarute1 = hello_http_listener:signature(list_to_binary(Signarute)),
+    Signarute1 = hello_http_listener:signature(Signarute),
     case Signarute1 of
         Json ->
-            Body2 = binary:replace(Body1, <<"}{">>, <<"}$$${">>, [global]),
-            Body3 = binary:replace(Body2, <<"]{">>, <<"]$$${">>, [global]),
-            Body4 = binary:replace(Body3, <<"}[">>, <<"}$$$[">>, [global]),
-            Bodies = binary:split(Body4, <<"$$$">>, [global]),
+            Body1 = binary:replace(Body, <<"}{">>, <<"}$$${">>, [global]),
+            Body2 = binary:replace(Body1, <<"]{">>, <<"]$$${">>, [global]),
+            Body3 = binary:replace(Body2, <<"}[">>, <<"}$$$[">>, [global]),
+            Bodies = binary:split(Body3, <<"$$$">>, [global]),
             [ Client ! {?INCOMING_MSG, {ok, Signarute1, SingleBody, State}} || SingleBody <- Bodies ];
         _NoJson ->
-            Client ! {?INCOMING_MSG, {ok, Signarute1, Body1, State}}
+            Client ! {?INCOMING_MSG, {ok, Signarute1, Body, State}}
     end.
 
 validate_options(Options) ->
