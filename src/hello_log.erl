@@ -31,4 +31,4 @@ fmt_request(#request{method = Method, args = Params}) ->
     <<"method: ", (hello_json:encode(Method))/binary, ", params: ", (hello_json:encode(Params))/binary>>.
 
 fmt_response(ignore) -> ["ignored"];
-fmt_response(Result) -> io_lib:format("~w", [Result]).
+fmt_response(Result) -> io_lib:format("~4096p", [Result]).
