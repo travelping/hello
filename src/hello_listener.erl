@@ -78,22 +78,22 @@ all() ->
 async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     proc_lib:spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Signarute, Binary]).
 
-handle_incoming_message(Context, ExUriURL, Signarute, [Binary]) ->
-    handle_incoming_message(Context, ExUriURL, Signarute, Binary);
-handle_incoming_message(Context, ExUriURL, Signarute, Binary) ->
+handle_incoming_message(Context, ExUriURL, Signature, [Binary]) ->
+    handle_incoming_message(Context, ExUriURL, Signature, Binary);
+handle_incoming_message(Context, ExUriURL, Signature, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
-    case hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signarute, Binary) of
+    case hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signature, Binary) of
         {ok, BinResp} ->
             % for backward compatibility we should to send Signature that we received on listener
-            send(Signarute, BinResp, Context);
+            send(Signature, BinResp, Context);
             % when we will convinced that there aren't clients with old code we will start to send Signature from protocol
             % send(hello_proto:signature(ProtocolMod, ProtocolOpts), BinResp, Context),
         ignore -> ignore
     end,
     close(Context).
 
-send(Signarute, BinResp, Context = #context{transport = TransportMod}) ->
-    TransportMod:send_response(Context, Signarute, BinResp).
+send(Signature, BinResp, Context = #context{transport = TransportMod}) ->
+    TransportMod:send_response(Context, Signature, BinResp).
 
 close(Context = #context{transport = TransportMod}) ->
     TransportMod:close(Context).

@@ -40,8 +40,10 @@ listener_specification(ExUriUrl, _TransportOpts) ->
     Specs = {{?MODULE, ExUriUrl}, StartFun, transient, ?SHUTDOWN_TIMEOUT, worker, [?MODULE]},
     {make_child, Specs}.
 
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, {<<>>, Signature}, BinResp) ->
+    TPid ! {hello_msg, TParams, Peer, [<<>>, Signature], BinResp}, ok;
 send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signature, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, Signature, BinResp}, ok.
+    TPid ! {hello_msg, TParams, Peer, [Signature], BinResp}, ok.
 
 close(_Context) ->
     ok.
@@ -82,16 +84,16 @@ handle_info({zmq, Socket, {Peer, Frames}}, State = #state{url = URL, socket = So
                         transport_params = undefined,
                         peer = Peer
                         },
-    StripFrames = case Frames of
-        [<<>> | Rest] when length(Rest) > 1 -> Rest;
-        [Msg]                               -> [<<>>, Msg];
-        _                                   -> Frames
+    {Signature1, RestFrames} = case Frames of
+        [<<>>, Signature0, Message] -> {{<<>>, Signature0}, Message};
+        [Signature0, Msg]           -> {Signature0, Msg};
+        Other                       -> {hd(Other), tl(Other)}
     end,
-    hello_listener:async_incoming_message(Context, URL, hd(StripFrames), tl(StripFrames)),
+    hello_listener:async_incoming_message(Context, URL, Signature1, RestFrames),
     {noreply, State};
 
 handle_info({hello_msg, _Handler, Peer, Signature, Message}, State = #state{socket = Socket}) ->
-    ok = ezmq:send(Socket, {Peer, [Signature, Message]}),
+    ok = ezmq:send(Socket, {Peer, Signature ++ [Message]}),
     {noreply, State};
 
 handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
