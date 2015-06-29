@@ -40,7 +40,9 @@ init_transport(URI, _Options) ->
     {ok, #zmq_state{socket = Socket, uri = URI}}.
 
 send_request(Message, Signature, State = #zmq_state{socket = Socket}) ->
-    ezmq:send(Socket, [Signature, Message]),
+    ezmq:send(Socket, [<<>>, Signature, Message]),
+    % TODO:
+    %ezmq:send(Socket, [<<>>, Signature, Message]),
     {ok, State}.
 
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
@@ -56,6 +58,8 @@ handle_info({dnssd, _Ref, Msg}, State) ->
     ?LOG_INFO("dnssd Msg: ~p", [Msg]),
     {noreply, State};
 handle_info({zmq, _Socket, [Signature, Msg]}, State) ->
+    {?INCOMING_MSG, {ok, Signature, Msg, State}};
+handle_info({zmq, _Socket, [<<>>, Signature, Msg]}, State) ->
     {?INCOMING_MSG, {ok, Signature, Msg, State}}.
 
 %% --------------------------------------------------------------------------------

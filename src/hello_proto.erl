@@ -29,16 +29,16 @@
 -include("hello.hrl").
 
 
--callback init_client(protocol_opts()) -> 
+-callback init_client(protocol_opts()) ->
     {ok, State :: term()} | {error, Reason :: term()}.
 
--callback build_request(request(), [proplists:property()], State:: term()) -> 
+-callback build_request(request(), [proplists:property()], State:: term()) ->
     {ok, request(), NewState :: term()}.
 
--callback encode([request() | response()] | request() | response(), protocol_opts()) -> 
+-callback encode([request() | response()] | request() | response(), protocol_opts()) ->
     {ok, jsx:json_text()}.
 
--callback decode(jsx:json_text(), protocol_opts(), request | response) -> 
+-callback decode(jsx:json_text(), protocol_opts(), request | response) ->
     {ok, response()} | {ok, request()} | {error, #error{}} | {ok, [{ok, response()} | {ok, request()}]}.
 
 -callback signature(protocol_opts()) -> binary().
@@ -113,10 +113,12 @@ handle_internal(_Context, ?PING) -> {ok, ?PONG}.
 %% ----------------------------------------------------------------------------------------------------
 %% -- Encoding/Decoding
 encode(Mod, Opts, Request) -> Mod:encode(Request, Opts).
-decode(_Mod, _Opts, ?INTERNAL_SIGNATURE, Message, _Type) -> {internal, Message};
+decode(_Mod, _Opts, ?INTERNAL_SIGNATURE, Message, _Type) -> {internal, ?INTERNAL_SIGNATURE, Message};
+decode(_Mod, _Opts, {<<>>, ?INTERNAL_SIGNATURE} = Signature, Message, _Type) -> {internal, Signature, Message};
 decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) ->
     case signature(Mod, Opts) of
         Signature -> Mod:decode(Message, Opts, Type);
+        {<<>>, Signature} -> Mod:decode(Message, Opts, Type);
         _ ->
             case jsx:is_json(Message) of %% backward compatibility
                 true -> hello_proto_jsonrpc:decode(Message, Opts, Type);
