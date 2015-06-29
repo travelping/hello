@@ -76,13 +76,18 @@ init(URL) ->
             {stop, Error}
     end.
 
-handle_info({zmq, Socket, {Peer, [Signature, Message]}}, State = #state{url = URL, socket = Socket}) ->
+handle_info({zmq, Socket, {Peer, Frames}}, State = #state{url = URL, socket = Socket}) ->
     Context = #context{ transport=?MODULE,
                         transport_pid = self(),
                         transport_params = undefined,
                         peer = Peer
                         },
-    hello_listener:async_incoming_message(Context, URL, Signature, Message),
+    StripFrames = case Frames of
+        [<<>> | Rest] when length(Rest) > 1 -> Rest;
+        [Msg]                               -> [<<>>, Msg];
+        _                                   -> Frames
+    end,
+    hello_listener:async_incoming_message(Context, URL, hd(StripFrames), tl(StripFrames)),
     {noreply, State};
 
 handle_info({hello_msg, _Handler, Peer, Signature, Message}, State = #state{socket = Socket}) ->

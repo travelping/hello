@@ -6,7 +6,7 @@
 
 
 %% Behaviour callbacks
--callback listener_specification(#ex_uri{}, trans_opts()) -> 
+-callback listener_specification(#ex_uri{}, trans_opts()) ->
     {make_child, Specs :: supervisor:child_spec()} | {other_supervisor, Result :: term()}.
 
 -callback send_response(context(), signature(), Response :: binary()) -> ok.
@@ -15,7 +15,7 @@
 
 -callback port(URI :: #ex_uri{}, ListenerRef :: listener_ref()) -> integer().
 
--callback listener_termination(URI :: #ex_uri{}, ListenerRef :: listener_ref()) -> 
+-callback listener_termination(URI :: #ex_uri{}, ListenerRef :: listener_ref()) ->
     child | ok | {error, not_found}.
 
 
@@ -76,13 +76,15 @@ all() ->
     hello_registry:all(listener).
 
 async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
-    spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Signarute, Binary]).
+    proc_lib:spawn(?MODULE, handle_incoming_message, [Context, ExUriURL, Signarute, Binary]).
 
+handle_incoming_message(Context, ExUriURL, Signarute, [Binary]) ->
+    handle_incoming_message(Context, ExUriURL, Signarute, Binary);
 handle_incoming_message(Context, ExUriURL, Signarute, Binary) ->
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
     case hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signarute, Binary) of
         {ok, BinResp} ->
-            % for backward compatibility we should to send Signature that we received on listener 
+            % for backward compatibility we should to send Signature that we received on listener
             send(Signarute, BinResp, Context);
             % when we will convinced that there aren't clients with old code we will start to send Signature from protocol
             % send(hello_proto:signature(ProtocolMod, ProtocolOpts), BinResp, Context),
