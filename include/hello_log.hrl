@@ -9,37 +9,37 @@
 
 -define(LOG_REQUEST_async_reply(CallbackModule, HandlerPid, Request, Response),
     lager:info(?REQ_TRACES(CallbackModule, Request#request.method), 
-               "async reply on ~p. ~s - ~s", 
+               "async reply on ~w. ~s - ~s", 
                [HandlerPid, hello_log:fmt_request(Request), hello_log:fmt_response(Response)])).
 
 -define(LOG_REQUEST_request(CallbackModule, HandlerPid, Request, Response, Time),
     lager:info(?REQ_TRACES(CallbackModule, Request#request.method), 
-               "request on ~p. ~s - ~s (~p ms)", 
+               "request on ~w. ~s - ~s (~w ms)", 
                [HandlerPid, hello_log:fmt_request(Request), hello_log:fmt_response(Response), Time])).
 
 -define(LOG_REQUEST_request_stop(CallbackModule, HandlerPid, Request, Response, Reason, Time),
     lager:info(?REQ_TRACES(CallbackModule, Request#request.method), 
-               "request on ~p. ~s - ~s (stopped with reason ~p) (~p ms)", 
+               "request on ~w. ~s - ~s (stopped with reason ~w) (~w ms)", 
                [HandlerPid, hello_log:fmt_request(Request), hello_log:fmt_response(Response), Reason, Time])).
 
 -define(LOG_REQUEST_request_no_reply(CallbackModule, HandlerPid, Request, Time),
     lager:info(?REQ_TRACES(CallbackModule, Request#request.method),
-               "request on ~p. ~s - noreply (~p ms)", 
+               "request on ~w. ~s - noreply (~w ms)", 
                [HandlerPid, hello_log:fmt_request(Request), Time])).
 
 -define(LOG_REQUEST_request_stop_no_reply(CallbackModule, HandlerPid, Request, Time),
     lager:info(?REQ_TRACES(CallbackModule, Request#request.method), 
-               "request on ~p. ~s (stopped with reason normal) (~p ms)", 
+               "request on ~w. ~s (stopped with reason normal) (~w ms)", 
                [HandlerPid, hello_log:fmt_request(Request), Time])).
 
 -define(LOG_REQUEST_request_stop_no_reply(CallbackModule, HandlerPid, Request, Reason, Time),
     lager:info(?REQ_TRACES(CallbackModule, Request#request.method), 
-               "request on ~p. ~s (stopped with reason ~p) (~p ms)", 
+               "request on ~w. ~s (stopped with reason ~w) (~w ms)", 
                [HandlerPid, hello_log:fmt_request(Request), Reason, Time])).
 
 -define(LOG_REQUEST_bad_request(CallbackModule, HandlerPid, Request, Reason),
     lager:error(?BAD_TRACES(CallbackModule, Request#request.method), 
-                "bad request on ~p. ~s - ~p", 
+                "bad request on ~w. ~s - ~w", 
                 [HandlerPid, hello_log:fmt_request(Request), Reason])).
 
 -define(LOG_DEBUG(Msg, Args), lager:debug(?DEFAULT_TRACES, Msg, Args)).
