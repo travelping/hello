@@ -40,7 +40,7 @@ init_transport(URI, _Options) ->
     {ok, #zmq_state{socket = Socket, uri = URI}}.
 
 send_request(Message, Signature, State = #zmq_state{socket = Socket}) ->
-    ezmq:send(Socket, [<<>>, Signature, Message]),
+    ezmq:send(Socket, [Signature, Message]),
     % TODO:
     %ezmq:send(Socket, [<<>>, Signature, Message]),
     {ok, State}.
