@@ -37,16 +37,23 @@
 
 %% --------------------------------------------------------------------------------
 %% -- hello_binding callbacks
-listener_specification(ExUriUrl, _TransportOpts) ->
+listener_specification(ExUriUrl, ListenerOpts) ->
     % cowboy dispatch
     State = #http_listener_state{ url = ExUriUrl },
     Dispatch = cowboy_router:compile([{'_', [{'_', ?MODULE, [State]}]}]),
     %% Copied from cowboy.erl because it doesn't provide an API that
     %% allows supervising the listener from the calling application yet.
-    Acceptors = 30,
+    Acceptors = case proplists:get_value(http_acceptors, ListenerOpts) of
+                    A when is_integer(A) -> A;
+                    _ -> 30
+                end,
     {IP, _Host} = extract_ip_and_host(ExUriUrl),
     Port = (ExUriUrl#ex_uri.authority)#ex_uri_authority.port,
-    TransportOpts = [{port, default_port(Port)}, {ip, IP}],
+    TransportOpts = [{port, default_port(Port)}, {ip, IP}] ++
+        case proplists:get_value(http_max_connections, ListenerOpts) of
+            C when is_integer(C); C == infinity -> [{max_connections, C}];
+            _ -> []
+        end,
     ProtocolOpts = [{env, [{dispatch, Dispatch}]}],
     Result = cowboy:start_http({?MODULE, ExUriUrl}, Acceptors, TransportOpts, ProtocolOpts),
     {other_supervisor, Result}.

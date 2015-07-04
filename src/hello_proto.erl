@@ -114,7 +114,7 @@ handle_internal(_Context, ?PING) -> {ok, ?PONG}.
 %% -- Encoding/Decoding
 encode(Mod, Opts, Request) -> Mod:encode(Request, Opts).
 decode(_Mod, _Opts, ?INTERNAL_SIGNATURE, Message, _Type) -> {internal, Message};
-decode(_Mod, _Opts, {<<>>, ?INTERNAL_SIGNATURE} = Signature, Message, _Type) -> {internal, Message};
+decode(_Mod, _Opts, {<<>>, ?INTERNAL_SIGNATURE} = _Signature, Message, _Type) -> {internal, Message};
 decode(Mod, Opts, Signature, Message, Type) when is_atom(Mod) ->
     case signature(Mod, Opts) of
         Signature -> Mod:decode(Message, Opts, Type);
