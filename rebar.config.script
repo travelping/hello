@@ -1,0 +1,25 @@
+%% -*- erlang -*-
+YangPlugin = {plugins, [{rebar3_yang_plugin, {git, "git://github.com/surik/rebar3_yang_plugin.git", {branch, "master"}}}]},
+PCPlugin = [{plugins, [pc]}, {provider_hooks, [ {post, [ {compile, {pc, compile}}, {clean, {pc, clean}} ] }] }],
+AbnfcPlugin = [{plugins, [ {rebar3_abnfc_plugin, {git, "git://github.com/surik/rebar3_abnfc_plugin.git", {branch, "master"}}} ]},
+               {provider_hooks, [ {pre, [ {compile, {abnfc, compile}} ] }] }],
+
+HexDeps = [lager, cowboy, hackney, jsx, meck],
+
+OverrideYang = {override, yang, PCPlugin},
+OverrideDnssd = {override, dnssd,  PCPlugin},
+OverrideExUri = {override, ex_uri, AbnfcPlugin},
+Overrides = {overrides, [OverrideYang, OverrideDnssd, OverrideExUri]},
+
+code:is_loaded(rebar3) =:= false andalso code:load_file(rebar3),
+case erlang:function_exported(rebar3, version, 0) of
+    true -> 
+        CONFIG1 = lists:keyreplace(plugins, 1, CONFIG, YangPlugin),
+        NewDeps = lists:foldl(fun(Dep, Deps) ->
+                                      Key = case Dep of {K, _} -> K; K -> K end,
+                                      [Dep | lists:keydelete(K, 1, Deps)]
+                              end, proplists:get_value(deps, CONFIG1), HexDeps),
+        CONFIG2 = lists:keyreplace(deps, 1, CONFIG1, {deps, NewDeps}),
+        CONFIG2 ++ [ {provider_hooks, [{pre, [ {ct, {yang, compile}} ]} ]}] ++ [Overrides];
+    false -> CONFIG
+end.
