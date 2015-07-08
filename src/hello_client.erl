@@ -132,6 +132,7 @@ timeout_call(Client, Call, Timeout) ->
 
 %% @hidden
 init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
+    process_flag(trap_exit, true),
     case (catch ex_uri:decode(URI)) of
         {ok, URIRec = #ex_uri{}, _} ->
             case uri_client_module(URIRec) of
