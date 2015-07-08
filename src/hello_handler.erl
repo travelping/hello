@@ -208,6 +208,7 @@ do_request(Request = #request{context = Context}, State = #state{async_reply_map
         {ok, ValMethod, ValParams} ->
             {Time, Value} = timer:tc(Mod, handle_request, [Context1, ValMethod, ValParams, HandlerState]),
             TimeMS = Time / 1000, % in ms
+            hello_metrics:handle_request_time(TimeMS),
             case Value of
                 {reply, Response, NewHandlerState} ->
                     ?LOG_REQUEST_request(Mod, HandlerPid, Request, Response, TimeMS),

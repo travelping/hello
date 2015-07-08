@@ -106,6 +106,7 @@ handle_call({unregister, Key}, _From, Table) ->
             %% not registered, skip
             {reply, ok, Table};
         [{Key, _, _, Ref}] ->
+            update_metric(Key, -1),
             dnssd_clean(Ref),
             ets:delete(Table, Key),
             {reply, ok, Table}
@@ -144,6 +145,7 @@ code_change(_FromVsn, _ToVsn, State) ->
 register(Key, Pid, Data, Table) ->
     case Pid =:= undefined orelse is_process_alive(Pid) of
         true ->
+            update_metric(Key, 1),
             is_pid(Pid) andalso monitor_(Table, Pid),
             ?LOG_DEBUG("Register ~p for pid ~p with data: ~p", [Key, Pid, Data]),
             bind(Key, Pid, Data, Table);
@@ -167,6 +169,12 @@ bind(Key, Pid, Data, Table) -> ets:insert(Table, {Key, Pid, Data, undefined}).
 
 down([{listener, Key}]) -> hello_listener:stop(Key);
 down([Key]) -> hello_registry:unregister(Key).
+
+update_metric({binding, _}, Value) -> hello_metrics:binding(Value);
+update_metric({service, _}, Value) -> hello_metrics:service(Value);
+update_metric({listener, _}, Value) -> hello_metrics:listener(Value);
+update_metric(Key, _) -> 
+    ?LOG_INFO("unknown key ~p for register_metric", [Key]).
 
 do_dnss_register(App, Name, Port) ->
     ?LOG_INFO("dnss register ~p/~p on port ~p", [App, Name, Port]),

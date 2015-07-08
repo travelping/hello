@@ -14,15 +14,25 @@ bind_zmq_tcp(_Config) ->
     [bind_url(?ZMQ_TCP, Protocol) || Protocol <- ?PROTOCOLS].
 
 unbind_all(_Config) ->
+    timer:sleep(100), %% needed for metrics
     Bindings = hello_binding:all(),
+    true = 2 * length(?PROTOCOLS) == listeners_counter(),
+    true = length(Bindings) == bindings_counter(),
     (2 * length(?PROTOCOLS) * length(?CALLBACK_MODS)) == length(Bindings),
-    [ hello:unbind(Url, CallbackMod) || {Url, _} <- ?TRANSPORTS, CallbackMod <- ?CALLBACK_MODS ],
+    [ begin 
+          hello:unbind(Url, CallbackMod),
+          hello:stop_listener(Url)
+      end || {Url, _} <- ?TRANSPORTS, CallbackMod <- ?CALLBACK_MODS ],
+    0 = bindings_counter(),
+    0 = listeners_counter(),
     [] = hello_binding:all().
 
 start_supervised(_Config) ->
     [ start_client(Transport) || Transport <- ?TRANSPORTS ],
+    true = length(?TRANSPORTS) == clients_counter(),
     [ hello_client_sup:stop_client(Url ++ "/test") || {Url, _} <- ?TRANSPORTS ],
     [] = hello_client_sup:clients(),
+    0 = clients_counter(),
     ok.
 
 start_named_supervised(_Config) ->
@@ -37,8 +47,12 @@ keep_alive(_Config) ->
     meck:new(hello_client, [passthrough]),
     true = meck:validate(hello_client),
     ok = meck:expect(hello_client, handle_internal, fun(Message, State) -> ct:log("got pong"), meck:passthrough([Message, State]) end),
+    exometer:reset([hello, packet_in]),
+    true = (internal_req_counter() == 0),
     {ok, _Client} = hello_client:start_supervised(Url ++ "/test", TransportOpts, [{protocol, hello_proto_jsonrpc}], [{keep_alive_interval, 100}] ),
     timer:sleep(310), %% lets wait for some pongs, should be around 3-4; look them up in the ct log
+    true = (packet_in_counter() > 0),
+    true = (internal_req_counter() > 0),
     meck:unload(hello_client),
     ok.
 
@@ -63,6 +77,27 @@ end_per_suite(_Config) ->
 
 % ---------------------------------------------------------------------
 % -- helpers
+clients_counter() ->
+    {ok, Clients} = exometer:get_value([hello, clients]),
+    proplists:get_value(value, Clients).
+
+listeners_counter() ->
+    {ok, Listeners} = exometer:get_value([hello, listeners]),
+    proplists:get_value(value, Listeners).
+
+bindings_counter() ->
+    {ok, Bindings} = exometer:get_value([hello, bindings]),
+    proplists:get_value(value, Bindings).
+
+packet_in_counter() ->
+    {ok, PacketIn} = exometer:get_value([hello, packet_in]),
+    proplists:get_value(value, PacketIn).
+
+internal_req_counter() ->
+    case exometer:get_value([hello, request, internal]) of
+        {ok, InternalReq} -> proplists:get_value(value, InternalReq);
+        {error, not_found} -> 0
+    end.
 bind_url({Url, _TransportOpts}, Protocol) ->
     spawn(fun() ->
         hello:start_listener(Url, [], Protocol, [], hello_router),

@@ -81,9 +81,11 @@ async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
 handle_incoming_message(Context, ExUriURL, Signature, [Binary]) ->
     handle_incoming_message(Context, ExUriURL, Signature, Binary);
 handle_incoming_message(Context, ExUriURL, Signature, Binary) ->
+    hello_metrics:packet_in(size(Binary)),
     {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
     case hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signature, Binary) of
         {ok, BinResp} ->
+            hello_metrics:packet_out(size(BinResp)),
             % for backward compatibility we should to send Signature that we received on listener
             send(Signature, BinResp, Context);
             % when we will convinced that there aren't clients with old code we will start to send Signature from protocol
