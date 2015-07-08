@@ -51,6 +51,7 @@ start() ->
 % @doc Callback for application behaviour.
 start(_Type, _StartArgs) ->
     {ok, Supervisor} = hello_supervisor:start_link(),
+    hello_metrics:start_subscriptions(),
     {ok, Supervisor, undefined}.
 
 % @doc Callback for application behaviour.
@@ -123,12 +124,12 @@ start_listener(URL) ->
 start_listener(URL, TransportOpts) ->
     start_listener(URL, TransportOpts, hello_proto_jsonrpc, [{decoder, hello_msgpack}], hello_router).
 
--spec start_listener(URL :: url(), TransportOpts :: list(), Protocol :: module(), 
-                     ProtocolOpts :: list(), RouterMod :: module()) -> 
+-spec start_listener(URL :: url(), TransportOpts :: list(), Protocol :: module(),
+                     ProtocolOpts :: list(), RouterMod :: module()) ->
     {ok, listener_ref()} | {error, Reason :: term()}.
 start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
-    on_ex_uri(URL, fun(ExUriURL) -> 
-                           hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) 
+    on_ex_uri(URL, fun(ExUriURL) ->
+                           hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod)
                    end).
 
 -spec stop_listener(URL :: url()) -> ok | {error, Reason :: term()}.
@@ -136,35 +137,35 @@ stop_listener(URL) ->
     on_ex_uri(URL, fun(ExUriURL) -> hello_listener:stop(ExUriURL) end).
 
 -spec bind(URL :: url(), HandlerMod :: module()) -> ok | {error, Reason :: term()}.
-bind(URL, HandlerMod) -> 
+bind(URL, HandlerMod) ->
     bind(URL, HandlerMod, []).
 
 -spec bind(URL :: url(), HandlerMod :: module(), HandlerArgs :: list()) -> ok | {error, Reason :: term()}.
 bind(URL, HandlerMod, HandlerArgs) ->
-    on_ex_uri(URL, fun(ExUriURL) -> 
-                           hello_service:lookup(HandlerMod) == {error, not_found} andalso 
+    on_ex_uri(URL, fun(ExUriURL) ->
+                           hello_service:lookup(HandlerMod) == {error, not_found} andalso
                                hello_service:register_link(HandlerMod, HandlerArgs),
-                           hello_binding:register_link(ExUriURL, HandlerMod) 
+                           hello_binding:register_link(ExUriURL, HandlerMod)
                    end).
 
 -spec unbind(URL :: url(), HandlerMod :: module()) -> ok.
 unbind(URL, HandlerMod) ->
-    on_ex_uri(URL, fun(ExUriURL) -> 
+    on_ex_uri(URL, fun(ExUriURL) ->
                            hello_binding:unregister_link(ExUriURL, HandlerMod),
-                           hello_binding:lookup(ExUriURL, HandlerMod:router_key()) == {error, not_found} andalso 
+                           hello_binding:lookup(ExUriURL, HandlerMod:router_key()) == {error, not_found} andalso
                                hello_service:unregister_link(HandlerMod)
                    end).
 
 -spec call_service(Name :: binary(), request() | {Method :: binary(), Args :: list()}) -> term().
 call_service(Name, Request) -> call_service(Name, undefined, Request).
 
--spec call_service(Name :: binary(), Identifier :: term(), request() | {Method :: binary(), Args :: list()}) -> 
+-spec call_service(Name :: binary(), Identifier :: term(), request() | {Method :: binary(), Args :: list()}) ->
     term().
 call_service(Name, UniqId, Request) -> hello_service:call(Name, UniqId, Request).
 
 %% --------------------------------------------------------------------------------
 %% -- Helpers
-on_ex_uri(URL, Fun) when is_binary(URL) -> on_ex_uri(binary_to_list(URL), Fun); 
+on_ex_uri(URL, Fun) when is_binary(URL) -> on_ex_uri(binary_to_list(URL), Fun);
 on_ex_uri(#ex_uri{} = URL, Fun) -> Fun(URL);
 on_ex_uri(URL, Fun) ->
     case (catch ex_uri:decode(URL)) of

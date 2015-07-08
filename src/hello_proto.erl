@@ -65,14 +65,19 @@ handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, S
     Context = Context1#context{connection_pid = self()},
     case decode(ProtocolMod, ProtocolOpts, Signature, Binary, request) of
         {ok, Requests} ->
+            Length = case Requests of Requests when is_list(Requests) -> length(Requests); _ -> 1 end,
+            hello_metrics:ok_request(Length),
             Result = proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL),
             may_be_encode(ProtocolMod, ProtocolOpts, Result);
         {error, ignore} ->
             %log(ProtocolMod, Binary, undefined, undefined, ExUriURL),
+            hello_metrics:error_request(),
             ignore;
         {error, Response} ->
+            hello_metrics:error_request(),
             may_be_encode(ProtocolMod, ProtocolOpts, Response);
         {internal, Message} ->
+            hello_metrics:internal_request(),
             handle_internal(Context, Message)
     end.
 
@@ -93,6 +98,7 @@ proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Con
 
 may_be_wait(_, #request{proto_data = Info}, _Context) ->
     Answer = hello_service:await(5000),
+    hello_metrics:response(),
     #response{proto_data = Info, response = proto_answer(Answer)};
 may_be_wait(async, _Request, _Context) ->
     ignore.
