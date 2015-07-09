@@ -182,6 +182,7 @@ handle_info(Info, State = #client_state{transport_mod=TransportModule, transport
 
 %% @hidden
 terminate(Reason, #client_state{transport_mod = TransportModule, transport_state = TransportState, keep_alive_ref = TimerRef}) ->
+    hello_metrics:client(-1),
     timer:cancel(TimerRef),
     TransportModule:terminate_transport(Reason, TransportState).
 
@@ -201,6 +202,7 @@ init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts)
             ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
             case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
                 {ok, ProtocolState} ->
+                    hello_metrics:client(1),
                     State = #client_state{transport_mod = TransportModule,
                                           transport_state = TransportState,
                                           protocol_mod = ProtocolMod,
