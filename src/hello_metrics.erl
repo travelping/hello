@@ -22,7 +22,7 @@
 
 -module (hello_metrics).
 
--export([start_subscriptions/0, start_subscriptions/1, 
+-export([start_subscriptions/0, start_subscriptions/1, start_subscriptions/2,
          subscriptions/0, subscriptions/1]).
 
 -export([packet_in/1,
@@ -48,18 +48,24 @@
 -type metrics_type() :: packets | request | response | service | 
                         handler | binding | listener | client.
 
+-export_type([metrics_type/0]).
+
 -define(ALL_TYPES, [packets, request, response, service, handler, binding, listener, client]).
 -define(DEFAULT_INTERVAL, 500).
 -define(FAST_INTERVAL, trunc(?DEFAULT_INTERVAL / 3)).
 
 -spec start_subscriptions() -> list().
 start_subscriptions() ->
-    [start_subscriptions(Reporter) || {Reporter, _} <- exometer_report:list_reporters()].
+    [start_subscriptions(Reporter, ?ALL_TYPES) || {Reporter, _} <- exometer_report:list_reporters()].
 
--spec start_subscriptions(atom()) -> list(atom()).
-start_subscriptions(Reporter) ->
+-spec start_subscriptions(subscriptions()) -> list().
+start_subscriptions(Types) ->
+    [start_subscriptions(Reporter, Types) || {Reporter, _} <- exometer_report:list_reporters()].
+
+-spec start_subscriptions(atom(), subscriptions()) -> list(atom()).
+start_subscriptions(Reporter, Types) ->
     [exometer_report:subscribe(Reporter, Name, DataPoint, Time, [], true) 
-     || {Name, DataPoint, Time} <- subscriptions()].
+     || {Name, DataPoint, Time} <- subscriptions(Types)].
 
 -spec subscriptions() -> subscriptions().
 subscriptions() -> 
