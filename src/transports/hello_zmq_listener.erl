@@ -28,6 +28,9 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+%% for hello_zmq_client
+-export([ezmq_ip/2, zmq_protocol/1]).
+
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
 -include("hello_log.hrl").
