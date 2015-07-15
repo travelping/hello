@@ -3,6 +3,14 @@ hello
 
 JSON-RPC API toolkit
 
+Version 3.0.0 - 15 Jul 2015
+---------------------------
+* mDNS support via Apple Bonjour
+* hackney as a HTTP client
+* rebar3/mix support
+* JSON-RPC singnatire
+* Bug fixes and performance improvement
+
 Version 2.2.4 - 24 Feb 2015
 ---------------------------
 
