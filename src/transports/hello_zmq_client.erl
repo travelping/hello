@@ -34,8 +34,9 @@
     socket  :: pid()
 }).
 
-init_transport(URI, _Options) ->
-    {ok, Socket} = ezmq:socket([{type, dealer}, {active, true}]),
+init_transport(URI, Options) ->
+    SockType = proplists:get_value(socket_type, Options, dealer), %% for tests
+    {ok, Socket} = ezmq:socket([{type, SockType}, {active, true}]),
     ok = ezmq_connect_url(Socket, URI),
     {ok, #zmq_state{socket = Socket, uri = URI}}.
 
