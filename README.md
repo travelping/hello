@@ -139,6 +139,10 @@ To write all requests for a method `Test.try` to a file use:
         ]}
     ]}
 
+# Elixir
+
+You can use hello with Elixir environment via `Hello` and `Hello.Client` modules which are delegating `:hello` and `:hello_client`
+
 # For Developers
 
 If you want to implement server on another framework you have to know two things about protocols:
