@@ -147,10 +147,10 @@ You can use hello with Elixir environment via `Hello` and `Hello.Client` modules
 
 If you want to implement server on another framework you have to know two things about protocols:
 
-1. JSON RPC have signature:
+1. JSON RPC has signature:
     * For HTTP it is `application/json` in Content-Type header.
-    * For ZMTP it is  0xAA, 0xFF as first frame.
-2. Hello have keep alive mechanism via ping-pong messaging:
+    * For ZMTP it is  0xAA, 0xFF as second frame (first frame should be empty).
+2. Hello has keep alive mechanism via ping-pong messaging:
     * Client send `$PING` message and server reply with `$PONG` message.
     * HTTP signature for those messages is `application/octet-stream` in Content-Type header.
-    * For ZMTP is  0xAA, 0xAA as first frame.
+    * For ZMTP is  0xAA, 0xAA as second frame (first frame should be empty).

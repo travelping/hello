@@ -31,19 +31,21 @@
 -record(zmq_state, {
     client  :: pid(),
     uri     :: #ex_uri{},
-    socket  :: pid()
+    socket  :: pid(),
+    type = dealer :: req | dealer
 }).
 
 init_transport(URI, Options) ->
     SockType = proplists:get_value(socket_type, Options, dealer), %% for tests
     {ok, Socket} = ezmq:socket([{type, SockType}, {active, true}]),
     ok = ezmq_connect_url(Socket, URI),
-    {ok, #zmq_state{socket = Socket, uri = URI}}.
+    {ok, #zmq_state{socket = Socket, uri = URI, type = SockType}}.
 
-send_request(Message, Signature, State = #zmq_state{socket = Socket}) ->
-    ezmq:send(Socket, [Signature, Message]),
-    % TODO:
-    %ezmq:send(Socket, [<<>>, Signature, Message]),
+send_request(Message, Signature, State = #zmq_state{socket = Socket, type = SockType}) ->
+    case SockType of
+        req -> ezmq:send(Socket, [Signature, Message]); % req socket for tests
+        _ -> ezmq:send(Socket, [<<>>, Signature, Message])
+    end,
     {ok, State}.
 
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
@@ -58,7 +60,7 @@ handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri 
 handle_info({dnssd, _Ref, Msg}, State) ->
     ?LOG_INFO("dnssd Msg: ~p", [Msg]),
     {noreply, State};
-handle_info({zmq, _Socket, [Signature, Msg]}, State) ->
+handle_info({zmq, _Socket, [Signature, Msg]}, State) -> %% recieve on req socket
     {?INCOMING_MSG, {ok, Signature, Msg, State}};
 handle_info({zmq, _Socket, [<<>>, Signature, Msg]}, State) ->
     {?INCOMING_MSG, {ok, Signature, Msg, State}}.
