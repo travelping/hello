@@ -53,6 +53,7 @@ start(_Type, _StartArgs) ->
     {ok, Supervisor} = hello_supervisor:start_link(),
     {ok, Metrics} = application:get_env(hello, metrics),
     hello_metrics:start_subscriptions(Metrics),
+    hello_log:init(),
     {ok, Supervisor, undefined}.
 
 % @doc Callback for application behaviour.
