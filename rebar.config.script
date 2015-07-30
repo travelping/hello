@@ -21,5 +21,16 @@ case erlang:function_exported(rebar3, version, 0) of
                               end, proplists:get_value(deps, CONFIG1), HexDeps),
         CONFIG2 = lists:keyreplace(deps, 1, CONFIG1, {deps, NewDeps}),
         CONFIG2 ++ [ {provider_hooks, [{pre, [ {ct, {yang, compile}} ]} ]}] ++ [Overrides];
-    false -> CONFIG
+    false -> 
+        case os:getenv("TRAVIS") of
+            "true" ->
+                JobId   = os:getenv("TRAVIS_JOB_ID"),
+                CONFIG1 = lists:keystore(coveralls_service_job_id, 1, CONFIG, {coveralls_service_job_id, JobId}),
+                {value, {plugins, Plugins}} = lists:keysearch(plugins, 1, CONFIG1),
+                lists:keystore(plugins, 1, CONFIG1, {plugins, Plugins ++ [rebar_coveralls]})
+                    ++ [{coveralls_coverdata, "logs/all.coverdata"},
+                        {coveralls_service_name, "travis-ci"},
+                        {plugin_dir, "deps/coveralls/src"}];
+            _ -> CONFIG
+        end
 end.
