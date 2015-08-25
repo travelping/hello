@@ -51,6 +51,8 @@ send_request(Message, Signature, State = #zmq_state{socket = Socket, type = Sock
 terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
     ezmq:close(Socket).
 
+handle_info({'EXIT', _, normal}, State) ->
+    {noreply, State};
 handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri = URI, socket = Socket}) ->
     ?LOG_INFO("dnssd Service: ~p:~w", [Host, Port]),
     Protocol = zmq_protocol(URI),

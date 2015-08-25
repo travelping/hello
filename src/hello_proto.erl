@@ -26,6 +26,9 @@
 -export([encode/3, decode/5, signature/2]).
 -export([handle_incoming_message/7]).
 
+% for test
+-export([handle_internal/2]). 
+
 -include("hello.hrl").
 
 
@@ -78,7 +81,7 @@ handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, S
             may_be_encode(ProtocolMod, ProtocolOpts, Response);
         {internal, Message} ->
             hello_metrics:internal_request(),
-            handle_internal(Context, Message)
+            ?MODULE:handle_internal(Context, Message) % for test
     end.
 
 proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) when is_list(Requests) ->

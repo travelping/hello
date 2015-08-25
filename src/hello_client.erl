@@ -119,14 +119,19 @@ timeout_call(Client, Call, Timeout) ->
 %% ----------------------------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(client_state, {
+    uri_rec :: #ex_uri{},
+    transport_opts :: term(),
     transport_mod :: module(),
     transport_state :: term(),
     protocol_mod :: atom(),
     protocol_opts :: list(),
-    protocol_state ::term(),
+    protocol_state :: term(),
+    client_opts :: term(),
     async_request_map = gb_trees:empty() :: gb_trees:tree(),
     keep_alive_interval :: number(),
-    keep_alive_ref :: term(),
+    keep_alive_ref :: timer:tref(),
+    waiting_for_pong = false :: boolean(),
+    last_pong :: erlang:timestamp(),
     notification_sink :: pid() | function()
 }).
 
@@ -165,12 +170,25 @@ handle_call(terminate, _From, State) ->
 %% @hidden
 handle_info({?INCOMING_MSG, Message}, State) ->
     incoming_message(Message, State);
+handle_info(?PING, State = #client_state{waiting_for_pong = true, keep_alive_interval = KeepAliveInterval,
+                                         uri_rec = URIRec, transport_mod = TransportModule, 
+                                         transport_opts = TransportOpts, protocol_opts = ProtocolOpts,
+                                         transport_state = TransportState, client_opts = ClientOpts, 
+                                         last_pong = LastPong}) ->
+    ?LOG_ERROR("There is no PONG answer on PING for ~p msec. Connection will be reestablished.", 
+               [last_pong(LastPong, KeepAliveInterval)]),
+    TransportModule:terminate_transport(lost_connection, TransportState),
+    case init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts, State) of
+        {ok, NewState} -> {noreply, NewState};
+        {stop, Reason} -> {stop, Reason, State}
+    end;
 handle_info(?PING, State = #client_state{transport_mod=TransportModule, transport_state=TransportState,
                                          keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}) ->
     {ok, NewTransportState} = TransportModule:send_request(?PING, ?INTERNAL_SIGNATURE, TransportState),
     timer:cancel(TimerRef),
     {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
-    {noreply, State#client_state{transport_state = NewTransportState, keep_alive_ref = NewTimerRef}};
+    {noreply, State#client_state{transport_state = NewTransportState, keep_alive_ref = NewTimerRef,
+                                 waiting_for_pong = true}};
 
 handle_info(Info, State = #client_state{transport_mod=TransportModule, transport_state=TransportState}) ->
     case TransportModule:handle_info(Info, TransportState) of
@@ -196,26 +214,36 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% --------------------------------------------------------------------------------
 %% -- Helper functions
 init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts) ->
+    case init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts, #client_state{}) of
+        {ok, _} = OK -> hello_metrics:client(1), OK;
+        Other -> Other
+    end.
+
+init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts, State0) ->
     case TransportModule:init_transport(URIRec, TransportOpts) of
         {ok, TransportState} ->
             NotificationSink = proplists:get_value(notification_sink, ProtocolOpts, undefined),
             ProtocolMod = proplists:get_value(protocol, ProtocolOpts, hello_proto_jsonrpc),
             case hello_proto:init_client(ProtocolMod, ProtocolOpts) of
                 {ok, ProtocolState} ->
-                    hello_metrics:client(1),
-                    State = #client_state{transport_mod = TransportModule,
+                    State = State0#client_state{
+                                          uri_rec = URIRec,
+                                          transport_opts = TransportOpts,
+                                          transport_mod = TransportModule,
                                           transport_state = TransportState,
                                           protocol_mod = ProtocolMod,
                                           protocol_opts = ProtocolOpts,
                                           protocol_state = ProtocolState,
-                                          notification_sink = NotificationSink},
+                                          notification_sink = NotificationSink, 
+                                          waiting_for_pong = false},
                     evaluate_client_options(ClientOpts, State);
                 {error, Reason} -> {stop, Reason}
             end;
         {error, Reason} -> {stop, Reason}
     end.
 
-evaluate_client_options(ClientOpts, State) ->
+evaluate_client_options(ClientOpts, State0) ->
+    State = State0#client_state{client_opts = ClientOpts},
     KeepAliveInterval = proplists:get_value(keep_alive_interval, ClientOpts, -1),
     if
         KeepAliveInterval =< 0 ->
@@ -277,7 +305,7 @@ update_map(#request{id = RequestId} = Request, From, AsyncMap) -> gb_trees:enter
 handle_internal(?PONG, State = #client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef}) ->
     timer:cancel(TimerRef),
     {ok, NewTimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
-    {ok, State#client_state{keep_alive_ref = NewTimerRef}};
+    {ok, State#client_state{keep_alive_ref = NewTimerRef, waiting_for_pong = false, last_pong = os:timestamp()}};
 handle_internal(_Message, State) ->
     %?MODULE:handle_internal(list_to_atom(binary_to_list(Message)), State).
     {ok, State}.
@@ -332,3 +360,6 @@ request_reply([#response{id = RequestId, response = Response} | Tail], AsyncMap,
             ?LOG_WARNING("get not existing request_id ~p", [RequestId]),
             AsyncMap
     end.
+
+last_pong(undefined, Interval) -> Interval;
+last_pong(Start, _) -> timer:now_diff(os:timestamp(), Start) / 1000.
