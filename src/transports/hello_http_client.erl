@@ -95,14 +95,14 @@ content_type(Signarute) ->
 http_send(Client, Request, Signarute, State = #http_state{url = URL, options = Options}) ->
     #http_options{method = Method, ib_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
-    Headers = [{<<"Content-Type">>, content_type(Signarute)},
-               {<<"Accept">>, content_type(Signarute)},
-               {<<"User-Agent">>, <<"hello/", (list_to_binary(Vsn))/binary>>}],
+    Headers = [{<<"content-type">>, content_type(Signarute)},
+               {<<"accept">>, content_type(Signarute)},
+               {<<"user-agent">>, <<"hello/", (list_to_binary(Vsn))/binary>>}],
     case hackney:Method(URL, Headers, Request, Opts) of
         {ok, Success, RespHeaders, ClientRef} when Success =:= 200; Success =:= 201; Success =:= 202 ->
             {ok, Body} = hackney:body(ClientRef),
-            Signarute1 = proplists:get_value(<<"Content-Type">>, RespHeaders, <<"undefined">>),
-            outgoing_message(Client, Signarute1, Body, State);
+            Signature1 = hackney_headers:get_value(<<"content-type">>, hackney_headers:new(RespHeaders), <<"undefined">>),
+            outgoing_message(Client, Signature1, Body, State);
         {ok, HttpCode, _, _} ->
             Client ! {?INCOMING_MSG, {error, HttpCode, State}},
             exit(normal);
