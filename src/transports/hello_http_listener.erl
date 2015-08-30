@@ -58,8 +58,8 @@ listener_specification(ExUriUrl, ListenerOpts) ->
     Result = cowboy:start_http({?MODULE, ExUriUrl}, Acceptors, TransportOpts, ProtocolOpts),
     {other_supervisor, Result}.
 
-send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signarute, BinResp) ->
-    TPid ! {hello_msg, TParams, Peer, Signarute, BinResp}, ok.
+send_response(#context{transport_pid = TPid, transport_params = TParams, peer = Peer}, Signature, BinResp) ->
+    TPid ! {hello_msg, TParams, Peer, Signature, BinResp}, ok.
 
 close(#context{transport_pid = TPid}) ->
     TPid ! hello_closed, ok.
