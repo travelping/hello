@@ -35,7 +35,7 @@
 -include("hello.hrl").
 -include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
--define(DEFAULT_TIMEOUT, 10000).
+-define(DEFAULT_TIMEOUT, application:get_env(hello, client_timeout, 10000)).
 
 -type client_name()  :: {local, atom()} | {global, atom()} | {via, atom(), term()}.
 -type start_result() :: {ok, pid()} | ignore | {error, {already_started, pid()} | term()}.
