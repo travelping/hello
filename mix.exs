@@ -14,7 +14,9 @@ defmodule Hello.Mixfile do
     [applications: [:lager, :exometer_core, :cowboy, :ex_uri, :ezmq, :dnssd, :hackney, :jsx],
      env: [{:metrics, [:packets, :request, :response, :service, :handler, :binding, :listener, :client]},
            {:default_protocol, :hello_proto_jsonrpc},
-           {:transports, []}],
+           {:transports, []},
+           {:server_timeout, 10000},
+           {:client_timeout, 10000}],
      mod: {:hello, []}]
   end
 

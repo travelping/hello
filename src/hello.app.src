@@ -9,6 +9,8 @@
        %% metrics is list of packets | request | response | service | handler | binding | listener | client
        {metrics, [packets, request, response, service, handler, binding, listener, client]},
        {default_protocol, hello_proto_jsonrpc},
-       {transports, []}
+       {transports, []},
+       {server_timeout, 10000},
+       {client_timeout, 10000}
    ]}
 ]}.

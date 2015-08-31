@@ -100,7 +100,7 @@ proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Con
     end.
 
 may_be_wait(_, #request{proto_data = Info}, _Context) ->
-    Answer = hello_service:await(5000),
+    Answer = hello_service:await(),
     hello_metrics:response(),
     #response{proto_data = Info, response = proto_answer(Answer)};
 may_be_wait(async, _Request, _Context) ->
