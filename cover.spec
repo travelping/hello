@@ -1,2 +1,2 @@
 {incl_app, hello, details}.  
-{export, "logs/all.coverdata"}.
+{export, "all.coverdata"}.

@@ -16,3 +16,4 @@
 rebar.lock
 _build
 logs
+all.coverdata

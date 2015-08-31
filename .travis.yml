@@ -1,21 +1,33 @@
 before_install:
    - sudo apt-get update -qq
    - sudo apt-get install avahi-daemon libavahi-compat-libdnssd-dev
+   - wget https://github.com/rebar/rebar/wiki/rebar
+   - chmod u+x ./rebar
    - wget https://s3.amazonaws.com/rebar3/rebar3
    - chmod u+x ./rebar3
+   - case "$BUILDTOOL" in
+        rebar3) ./rebar3 update && rm -Rf _build;;
+        *) "true";;
+     esac
+install: "true"
 language: elixir
 elixir:
-    - 1.0.5
+    - 1.2.0
 otp_release:
-   - 17.5
    - 18.0
+env:
+  - BUILDTOOL=rebar
+  - BUILDTOOL=rebar3
+  - BUILDTOOL=mix
 script: 
-    - mix compile
-    - rm -Rf deps _build
-    - ./rebar3 update
-    - ./rebar3 compile
-    - rm -Rf _build
-    - rebar get-deps
-    - rebar compile 
-    - rebar ct skip_deps=true
-after_failure: "cat logs/raw.log"
+    - case "$BUILDTOOL" in
+        rebar) ./rebar get-deps compile && ./rebar ct skip_deps=true;;
+        rebar3) ./rebar3 do compile, yang compile, ct -c, coveralls send;;
+        mix) mix local.hex --force && MIX_ENV=test mix do deps.get, deps.compile;;
+      esac
+after_failure:
+    - case "$BUILDTOOL" in
+        rebar) cat logs/raw/log;;
+        rebar3) echo "no raw.log on rebar3";;
+        mix) echo "no raw.log on mix";;
+      esac
