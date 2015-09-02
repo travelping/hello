@@ -66,10 +66,10 @@ keep_alive(_Config) ->
     meck:new(hello_proto, [passthrough]),
     ok = meck:expect(hello_proto, handle_internal, fun(_, _) -> ct:log("no pong"), {ok, <<"NO_PONG">>} end),
     timer:sleep(500), 
-    meck:unload(hello_proto),
-    meck:unload(hello_client),
     {ok, Arg} = hello_client:call(ZMQClient, ?REQ11),
     {ok, Arg} = hello_client:call(HTTPClient, ?REQ11),
+    meck:unload(hello_proto),
+    meck:unload(hello_client),
 
     ok.
 
