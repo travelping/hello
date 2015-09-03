@@ -21,14 +21,48 @@
 % @private
 -module(hello_log).
 
--export([fmt_response/1, fmt_request/1]).
+-export([format/1, get_id/1, get_method/1]).
 
 -include("hello.hrl").
 
 %% --------------------------------------------------------------------------------
-%% -- Formaters
-fmt_request(#request{method = Method, args = Params}) ->
-    <<"method: ", (hello_json:encode(Method))/binary, ", params: ", (hello_json:encode(Params))/binary>>.
+%% -- Formaters for messages
 
-fmt_response(ignore) -> ["ignored"];
-fmt_response(Result) -> io_lib:format("~4096p", [Result]).
+%% -- request formatting
+format([ Request = #request{} ]) ->
+    "[ " ++ format(Request) ++ " ]";
+format([ Request = #request{} | Requests]) ->
+    "[ " ++ format(Request) ++ " ], " ++ format(Requests);
+format(#request{id = ID, method = Method, args = Args}) ->
+    lists:append(["ID: ", stringify(ID), "; METHOD: ", stringify(Method),
+                    "; ARGS: ", stringify(Args)]);
+
+%% -- response formatting; first for record responses, then for arbitrary data blobs
+format([ Response = #response{} ]) ->
+    "[ " ++ format(Response) ++ " ]";
+format([ Response = #response{} | Responses]) ->
+    "[ " ++ format(Response) ++ " ], " ++ format(Responses);
+format(#response{id = ID, response = CallbackResponse}) ->
+    lists:append(["ID: ", stringify(ID), "; RESPONSE: ", stringify(CallbackResponse)]);
+format(ignore) -> ["ignored"];
+format({ok, CallbackResponse}) -> stringify(CallbackResponse);
+format(Msg) -> stringify(Msg).
+
+%% -- get internal hello request id
+get_id([ #request{id = Id} ]) ->            stringify(Id);
+get_id([ #request{id = Id} | Requests]) ->  stringify(Id) ++ ", " ++ get_id(Requests);
+get_id(#request{id = Id}) ->                stringify(Id);
+get_id([ #response{id = Id} ]) ->           stringify(Id);
+get_id([ #response{id = Id} | Responses]) ->stringify(Id) ++ ", " ++ get_id(Responses);
+get_id(#response{id = Id}) ->               stringify(Id).
+
+%% -- get request method
+get_method([ #request{method = Method} ]) ->
+    stringify(Method);
+get_method([ #request{method = Method} | Requests]) ->
+    stringify(Method) ++ ", " ++ get_method(Requests);
+get_method(#request{method = Method}) ->
+    stringify(Method).
+
+stringify(Term)  ->
+    lists:flatten(io_lib:format("~p", [Term])).

@@ -100,42 +100,29 @@ You can start client with keep alive support:
 
 # Logging
 
-Hello log request and responses through lager on level INFO. Lager metadata fields
-'hello_request' and 'hello_handler' are set to support tracing.
-'hello_request' is set to 'api' for normal request and to 'error' for undecoded (bad)
-requests. 'hello_handler' is set to the name of the handler module.
-'class' is set to 'hello' for tracing all hello logs. 'hello_method' if set for method tracing.
+Hello logs with lager on level 'debug' and 'info'. There is a strong tracing support, e.g.
+traces like {class, hello}, {hello_request_method, some_method} or {hello_request_status, ok | error} 
+are available (see hello_log.hrl for more).
 
 To write all bad request to a file use:
 
     {lager, [
         {handlers, [
-            {lager_file_backend, [{file, "bad_request.log"}, {level, none}]}
+            {lager_file_backend, [{file, "bad_request.log"}, {level, info}]}
         ]},
         {traces, [
-            {{lager_file_backend, "bad_request.log"}, [{hello_request, error}], info}
+            {{lager_file_backend, "bad_request.log"}, [{hello_request_status, error}], info}
             ]}
     ]}
 
-To write all requests for a module hello_stateful_handler_example to a file use:
+To write all requests for a module hello_handler_example to a file use:
 
     {lager, [
         {handlers, [
-            {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
+            {lager_file_backend, [{file, "hello_handler_example.log"}, {level, none}]}
         ]},
         {traces, [
-            {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_handler, hello_handler_example}], info}
-        ]}
-    ]}
-
-To write all requests for a method `Test.try` to a file use:
-
-    {lager, [
-        {handlers, [
-            {lager_file_backend, [{file, "hello_stateful_handler_example.log"}, {level, none}]}
-        ]},
-        {traces, [
-            {{lager_file_backend, "hello_stateful_handler_example.log"}, [{hello_method, <<"Test.try">>}], info}
+            {{lager_file_backend, "hello_handler_example.log"}, [{hello_handler_callback, hello_handler_example}], info}
         ]}
     ]}
 

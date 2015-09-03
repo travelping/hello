@@ -24,6 +24,9 @@
 -export([start_link/0]).
 -export([init/1]).
 
+-include("hello.hrl").
+-include("hello_log.hrl").
+
 -define(SERVER, hello_supervisor).
 
 start_link() ->
@@ -43,12 +46,15 @@ get_roles() ->
         {ok, Role} when is_list(Role) ->
             Exess = lists:subtract(Role, [client, server]),
             if
-                length(Exess) > 0 -> error_logger:warning_report([{roles, ignored}, Exess]);
+                length(Exess) > 0 ->
+                    ?LOG_INFO("Hello supervisor got invalid list '~p' of roles.", [Role],
+                            [{hello_error_reason, invalid_roles}], ?LOGID59);
                 true              -> ok
             end,
             lists:subtract(Role, Exess);
         {ok, Role} ->
-            error_logger:warning_report([{application, hello}, {roles, invalid}, Role]),
+            ?LOG_INFO("Hello supervisor got invalid role '~p'.", [Role],
+                            [{hello_error_reason, invalid_roles}], ?LOGID60),
             [client, server];
         undefined ->
             [client, server]

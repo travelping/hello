@@ -103,7 +103,9 @@ http_chunked_loop(Req, State) ->
             case cowboy_req:chunk(BinResp, Req) of
                 ok -> http_chunked_loop(Req, State);
                 R -> 
-                    ?LOG_ERROR("cowboy_req:chunk result ~p during send ~p to ~p", [R, BinResp, Req]),
+                    ?LOG_INFO("Hello http listener received an error while streaming the response body.", [],
+                                lists:append([{hello_error_reason, {{request, Req}, {response, BinResp}, {error, R}}}],
+                                gen_meta_fields(State)), ?LOGID46),
                     {ok, Req, State}
             end
     end.
@@ -177,3 +179,6 @@ extract_ip_and_host(#ex_uri{authority = #ex_uri_authority{host = Host}}) ->
                     {Address, Host}
             end
     end.
+
+gen_meta_fields(#http_listener_state{url = Url}) ->
+    [{hello_transport, http}, {hello_transport_url, ex_uri:encode(Url)}].

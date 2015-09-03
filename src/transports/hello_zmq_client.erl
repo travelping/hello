@@ -23,6 +23,7 @@
 
 -behaviour(hello_client).
 -export([init_transport/2, send_request/3, terminate_transport/2, handle_info/2]).
+-export([gen_meta_fields/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
@@ -54,13 +55,16 @@ terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
 handle_info({'EXIT', _, normal}, State) ->
     {noreply, State};
 handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri = URI, socket = Socket}) ->
-    ?LOG_INFO("dnssd Service: ~p:~w", [Host, Port]),
+    ?LOG_INFO("Hello ZeroMQ client: DNS discovery service resolved path '~p' to host '~p:~w'.", [URI, Host, Port],
+                gen_meta_fields(State), ?LOGID43),
     Protocol = zmq_protocol(URI),
     R = ezmq:connect(Socket, tcp, clean_host(Host), Port, [Protocol]),
-    ?LOG_INFO("ezmq:connect: ~p", [R]),
+    ?LOG_INFO("Hello ZeroMQ client attempted to establish connection to '~p' returning '~p'", [URI, R],
+                gen_meta_fields(State), ?LOGID44),
     {noreply, State};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    ?LOG_INFO("dnssd Msg: ~p", [Msg]),
+    ?LOG_INFO("Hello ZeroMQ client ignored message '~p' from DNS discovery service.", [Msg],
+                gen_meta_fields(State), ?LOGID45),
     {noreply, State};
 handle_info({zmq, _Socket, [Signature, Msg]}, State) -> %% recieve on req socket
     {?INCOMING_MSG, {ok, Signature, Msg, State}};
@@ -109,3 +113,6 @@ clean_host(Host) ->
             Host
     end,
     binary_to_list(CleanedHost).
+
+gen_meta_fields(#zmq_state{uri = Uri}) ->
+    [{hello_transport, zmtp}, {hello_transport_url, ex_uri:encode(Uri)}].
