@@ -10,9 +10,9 @@
 % -- test cases
 call_service(_Config) ->
     {Req1, [Args1], _} = ?REQ11,
-    {ok, Args1} = hello:call_service(atom_to_binary(handler1:name(), latin1), {Req1, [Args1]}),
+    {ok, Args1} = hello:call_service(atom_to_binary(handler1:name(), latin1), handler1:name(), {Req1, [Args1]}),
     {Req2, [Args2], _} = ?REQ21,
-    {ok, Args2} = hello:call_service(atom_to_binary(handler2:name(), latin1), {Req2, [Args2]}).
+    {ok, Args2} = hello:call_service(atom_to_binary(handler2:name(), latin1), handler2:name(), {Req2, [Args2]}).
 
 
 simple_one_shot(_Config) ->

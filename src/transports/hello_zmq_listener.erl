@@ -55,10 +55,11 @@ port(_ExUriUrl, ListenerId) ->
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 -record(state, {
-    url     :: #ex_uri{},
-    lastmsg_peer :: binary(),
-    encode_info :: binary(),
-    socket  :: ezmq:socket()
+    url             :: #ex_uri{},
+    encoded_url     :: string(),
+    lastmsg_peer    :: binary(),
+    encode_info     :: binary(),
+    socket          :: ezmq:socket()
 }).
 
 start_link(URL) ->
@@ -67,12 +68,14 @@ start_link(URL) ->
 init(URL) ->
     process_flag(trap_exit, true),
     {ok, Socket}  = ezmq:socket([{type, router}, {active, true}]),
+    EncUrl = ex_uri:encode(URL),
     case ezmq_bind_url(Socket, URL) of
         ok ->
-            State = #state{socket = Socket, url = URL},
+            State = #state{socket = Socket, url = URL, encoded_url = EncUrl},
             {ok, State};
         {error, Error} ->
-            ?LOG_ERROR("ezmq_bind_url error: ~p", [Error]),
+            ?LOG_INFO("Hello ZeroMQ listener was unable to bind on '~p' because of reason '~p'.", [URL, Error],
+                      [{hello_transport, zmtp}, {hello_transport_url, EncUrl}], ?LOGID47),
             {stop, Error}
     end.
 
@@ -88,7 +91,8 @@ handle_info({zmq, Socket, {Peer, [Signature, Msg]}}, State = #state{url = URL, s
     {noreply, State};
 
 handle_info({zmq, _Socket, {Peer, Msg}}, State) ->
-    ?LOG_ERROR("received bad message: ~p from ~p", [Msg, Peer]),
+    ?LOG_INFO("Hello ZeroMQ listener received bad message '~p' from '~p'.", [Msg, Peer],
+              gen_meta_fields(State), ?LOGID48),
     {noreply, State};
 
 handle_info({hello_msg, _Handler, Peer, Signature, Message}, State = #state{socket = Socket}) ->
@@ -100,7 +104,8 @@ handle_info({hello_closed, _HandlerPid, _Peer}, State) ->
 handle_info({'EXIT', _Reason}, State) ->
     {noreply, State};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    ?LOG_INFO("dnssd Msg: ~p", [Msg]),
+    ?LOG_DEBUG("Hello ZeroMQ listener ignored message '~p' from DNS discovery service.", [Msg],
+               gen_meta_fields(State), ?LOGID49),
     {noreply, State}.
 
 terminate(_Reason, State) ->
@@ -145,3 +150,6 @@ ezmq_ip(inet6, Host) ->
         _ ->
             inet:parse_ipv6_address(Host)
     end.
+
+gen_meta_fields(#state{encoded_url = EncUrl}) ->
+    [{hello_transport, zmtp}, {hello_transport_url, EncUrl}].
