@@ -3,6 +3,15 @@ hello
 
 JSON-RPC API toolkit
 
+Version 3.1.0 - 17 Sep 2015
+---------------------------
+* Elixir wrappers for hello and hello_client
+* On zmq first frame should be empty
+* Fix Keep Alive over HTTP
+* Reconnect client if no pong answer
+* add possibility to configure client and server timeouts
+* Happy hello logging
+
 Version 3.0.0 - 15 Jul 2015
 ---------------------------
 * mDNS support via Apple Bonjour
