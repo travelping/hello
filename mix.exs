@@ -24,7 +24,7 @@ defmodule Hello.Mixfile do
     [{:lager,         "~> 2.1.1", override: true},
      {:cowboy,        "~> 1.0.2"},
      {:yang,          github: "travelping/yang", branch: "master"},
-     {:hackney,       "~> 1.1.0"},
+     {:hackney,       "~> 1.3.2"},
      {:ex_uri,        github: "heroku/ex_uri", branch: "master"},
      {:ezmq,          github: "RoadRunnr/ezmq", branch: "fix-socket-crash"},
      {:jsx,           "~> 2.6.2"},

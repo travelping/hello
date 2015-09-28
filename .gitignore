@@ -15,3 +15,5 @@
 /tetrapak/.local.cache
 mix.lock
 rebar.lock
+_build
+logs
