@@ -218,6 +218,13 @@
 * ___Explanation___: Problems in hello application initialization.
 * ___Level___: info
 
+#### 4001
+
+* ___Messages___:
+  * [cde9a95372554e5fa65c76a9c62bf9d1] Application dnssd is not started.
+* ___Explanation___: Problems during starting dnssd
+* ___Level___: error
+
 #### 4102
 
 * ___Messages___:

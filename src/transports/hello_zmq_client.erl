@@ -79,8 +79,12 @@ zmq_protocol(#ex_uri{scheme = "zmq-tcp6"}) -> inet6.
 %% use dnssd to resolve port AND host
 %% map host to Type and Path to Name
 ezmq_connect_url(_Socket, #ex_uri{authority = #ex_uri_authority{host = Host, port = undefined}, path = [$/|Path]}) ->
-    dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
-    ok;
+    case hello_lib:is_dnssd_started() of
+        true ->
+            dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
+            ok;
+        false -> {error, port_undefined}
+    end;
 
 ezmq_connect_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, port = Port}}) ->
     Protocol = zmq_protocol(URI),

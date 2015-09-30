@@ -30,6 +30,7 @@
 -export([bind_handler/3, bind/2, bind/3, bind/7, unbind/2]).
 
 -include("hello.hrl").
+-include("hello_log.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 -type decoded_url() :: #ex_uri{}.
@@ -50,6 +51,7 @@ start() ->
 
 % @doc Callback for application behaviour.
 start(_Type, _StartArgs) ->
+    ok = start_dnssd(),
     {ok, Supervisor} = hello_supervisor:start_link(),
     {ok, Metrics} = application:get_env(hello, metrics),
     hello_metrics:start_subscriptions(Metrics),
@@ -175,3 +177,16 @@ on_ex_uri(URL, Fun) ->
         Other ->
             error(badarg, [URL, Other])
     end.
+
+start_dnssd() ->
+    Reason = case application:get_env(hello, dnssd) of
+        {ok, true} ->
+            case application:ensure_all_started(dnssd) of
+                {ok, _} -> ok;
+                Error -> Error
+            end;
+        _ -> ok
+    end,
+    Reason /= ok andalso ?LOG_ERROR("Application dnssd is not started.", [], 
+                                    [{hello_dnssd_starting_reason, Reason}], ?LOGID64),
+    Reason.

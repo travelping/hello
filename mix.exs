@@ -11,8 +11,9 @@ defmodule Hello.Mixfile do
   end
 
   def application do
-    [applications: [:lager, :exometer_core, :cowboy, :ex_uri, :ezmq, :dnssd, :hackney, :jsx],
-     env: [{:metrics, [:packets, :request, :response, :service, :handler, :binding, :listener, :client]},
+    [applications: [:lager, :exometer_core, :cowboy, :ex_uri, :ezmq, :hackney, :jsx],
+     env: [{:dnssd, false},
+           {:metrics, [:packets, :request, :response, :service, :handler, :binding, :listener, :client]},
            {:default_protocol, :hello_proto_jsonrpc},
            {:transports, []},
            {:server_timeout, 10000},
@@ -29,7 +30,7 @@ defmodule Hello.Mixfile do
      {:ezmq,          github: "RoadRunnr/ezmq", branch: "fix-socket-crash"},
      {:jsx,           "~> 2.6.2"},
      {:msgpack,       github: "msgpack/msgpack-erlang", branch: "master"},
-     {:dnssd,         github: "benoitc/dnssd_erlang", branch: "master"},
+     {:dnssd,         github: "benoitc/dnssd_erlang", branch: "master", optional: true},
      {:meck,          "~> 0.8.2", override: true},
      {:exometer_core, github: "Feuerlabs/exometer_core", branch: "master"},
      {:edown,         github: "uwiger/edown", branch: "master", override: true}]
