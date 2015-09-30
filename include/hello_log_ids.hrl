@@ -88,3 +88,6 @@
 -define(LOGID61, {ab65930009164e7fb6419b615b4ae4b5, 4102}).
 -define(LOGID62, {bd81f08a8fc94502bcbd07975e952016, 4310}).
 -define(LOGID63, {c796ed5e01f0455fb09c42e0f04198c1, 4310}).
+
+%MESSAGE Ids and SATUS CODEs for optional starting dnssd 
+-define(LOGID64, {cde9a95372554e5fa65c76a9c62bf9d1, 4001}).

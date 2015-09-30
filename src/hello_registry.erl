@@ -185,10 +185,10 @@ do_dnss_register(App, Name, Port) ->
         _ -> ok
     end.
 
-dnss_register(App, Name, Port)
-  when is_list(App), is_list(Name), is_integer(Port) ->
-    do_dnss_register(list_to_binary(App), list_to_binary(Name), Port);
+dnss_register(App, Name, Port) when is_list(App), is_list(Name), is_integer(Port) ->
+    hello_lib:is_dnssd_started() andalso do_dnss_register(list_to_binary(App), list_to_binary(Name), Port);
 dnss_register(_, _, _) -> ok.
 
-dnssd_clean(Ref) when is_reference(Ref) -> dnssd:stop(Ref);
+dnssd_clean(Ref) when is_reference(Ref) -> 
+    hello_lib:is_dnssd_started() andalso dnssd:stop(Ref);
 dnssd_clean(_) -> ok.

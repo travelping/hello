@@ -147,9 +147,12 @@ validate_options([_ | R], Opts) ->
 validate_options([], Opts) ->
     {ok, Opts}.
 
-http_connect_url(#ex_uri{authority = #ex_uri_authority{host = Host}, path = [$/|Path]}) ->
-    dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>),
-    ok;
+http_connect_url(#ex_uri{authority = #ex_uri_authority{host = Host}, path = [$/|Path]} = URI) ->
+    case hello_lib:is_dnssd_started() of
+        true ->
+            dnssd:resolve(list_to_binary(Path), <<"_", (list_to_binary(Host))/binary, "._tcp.">>, <<"local.">>);
+        false -> URI
+    end;
 http_connect_url(URI) ->
     URI.
 

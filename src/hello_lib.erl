@@ -1,5 +1,5 @@
 -module(hello_lib).
--export([get_in/2, to_binary/1, wrap/1, get/2, get/3]).
+-export([get_in/2, to_binary/1, wrap/1, get/2, get/3, is_dnssd_started/0]).
 
 get_in(Map, Path) when is_list(Path) == false -> get_in(Map, Path);
 get_in(Value, []) -> Value;
@@ -23,3 +23,6 @@ to_binary(Term) -> unicode:characters_to_binary(io_lib:format("~p", [Term])).
 
 wrap(Requests) when is_list(Requests) -> Requests;
 wrap(Request) -> [Request].
+
+is_dnssd_started() ->
+    lists:member(dnssd, [App || {App, _, _} <- application:which_applications()]).
