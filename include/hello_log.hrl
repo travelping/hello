@@ -51,12 +51,12 @@
                 [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
 
 -define(LOG_REQUEST_bad_request(CallbackModule, HandlerId, Request, Reason, LogId),
-    lager:info(lists:append(?REQ_TRACES(CallbackModule, HandlerId, Request, error, LogId), [{hello_error_reason, Reason}]),
+    lager:error(lists:append(?REQ_TRACES(CallbackModule, HandlerId, Request, error, LogId), [{hello_error_reason, Reason}]),
                "Hello handler with callback '~p' and service id '~p' dismissed bad request on method(s) '~p'.",
                [CallbackModule, HandlerId, hello_log:get_method(Request)])).
 
 -define(LOG_WARNING_reason(CallbackModule, HandlerId, Msg, Args, Reason, LogId),
-    lager:info(?DEFAULT_META([{hello_handler_callback, CallbackModule}, {hello_error_reason, Reason},
+    lager:error(?DEFAULT_META([{hello_handler_callback, CallbackModule}, {hello_error_reason, Reason},
                               {hello_service_id, HandlerId}], LogId), Msg, Args)).
 
 -define(LOG_DEBUG(Msg, Args, Meta, LogId), lager:debug(?DEFAULT_META(Meta, LogId), Msg, Args)).
