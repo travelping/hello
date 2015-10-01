@@ -74,7 +74,7 @@ init(URL) ->
             State = #state{socket = Socket, url = URL, encoded_url = EncUrl},
             {ok, State};
         {error, Error} ->
-            ?LOG_INFO("Hello ZeroMQ listener was unable to bind on '~p' because of reason '~p'.", [URL, Error],
+            ?LOG_ERROR("Hello ZeroMQ listener was unable to bind on '~p' because of reason '~p'.", [URL, Error],
                       [{hello_transport, zmtp}, {hello_transport_url, EncUrl}], ?LOGID47),
             {stop, Error}
     end.
@@ -91,7 +91,7 @@ handle_info({zmq, Socket, {Peer, [Signature, Msg]}}, State = #state{url = URL, s
     {noreply, State};
 
 handle_info({zmq, _Socket, {Peer, Msg}}, State) ->
-    ?LOG_INFO("Hello ZeroMQ listener received bad message '~p' from '~p'.", [Msg, Peer],
+    ?LOG_ERROR("Hello ZeroMQ listener received bad message '~p' from '~p'.", [Msg, Peer],
               gen_meta_fields(State), ?LOGID48),
     {noreply, State};
 

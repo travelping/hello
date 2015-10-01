@@ -47,7 +47,7 @@ init_transport(URL, Options) ->
             http_connect_url(URL),
             {ok, #http_state{url = ex_uri:encode(URL), scheme = URL#ex_uri.scheme, path = URL#ex_uri.path, options = ValOpts}};
         {error, Reason} ->
-            ?LOG_INFO("Hello http client invoked with invalid options. Terminated with reason '~p'.", [Reason],
+            ?LOG_ERROR("Hello http client invoked with invalid options. Terminated with reason '~p'.", [Reason],
                       [{hello_error_reason, {error, Reason, Options}}], ?LOGID39),
             {error, Reason}
     end.
@@ -111,7 +111,7 @@ http_send(Client, Request, Signarute, State = #http_state{url = URL, options = O
             Client ! {?INCOMING_MSG, {error, HttpCode, State}},
             exit(normal);
         {error, Reason} ->
-            ?LOG_INFO("Hello http client received an error after executing a request to '~p' with reason '~p'.", [URL, Reason],
+            ?LOG_ERROR("Hello http client received an error after executing a request to '~p' with reason '~p'.", [URL, Reason],
                       lists:append(gen_meta_fields(State), [{hello_error_reason, {{request, Request}, {error, Reason}}}]), ?LOGID42),
             Client ! {?INCOMING_MSG, {error, Reason, State}},
             exit(normal)

@@ -116,12 +116,12 @@ handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info({'EXIT', From, Reason}, Table) ->
-    ?LOG_INFO("Hello registry received 'EXIT' signal from monitored process '~p' with reason '~p'.", [From, Reason],
+    ?LOG_ERROR("Hello registry received 'EXIT' signal from monitored process '~p' with reason '~p'.", [From, Reason],
               [{hello_error_reason, {process_exit, Reason}}], ?LOGID51),
     {noreply, Table};
 handle_info({'DOWN', _MRef, process, Pid, Reason}, Table) ->
     Objects = ets:match(Table, {'$1', Pid, '_', '_'}),
-    ?LOG_INFO("Hello registry received 'DOWN' signal from monitored process '~p' with reason '~p'. Going to clean up associated processes '~p'.", 
+    ?LOG_ERROR("Hello registry received 'DOWN' signal from monitored process '~p' with reason '~p'. Going to clean up associated processes '~p'.", 
               [Pid, Reason, Objects], [{hello_error_reason, {process_down, Objects, Reason}}], ?LOGID52),
     spawn(fun() -> [down(Object)|| Object <- Objects] end),
     {noreply, Table};
@@ -152,7 +152,7 @@ register(Key, Pid, Data, Table) ->
             ?LOG_DEBUG("Hello registry is going to register process '~p' with key '~p' and data '~p'.", [Pid, Key, Data], [], ?LOGID54),
             bind(Key, Pid, Data, Table);
         false -> 
-            ?LOG_INFO("Hello registry attempted to register process '~p' with key '~p', but process is not alive.", [Pid, Key],
+            ?LOG_ERROR("Hello registry attempted to register process '~p' with key '~p', but process is not alive.", [Pid, Key],
                       [{hello_error_reason, {error, pid_not_alive}}], ?LOGID55),
             {error, pid_not_alive}
     end.

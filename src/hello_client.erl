@@ -162,13 +162,13 @@ handle_call({call, Call}, From, State = #client_state{protocol_mod = ProtocolMod
                 {ok, State2} -> {noreply, State2};
                 {ok, Reply, State2} -> {reply, Reply, State2};
                 {error, Reason, State2} ->
-                    ?LOG_INFO("Request from hello client '~p' on method(s) '~p' failed with reason '~p'.",
+                    ?LOG_ERROR("Request from hello client '~p' on method(s) '~p' failed with reason '~p'.",
                         [ClientId, hello_log:get_method(Request), Reason], gen_meta_fields(Request, State2), ?LOGID00),
                     {reply, Reason, State2}
             end;
         {error, Reason, NewProtocolState} ->
             NewState = State#client_state{protocol_state = NewProtocolState},
-            ?LOG_INFO("Creation of request from hello client '~p' failed for a call with reason '~p'.",
+            ?LOG_ERROR("Creation of request from hello client '~p' failed for a call with reason '~p'.",
                         [ClientId, Reason], gen_meta_fields(Call, NewState), ?LOGID01),
             {reply, Reason, NewState}
     end;
@@ -183,7 +183,7 @@ handle_info(?PING, State = #client_state{waiting_for_pong = true, keep_alive_int
                                          transport_opts = TransportOpts, protocol_opts = ProtocolOpts,
                                          transport_state = TransportState, client_opts = ClientOpts, 
                                          last_pong = LastPong, id = ClientId}) ->
-    ?LOG_INFO("Error in hello client '~p': There is no PONG answer on PING for '~p' msec. Connection will be reestablished.",
+    ?LOG_ERROR("Error in hello client '~p': There is no PONG answer on PING for '~p' msec. Connection will be reestablished.",
                [ClientId, last_pong(LastPong, KeepAliveInterval)], gen_meta_fields(State), ?LOGID20),
     TransportModule:terminate_transport(lost_connection, TransportState),
     case init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts, State) of
@@ -253,12 +253,12 @@ init_transport(TransportModule, URIRec, TransportOpts, ProtocolOpts, ClientOpts,
                                           waiting_for_pong = false},
                     evaluate_client_options(ClientOpts, State);
                 {error, Reason} ->
-                    ?LOG_INFO("Hello client '~p' is unable to initialize protocol because of reason '~p'.",
+                    ?LOG_ERROR("Hello client '~p' is unable to initialize protocol because of reason '~p'.",
                               [ClientId, Reason], ?HELLO_CLIENT_DEFAULT_META(ClientId, Url), ?LOGID03),
                     {stop, Reason}
             end;
         {error, Reason} ->
-            ?LOG_INFO("Hello client '~p' unable to initialize transport because of reason '~p'.",
+            ?LOG_ERROR("Hello client '~p' unable to initialize transport because of reason '~p'.",
                       [ClientId, Reason], ?HELLO_CLIENT_DEFAULT_META(ClientId, Url), ?LOGID04),
             {stop, Reason}
     end.
@@ -313,7 +313,7 @@ incoming_message({ok, Signature, BinResponse, NewTransportState},
             Responses2 = Responses1 -- NotificationResponses,
             request_reply(Responses2, AsyncMap, State#client_state{transport_state = NewTransportState});
         {error, Reason} ->
-            ?LOG_INFO("Hello client '~p' failed to decode response with reason '~p'.", [ClientId, Reason],
+            ?LOG_ERROR("Hello client '~p' failed to decode response with reason '~p'.", [ClientId, Reason],
                       gen_meta_fields(BinResponse, State), ?LOGID11),
             {noreply, State#client_state{transport_state = NewTransportState}};
         ignore ->
@@ -341,12 +341,12 @@ outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod
                                gen_meta_fields(Request, State), ?LOGID14),
                     maybe_noreply(NewTransportState, Request, From, AsyncMap, State);
                 {error, Reason, NewTransportState} ->
-                    ?LOG_INFO("Hello client '~p' attempted to send binary request on method(s) '~p' but failed with reason '~p'.",
+                    ?LOG_ERROR("Hello client '~p' attempted to send binary request on method(s) '~p' but failed with reason '~p'.",
                               [ClientId, hello_log:get_method(Request), Reason], gen_meta_fields(BinRequest, State), ?LOGID15),
                     {error, Reason, State#client_state{transport_state = NewTransportState}}
             end;
         {error, Reason, State} ->
-            ?LOG_INFO("Hello client '~p' attempted to encode request on method '~p' but failed with reason '~p'.",
+            ?LOG_ERROR("Hello client '~p' attempted to encode request on method '~p' but failed with reason '~p'.",
                       [ClientId, hello_log:get_method(Request), Reason], gen_meta_fields(Request, State), ?LOGID16),
             {error, Reason, State};
         ignore ->
@@ -401,7 +401,7 @@ request_reply(Response, AsyncMap, State) ->
         {ok, NewAsyncMap} ->
             {noreply, State#client_state{async_request_map = NewAsyncMap}};
         {not_found, RequestId, NewAsyncMap} ->
-            ?LOG_INFO("Hello client '~p' got response for non-existing request id '~p'.",
+            ?LOG_WARNING("Hello client '~p' got response for non-existing request id '~p'.",
                       [RequestId], gen_meta_fields(Response, State), ?LOGID19),
             {noreply, State#client_state{async_request_map = NewAsyncMap}}
     end.
