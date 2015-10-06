@@ -32,8 +32,8 @@
 
 -define(LOG_REQUEST_request_stop(CallbackModule, HandlerId, Request, Response, Reason, Time, LogId),
     lager:info(lists:append(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, Response, LogId), [{hello_error_reason, Reason}]),
-               "Hello handler with callback '~p' and service id '~p' answered synced request on method(s) '~p' and stopped in '~w' ms.",
-               [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
+               "~p ~p / ~p : answered synced request.",
+               [node(), hello_log:stringify(CallbackModule), hello_log:get_method(Request)])).
 
 -define(LOG_REQUEST_request_no_reply(CallbackModule, HandlerId, Request, Time, LogId),
     lager:debug(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, LogId),

@@ -35,7 +35,7 @@ format([ Request = #request{} | Requests]) ->
     "[ " ++ format(Request) ++ " ], " ++ format(Requests);
 format(#request{id = ID, method = Method, args = Args}) ->
     lists:append(["ID: ", stringify(ID), "; METHOD: ", stringify(Method),
-                  "; ARGS: ", stringify(Args)]);
+                  "; ARGS: ", prettify_json(Args)]);
 
 %% -- response formatting; first for record responses, then for arbitrary data blobs
 format([ Response = #response{} ]) ->
@@ -43,7 +43,7 @@ format([ Response = #response{} ]) ->
 format([ Response = #response{} | Responses]) ->
     "[ " ++ format(Response) ++ " ], " ++ format(Responses);
 format(#response{id = ID, response = CallbackResponse}) ->
-    lists:append(["ID: ", stringify(ID), "; RESPONSE: ", stringify(CallbackResponse)]);
+    lists:append(["ID: ", stringify(ID), "; RESPONSE: ", prettify_json(CallbackResponse)]);
 format(ignore) -> ["ignored"];
 format({ok, CallbackResponse}) -> stringify(CallbackResponse);
 format(Msg) -> stringify(Msg).
@@ -64,5 +64,16 @@ get_method([ #request{method = Method} | Requests]) ->
 get_method(#request{method = Method}) ->
     stringify(Method).
 
-stringify(Term)  ->
+stringify(Term) when is_binary(Term)  ->
+    stringify(binary_to_list(Term));
+stringify(Term) ->
     lists:flatten(io_lib:format("~p", [Term])).
+
+prettify_json(Term) ->
+    try
+        PrettyJson = jsx:format(jsx:encode(Term), [{space, 1}]),
+        binary_to_list(PrettyJson)        
+    catch
+        _:_ ->
+            stringify(Term)
+    end.
