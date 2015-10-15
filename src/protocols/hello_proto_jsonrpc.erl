@@ -43,7 +43,7 @@ init_client(Proplist) ->
         true ->
             {ok, #jsonrpc_info{ reqid = 0, version = JsonRPCVersion} };
         _ ->
-            ?LOG_ERROR("Hello client invoked with invalid JSONRPC version '~p'.", [JsonRPCVersion], [], ?LOGID61),
+            ?LOG_ERROR("Hello client invoked with invalid JSONRPC version ~p.", [JsonRPCVersion], [], ?LOGID61),
             {error, invalid_json_version}
     end.
 
@@ -75,8 +75,8 @@ decode(Binary, _Opts, Type) ->
         end
     catch
         Error:Reason ->
-            ?LOG_ERROR("Hello proto unable to decode binary request with error '~p'.", [Error],
-                        [{hello_error_reason, {Error, Reason, erlang:get_stacktrace()}}], ?LOGID62),
+            ?LOG_ERROR("Hello proto unable to decode binary request with error ~p.", [Error],
+                       [{hello_error_reason, {Error, Reason, erlang:get_stacktrace()}}], ?LOGID62),
             {error, #error{code = parse_error}}
     end.
 
@@ -127,7 +127,7 @@ decode_single(Object, Type) ->
     catch
         throw:{_Invalid, #jsonrpc_info{reqid = null}, _Reason} -> %% just a notification, no need to tell anyone
             ?LOG_ERROR("Hello proto attempted to decode invalid notification object.", [],
-                        [{hello_error_reason, {invalid_notification, Object}}], ?LOGID63),
+                       [{hello_error_reason, {invalid_notification, Object}}], ?LOGID63),
             ignore;
         throw:{invalid, Info1, Reason} -> %% an invalid response, this should never happen
             Error =  build_error(#error{code = invalid(Type), message = Reason}),

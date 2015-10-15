@@ -64,5 +64,9 @@ get_method([ #request{method = Method} | Requests]) ->
 get_method(#request{method = Method}) ->
     stringify(Method).
 
-stringify(Term)  ->
-    lists:flatten(io_lib:format("~p", [Term])).
+stringify(Term) when is_binary(Term) ->
+    stringify(binary_to_list(Term));
+stringify(Term) ->
+    String = lists:flatten(io_lib:format("~p", [Term])),
+    % remove quotes to enhance readability
+    re:replace(String, "\"", "", [global,{return,list}]).
