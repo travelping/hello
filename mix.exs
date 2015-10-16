@@ -23,6 +23,7 @@ defmodule Hello.Mixfile do
 
   defp deps(_) do
     [{:lager,         "~> 2.1.1", override: true},
+     {:goldrush,      github: "DeadZen/goldrush", tag: "0.1.6", override: true},
      {:cowboy,        "~> 1.0.2"},
      {:yang,          github: "travelping/yang", branch: "master"},
      {:hackney,       "~> 1.3.2"},
