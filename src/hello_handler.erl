@@ -158,8 +158,8 @@ handle_cast({async_reply, ReqContext, Result}, State = #state{id = Id, async_rep
             send(ReqContext, {ok, Result}),
             {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}};
         none ->
-            ?LOG_WARNING_reason(Mod, Id, "Hello handler with callback module '~p' and service id '~p' got unknown async reply.",
-                                [Mod, Id], {unknown_async_reply, {ReqRef, Result}}, ?LOGID26),
+            ?LOG_WARNING_reason(Mod, Id, "~p : received unknown async reply",
+                                [Mod], {unknown_async_reply, {ReqRef, Result}}, ?LOGID26),
             {noreply, State}
     end.
 
@@ -170,13 +170,12 @@ handle_call(_Call, _From, State) ->
 %% @hidden
 handle_info({?IDLE_TIMEOUT_MSG, TimerRef}, State = #state{timer = Timer, id = Id, mod = Mod})
     when Timer#timer.idle_timeout_ref == TimerRef ->
-    ?LOG_WARNING_reason(Mod, Id, "Hello handler with callback module '~p' and service id '~p' is going to stop due to idle timeout.",
-                        [Mod, Id], {error, idle_timeout}, ?LOGID27),
+    ?LOG_WARNING_reason(Mod, Id, "~p : stopping due to idle timeout", [Mod], {error, idle_timeout}, ?LOGID27),
     NewTimer = Timer#timer{stopped_because_idle = true},
     {stop, normal, State#state{timer = NewTimer}};
 handle_info({?IDLE_TIMEOUT_MSG, OtherRef}, State = #state{mod = Mod, id = Id}) ->
-    ?LOG_WARNING_reason(Mod, Id, "Hello handler with callback module '~p' and service id '~p' received unknown idle timeout message.",
-                        [Mod, Id], {error, {unknown_timeout_message, OtherRef}}, ?LOGID28),
+    ?LOG_WARNING_reason(Mod, Id, "~p : received unknown idle timeout message", [Mod], 
+                        {error, {unknown_timeout_message, OtherRef}}, ?LOGID28),
     {noreply, State};
 handle_info({?INCOMING_MSG, Request = #request{context = Context}}, State0) ->
     State = reset_idle_timeout(State0),

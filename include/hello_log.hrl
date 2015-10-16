@@ -22,42 +22,37 @@
 
 -define(LOG_REQUEST_async_reply(CallbackModule, HandlerId, Request, Response, LogId),
     lager:debug(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, Response, LogId),
-                "Hello handler with callback '~p' and service id '~p' answered async request on method(s) '~p'.",
-                [CallbackModule, HandlerId, hello_log:get_method(Request)])).
+                "~p / ~p : received request", [CallbackModule, hello_log:get_method(Request)])).
 
 -define(LOG_REQUEST_request(CallbackModule, HandlerId, Request, Response, Time, LogId),
     lager:debug(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, Response, LogId),
-                "Hello handler with callback '~p' and service id '~p' answered synced request on method(s) '~p' in '~w' ms.",
-                [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
+                "~p / ~p : received request [~w ms]", [CallbackModule, hello_log:get_method(Request), Time])).
 
 -define(LOG_REQUEST_request_stop(CallbackModule, HandlerId, Request, Response, Reason, Time, LogId),
     lager:info(lists:append(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, Response, LogId), [{hello_error_reason, Reason}]),
-               "Hello handler with callback '~p' and service id '~p' answered synced request on method(s) '~p' and stopped in '~w' ms.",
-               [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
+               "~p / ~p : received request [~w ms]", [CallbackModule, hello_log:get_method(Request), Time])).
 
 -define(LOG_REQUEST_request_no_reply(CallbackModule, HandlerId, Request, Time, LogId),
     lager:debug(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, LogId),
-                "Hello handler with callback '~p' and service id '~p' received async request  on method(s) '~p' in ~w ms.",
-                [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
+                "~p / ~p : received request [~w ms]", [CallbackModule, hello_log:get_method(Request), Time])).
 
 -define(LOG_REQUEST_request_stop_no_reply(CallbackModule, HandlerId, Request, Time, LogId),
     lager:debug(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, LogId),
-                "Hello Handler with callback '~p' and service id '~p' received async request on method(s) '~p' and stopped with reason normal in '~w' ms.",
-                [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
+                "~p / ~p : received request [~w ms]", [CallbackModule, hello_log:get_method(Request), Time])).
 
 -define(LOG_REQUEST_request_stop_no_reply(CallbackModule, HandlerId, Request, Reason, Time, LogId),
     lager:debug(lists:append(?REQ_TRACES(CallbackModule, HandlerId, Request, ok, LogId), [{hello_error_reason, Reason}]),
-                "Hello handler with callback '~p' and service id '~p' received async request on method(s) '~p' and stopped in '~w' ms.",
-                [CallbackModule, HandlerId, hello_log:get_method(Request), Time])).
+                "~p / ~p : received request [~w ms]", [CallbackModule, hello_log:get_method(Request), Time])).
 
 -define(LOG_REQUEST_bad_request(CallbackModule, HandlerId, Request, Reason, LogId),
     lager:error(lists:append(?REQ_TRACES(CallbackModule, HandlerId, Request, error, LogId), [{hello_error_reason, Reason}]),
-               "Hello handler with callback '~p' and service id '~p' dismissed bad request on method(s) '~p'.",
-               [CallbackModule, HandlerId, hello_log:get_method(Request)])).
+                "~p / ~p : received bad request", [CallbackModule, hello_log:get_method(Request)])).
 
 -define(LOG_WARNING_reason(CallbackModule, HandlerId, Msg, Args, Reason, LogId),
-    lager:error(?DEFAULT_META([{hello_handler_callback, CallbackModule}, {hello_error_reason, Reason},
-                              {hello_service_id, HandlerId}], LogId), Msg, Args)).
+    lager:error(?DEFAULT_META([{hello_handler_callback, CallbackModule},
+                               {hello_error_reason, Reason},
+                               {hello_service_id, HandlerId}],
+                              LogId), Msg, Args)).
 
 -define(LOG_DEBUG(Msg, Args, Meta, LogId), lager:debug(?DEFAULT_META(Meta, LogId), Msg, Args)).
 -define(LOG_INFO(Msg, Args, Meta, LogId), lager:info(?DEFAULT_META(Meta, LogId), Msg, Args)).
