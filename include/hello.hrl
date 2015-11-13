@@ -4,6 +4,7 @@
 %% ----------------------------------------------------------------------------------------------------
 %% -- these records are used for abstraction of request and responses independent of the used protocol
 -record(context, {
+    listener_id             :: term(),
     connection_pid          :: pid(),
     transport               :: module(),
     transport_pid           :: pid(),

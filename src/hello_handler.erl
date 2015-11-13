@@ -144,6 +144,7 @@ handle_cast({request, Request = #request{context = Context}},
     catch
         Error:Reason ->
             send(Context, {error, {server_error, "handler error", undefined}}),
+            hello_metrics:error_request(Context#context.listener_id),
             ?LOG_REQUEST_bad_request(Mod, Id, Request, {Error, Reason, erlang:get_stacktrace()}, ?LOGID24),
             {stop, normal, State}
     end;
@@ -208,44 +209,53 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- internal functions
 %% @hidden
 do_request(Request = #request{context = Context},
-            State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState, id = Id}) ->
+           State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState, id = Id}) ->
     ReqRef = make_ref(),
     HandlerPid = self(),
     Context1 = Context#context{req_ref = ReqRef, handler_pid = HandlerPid},
+    ListenerId = Context1#context.listener_id,
     case hello_validate:validate_request(Request, Mod) of
         {ok, ValMethod, ValParams} ->
             {Time, Value} = timer:tc(Mod, handle_request, [Context1, ValMethod, ValParams, HandlerState]),
             TimeMS = Time / 1000, % in ms
-            hello_metrics:handle_request_time(TimeMS),
+            hello_metrics:handle_request_time(ListenerId, TimeMS),
             case Value of
                 {reply, Response, NewHandlerState} ->
                     ?LOG_REQUEST_request(Mod, Id, Request, Response, TimeMS, ?LOGID29),
                     send(Context1, Response),
+                    hello_metrics:ok_request(ListenerId),
                     {noreply, State#state{state = NewHandlerState}};
                 {noreply, NewModState} ->
                     ?LOG_REQUEST_request_no_reply(Mod, Id, Request, TimeMS, ?LOGID30),
+                    hello_metrics:ok_request(ListenerId),
                     {noreply, State#state{state = NewModState, async_reply_map = gb_trees:enter(ReqRef, Request, AsyncMap)}};
                 {stop, Reason, Response, NewModState} ->
                     ?LOG_REQUEST_request_stop(Mod, Id, Request, Response, Reason, TimeMS, ?LOGID31),
                     send(Context1, Response),
+                    hello_metrics:ok_request(ListenerId),
                     {stop, Reason, State#state{state = NewModState}};
                 {stop, Reason, NewModState} ->
                     ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Request, Reason, TimeMS, ?LOGID32),
+                    hello_metrics:ok_request(ListenerId),
                     {stop, Reason, State#state{mod = NewModState}};
                 {stop, NewModState} ->
                     ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Request, TimeMS, ?LOGID33),
+                    hello_metrics:ok_request(ListenerId),
                     {stop, State#state{mod=NewModState}};
                 {ignore, NewModState} ->
                     ?LOG_REQUEST_request(Mod, Id, Request, ignore, TimeMS, ?LOGID29),
+                    hello_metrics:ok_request(ListenerId),
                     {noreply, State#state{state = NewModState}}
             end;
         {error, {_Code, _Message, _Data} = Reason} ->
             ?LOG_REQUEST_bad_request(Mod, Id, Request, Reason, ?LOGID24),
             send(Context1,  {error, Reason}),
+            hello_metrics:error_request(ListenerId),
             {stop, normal, State};
         _FalseAnswer ->
             ?LOG_REQUEST_bad_request(Mod, Id, Request, _FalseAnswer, ?LOGID24),
             send(Context1, {error, {server_error, "validation returned wrong error format", null}}),
+            hello_metrics:error_request(ListenerId),
             {stop, normal, State}
     end.
 

@@ -25,7 +25,7 @@
 
 -export([start/2, stop/1, start/0]).
 -export([start_service/2, stop_service/1,
-         start_listener/1, start_listener/2, start_listener/5,
+         start_listener/1, start_listener/2, start_listener/5, start_listener/6,
          stop_listener/1, call_service/2, call_service/3]).
 -export([bind_handler/3, bind/2, bind/3, bind/7, unbind/2]).
 
@@ -53,8 +53,7 @@ start() ->
 start(_Type, _StartArgs) ->
     ok = start_dnssd(),
     {ok, Supervisor} = hello_supervisor:start_link(),
-    {ok, Metrics} = application:get_env(hello, metrics),
-    hello_metrics:start_subscriptions(Metrics),
+    hello_metrics:start_subscriptions(),
     {ok, Supervisor, undefined}.
 
 % @doc Callback for application behaviour.
@@ -131,8 +130,14 @@ start_listener(URL, TransportOpts) ->
                      ProtocolOpts :: list(), RouterMod :: module()) ->
     {ok, listener_ref()} | {error, Reason :: term()}.
 start_listener(URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
+    start_listener(undefined, URL, TransportOpts, Protocol, ProtocolOpts, RouterMod).
+    
+-spec start_listener(Name :: term(), URL :: url(), TransportOpts :: list(), Protocol :: module(),
+                     ProtocolOpts :: list(), RouterMod :: module()) ->
+    {ok, listener_ref()} | {error, Reason :: term()}.
+start_listener(Name, URL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
     on_ex_uri(URL, fun(ExUriURL) ->
-                           hello_listener:start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod)
+                           hello_listener:start(Name, ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod)
                    end).
 
 -spec stop_listener(URL :: url()) -> ok | {error, Reason :: term()}.

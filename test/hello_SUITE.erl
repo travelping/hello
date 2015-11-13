@@ -47,8 +47,8 @@ keep_alive(_Config) ->
     meck:new(hello_client, [passthrough]),
     true = meck:validate(hello_client),
     ok = meck:expect(hello_client, handle_internal, fun(Message, State) -> ct:log("got pong"), meck:passthrough([Message, State]) end),
-    exometer:reset([hello, packet_in]),
-    true = (internal_req_counter() == 0),
+    [exometer:reset([hello, server, Name, packets_in, per_sec]) || {Name, _} <- [?HTTP, ?ZMQ_TCP]],
+    [not_found = internal_req_counter(Name) || {Name, _} <- [?HTTP, ?ZMQ_TCP]],
     {ZMQUrl, ZMQTransportOpts} = ?ZMQ_TCP,
     {ok, ZMQClient} = hello_client:start_supervised(ZMQUrl ++ "/test", ZMQTransportOpts, 
                                                     [{protocol, hello_proto_jsonrpc}], [{keep_alive_interval, 200}] ),
@@ -56,8 +56,11 @@ keep_alive(_Config) ->
     {ok, HTTPClient} = hello_client:start_supervised(HTTPUrl ++ "/test", HTTPTransportOpts, 
                                                      [{protocol, hello_proto_jsonrpc}], [{keep_alive_interval, 200}] ),
     timer:sleep(500), %% lets wait for some pongs, should be around 3-4; look them up in the ct log
-    true = (packet_in_counter() > 0),
-    true = (internal_req_counter() > 0),
+    ct:pal("~p", [exometer:get_values([hello, server])]),
+    [begin 
+         true = (packets_in_counter(Name) > 0),
+         found = internal_req_counter(Name)
+     end || {Name, _} <- [?HTTP, ?ZMQ_TCP]],
     {_, [Arg], _} = ?REQ11,
     {ok, Arg} = hello_client:call(ZMQClient, ?REQ11),
     {ok, Arg} = hello_client:call(HTTPClient, ?REQ11),
@@ -106,19 +109,21 @@ bindings_counter() ->
     {ok, Bindings} = exometer:get_value([hello, bindings]),
     proplists:get_value(value, Bindings).
 
-packet_in_counter() ->
-    {ok, PacketIn} = exometer:get_value([hello, packet_in]),
-    proplists:get_value(value, PacketIn).
+packets_in_counter(Name0) ->
+    Name = list_to_atom(Name0),
+    {ok, PacketIn} = exometer:get_value([hello, server, Name, packets_in, per_sec]),
+    proplists:get_value(one, PacketIn).
 
-internal_req_counter() ->
-    case exometer:get_value([hello, request, internal]) of
-        {ok, InternalReq} -> proplists:get_value(value, InternalReq);
-        {error, not_found} -> 0
+internal_req_counter(Name0) ->
+    Name = list_to_atom(Name0),
+    case exometer:get_value([hello, server, Name, requests, internal, per_sec]) of
+        {ok, InternalReq} -> found;
+        {error, not_found} -> not_found
     end.
 
 bind_url({Url, _TransportOpts}, Protocol) ->
     spawn(fun() ->
-        hello:start_listener(Url, [], Protocol, [], hello_router),
+        hello:start_listener(Url, Url, [], Protocol, [], hello_router),
         [ok = hello:bind(Url, Handler, proplists:get_value(Handler, ?HANDLER_ARGS)) || Handler <- ?CALLBACK_MODS],
         receive ok -> ok end
     end).

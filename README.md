@@ -126,6 +126,29 @@ To write all requests for a module hello_handler_example to a file use:
         ]}
     ]}
 
+# Metrics
+
+Hello collects the following metrics via exometer_core and reports it to the each registered reporters: 
+
+| Exometer ID                                       | Type      | Data Types | Report Time |
+|---------------------------------------------------|-----------|------------|-------------|
+| [hello, server, Name, packets_in, size]           | histogram | max, mean  |   1000      |
+| [hello, server, Name, packets_in, per_sec]        | spiral    | one        |   1000      |
+| [hello, server, Name, packets_out, size]          | histogram | max, mean  |   1000      |
+| [hello, server, Name, packets_out, per_sec]       | spiral    | one        |   1000      |
+| [hello, server, Name, requests, ReqType, per_sec] | spiral    | one        |   1000      |
+| [hello, server, Name, request, handle_time]       | histogram | max, mean  |   1000      |
+| [hello, client, Name, requests, ReqType, per_sec] | spiral    | one        |   1000      |
+| [hello, client, Name, request, handle_time]       | histogram | max, mean  |   1000      |
+| [hello, client, Name, ping_pong_latency]          | histogram | max, mean  |   1000      |
+| [hello, services]                                 | counter   | value      |   2000      |
+| [hello, bindings]                                 | counter   | value      |   2000      |
+| [hello, listeners]                                | counter   | value      |   2000      |
+| [hello, clients]                                  | counter   | value      |   2000      |
+
+Name - server or client name
+ReqType = [ok, error, internal]
+
 # Elixir
 
 You can use hello with Elixir environment via `Hello` and `Hello.Client` modules which are delegating `:hello` and `:hello_client`
