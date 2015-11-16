@@ -1,5 +1,5 @@
 -module(hello_listener).
--export([start/5, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, handle_incoming_message/4]).
+-export([start/5, start/6, stop/1, lookup/1, port/1, all/0, async_incoming_message/4, handle_incoming_message/4]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
 -include("hello.hrl").
@@ -22,6 +22,7 @@
 %% --------------------------------------------------------------------------------
 %% -- start and stop a listener
 -record(listener, {
+    id :: term(),
     exuri :: #ex_uri{},
     ref :: listener_ref(),
     protocol :: protocol(),
@@ -30,15 +31,20 @@
 }).
 
 start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
+    start(undefined, ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod).
+
+start(Id, ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
     case lookup(ExUriURL) of
         {error, not_found} ->
             case start1(ExUriURL, TransportOpts) of
                 {ok, ListenerRef} ->
-                    ListenerInfo = #listener{ref = ListenerRef,
+                    ListenerInfo = #listener{id = Id,
+                                             ref = ListenerRef,
                                              exuri = ExUriURL,
                                              protocol = Protocol,
                                              protocol_opts = ProtocolOpts,
                                              router = RouterMod},
+                    hello_metrics:subscribe_server(Id),
                     hello_registry:register_link({listener, ExUriURL}, self(), ListenerInfo),
                     {ok, ListenerRef};
                 {error, Reason} ->
@@ -51,8 +57,9 @@ start(ExUriURL, TransportOpts, Protocol, ProtocolOpts, RouterMod) ->
 stop(ExUriURL = #ex_uri{scheme = Scheme}) ->
     TransportMod = transport_module(Scheme),
     case lookup(ExUriURL) of
-        {ok, _, #listener{ref = ListenerRef}} ->
+        {ok, _, #listener{id = Id, ref = ListenerRef}} ->
             hello_registry:unregister_link({listener, ExUriURL}),
+            hello_metrics:unsubscribe_server(Id),
             case TransportMod:listener_termination(ExUriURL, ListenerRef) of
                 child -> hello_listener_supervisor:stop_child(TransportMod, ExUriURL);
                 _     -> ok
@@ -81,11 +88,11 @@ async_incoming_message(Context, ExUriURL, Signarute, Binary) ->
 handle_incoming_message(Context, ExUriURL, Signature, [Binary]) ->
     handle_incoming_message(Context, ExUriURL, Signature, Binary);
 handle_incoming_message(Context, ExUriURL, Signature, Binary) ->
-    hello_metrics:packet_in(size(Binary)),
-    {ok, _, #listener{protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
-    case hello_proto:handle_incoming_message(Context, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signature, Binary) of
+    {ok, _, #listener{id = Id, protocol = ProtocolMod, protocol_opts = ProtocolOpts, router = Router}} = lookup(ExUriURL),
+    hello_metrics:packet_in(Id, size(Binary)),
+    case hello_proto:handle_incoming_message(Context#context{listener_id = Id}, ProtocolMod, ProtocolOpts, Router, ExUriURL, Signature, Binary) of
         {ok, BinResp} ->
-            hello_metrics:packet_out(size(BinResp)),
+            hello_metrics:packet_out(Id, size(BinResp)),
             % for backward compatibility we should to send Signature that we received on listener
             send(Signature, BinResp, Context);
             % when we will convinced that there aren't clients with old code we will start to send Signature from protocol
