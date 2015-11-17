@@ -3,6 +3,7 @@ defmodule Hello do
       start_listener(uri),
       start_listener(uri, trans_opts),
       start_listener(uri, trans_opts, protocol, proto_opts, router_mod),
+      start_listener(name, uri, trans_opts, protocol, proto_opts, router_mod),
 
       stop_listener(uri),
 
