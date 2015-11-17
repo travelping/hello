@@ -3,6 +3,11 @@ hello
 
 JSON-RPC API toolkit
 
+Version 3.2.0 - 17 Nov 2015
+---------------------------
+* dnssd is optional now and disabled by default
+* new server and client metrics
+
 Version 3.1.0 - 17 Sep 2015
 ---------------------------
 * Elixir wrappers for hello and hello_client
