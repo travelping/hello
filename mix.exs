@@ -26,7 +26,7 @@ defmodule Hello.Mixfile do
      {:goldrush,      github: "DeadZen/goldrush", tag: "0.1.6", override: true},
      {:cowboy,        "~> 1.0.2"},
      {:yang,          github: "travelping/yang", branch: "master"},
-     {:hackney,       "~> 1.3.2"},
+     {:hackney,       "~> 1.4.4"},
      {:ex_uri,        github: "heroku/ex_uri", branch: "master"},
      {:ezmq,          github: "RoadRunnr/ezmq", branch: "fix-socket-crash"},
      {:jsx,           "~> 2.6.2"},
