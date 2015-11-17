@@ -13,7 +13,7 @@ defmodule Hello.Mixfile do
   def application do
     [applications: [:lager, :exometer_core, :cowboy, :ex_uri, :ezmq, :hackney, :jsx],
      env: [{:dnssd, false},
-           {:metrics, [:packets, :request, :response, :service, :handler, :binding, :listener, :client]},
+           {:metrics, [:client, :server, :common]},
            {:default_protocol, :hello_proto_jsonrpc},
            {:transports, []},
            {:server_timeout, 10000},
