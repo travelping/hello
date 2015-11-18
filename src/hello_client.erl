@@ -294,7 +294,7 @@ evaluate_client_options(ClientOpts, State0) ->
             {ok, State1};
         KeepAliveInterval > 0 ->
             {ok, TimerRef} = timer:send_after(KeepAliveInterval, self(), ?PING),
-            State1 = State#client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef, id = ClientId},
+            State1 = State#client_state{keep_alive_interval = KeepAliveInterval, keep_alive_ref = TimerRef, id = ClientId, last_pong = os:timestamp()},
             ?LOG_DEBUG("~p : initialized successfully with keep alive", [ClientId], gen_meta_fields(State1), ?LOGID06),
             {ok, State1}
     end.
