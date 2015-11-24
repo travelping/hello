@@ -197,8 +197,10 @@
 #### 5600
 
 * ___Messages___:
-  * [bb0ea6d2b9c74a78afa724889ceee0b5] Hello registry received @EXIT@ signal from monitored process @PID@ with reason @REASON@.
-  * [da5cd3be4435462dafff47b1bbc34a62] Hello registry received @EXIT@ signal from monitored process @PID@ with reason @REASON@. Going to clean up associated processes @PIDS@.
+  * [aca4e83479364c4cb779bcc2be1a810b] Hello registry : Received @EXIT@ from process @PID@ with reason @REASON@.
+  * [bb0ea6d2b9c74a78afa724889ceee0b5] Hello registry : Received @EXIT@ from process @PID@ with reason 'normal'.
+  * [d8f19a4f217f4a2f958f4bc3ddffaa0d] Hello registry : Received @EXIT@ from process @PID@ with reason 'normal'.
+  * [da5cd3be4435462dafff47b1bbc34a62] Hello registry : Received @EXIT@ from process @PID@ with reason @REASON@. Cleaning up associated processes @PIDS@.
   * [ab5f921ed6e7488293241dc27eaf102e] Hello registry attempted to register process @PID@ with key @KEY@, but process is not alive.
 * ___Explanation___: Hello registry noticed problems in registering or monitoring processes.
 * ___Level___: info

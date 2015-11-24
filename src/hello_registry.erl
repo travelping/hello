@@ -115,14 +115,24 @@ handle_call({unregister, Key}, _From, Table) ->
 handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
+handle_info({'EXIT', From, normal}, Table) ->
+    ?LOG_DEBUG("Hello registry : Received 'EXIT' from process ~p with reason 'normal'.", [From],
+               [{hello_error_reason, {process_exit, normal}}], ?LOGID51),
+    {noreply, Table};
 handle_info({'EXIT', From, Reason}, Table) ->
-    ?LOG_ERROR("Hello registry : Received 'EXIT' signal from monitored process ~p with reason ~p.", [From, Reason],
-               [{hello_error_reason, {process_exit, Reason}}], ?LOGID51),
+    ?LOG_ERROR("Hello registry : Received 'EXIT' from process ~p with reason ~p.", [From, Reason],
+               [{hello_error_reason, {process_exit, Reason}}], ?LOGID66),
     {noreply, Table};
 handle_info({'DOWN', _MRef, process, Pid, Reason}, Table) ->
     Objects = ets:match(Table, {'$1', Pid, '_', '_'}),
-    ?LOG_ERROR("Hello registry : Received 'DOWN' signal from monitored process ~p with reason ~p. Going to clean up associated processes ~p.", 
-               [Pid, Reason, Objects], [{hello_error_reason, {process_down, Objects, Reason}}], ?LOGID52),
+    case Reason of
+        normal ->
+            ?LOG_DEBUG("Hello registry : Received 'DOWN' from process ~p with reason 'normal'.",
+                       [Pid], [{hello_error_reason, {process_down, Objects, Reason}}], ?LOGID65);
+        _      ->
+            ?LOG_ERROR("Hello registry : Received 'DOWN' from process ~p with reason ~p. Cleaning up associated processes ~p.",
+                       [Pid, Reason, Objects], [{hello_error_reason, {process_down, Objects, Reason}}], ?LOGID52)
+    end,
     spawn(fun() -> [down(Object)|| Object <- Objects] end),
     {noreply, Table};
 handle_info({dnssd, _Ref, Msg}, State) ->
