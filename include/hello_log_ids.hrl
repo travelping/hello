@@ -76,6 +76,8 @@
 -define(LOGID55, {ab5f921ed6e7488293241dc27eaf102e, 5600}).
 -define(LOGID56, {b5886b31a45d422bb02422aaf072797b, 5500}).
 -define(LOGID57, {af5e3e79776642e4851709b58e7ea790, 2400}).
+-define(LOGID65, {d8f19a4f217f4a2f958f4bc3ddffaa0d, 5600}).
+-define(LOGID66, {aca4e83479364c4cb779bcc2be1a810b, 5600}).
 
 %MESSAGE IDs and SATUS CODEs for hello_service
 -define(LOGID58, {eda0efbe7f6d490490e00ae4055629d2, 5400}).
