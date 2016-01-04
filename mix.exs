@@ -30,7 +30,7 @@ defmodule Hello.Mixfile do
      {:ex_uri,        github: "heroku/ex_uri", branch: "master"},
      {:ezmq,          github: "RoadRunnr/ezmq", branch: "fix-socket-crash"},
      {:jsx,           "~> 2.6.2"},
-     {:msgpack,       github: "msgpack/msgpack-erlang", branch: "master"},
+     {:msgpack,       github: "msgpack/msgpack-erlang", tag: "0.3.4"},
      {:dnssd,         github: "benoitc/dnssd_erlang", branch: "master", optional: true},
      {:meck,          "~> 0.8.2", override: true},
      {:exometer_core, github: "Feuerlabs/exometer_core", branch: "master"},
