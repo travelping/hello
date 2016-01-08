@@ -55,7 +55,7 @@ normal_batch_all_callbacks(_Config) ->
 notify(_Config) ->
 	Args = get_arg(?NOTIFY_REQS),
 	Requests = lists:zip(Args, ?NOTIFY_REQS),
-	[ {ok, Arg} = hello_client:call(ClientName, Request) || {_, ClientName} <- ?CLIENT_NAMES, {Arg, Request} <- Requests].
+	[{ok, Arg} = hello_client:call(zmq_tcp_client, Request) || {Arg, Request} <- Requests].
 
 all_mixed_batch_all_callbacks(_Config) ->
 	Request = shuffle_requests(?ALL_MIXED_BATCH_ALL_CALLBACKS),
@@ -103,7 +103,7 @@ all() ->
      all_mixed_batch_one_callback,
      normal_batch_all_callbacks,
      %all_mixed_batch_all_callbacks,
-     %notify,
+     notify,
      named_parameter,
      binding_not_found,
      method_not_found,
@@ -168,6 +168,7 @@ wait_clients() ->
         _ -> timer:sleep(1000), wait_clients()
     end.
 
+notification_fun([<<"notification_arg1">>, <<"notification_arg2">>]) -> ok;
 notification_fun(Args) when is_list(Args) ->
 	BatchArgs = [[A || {_, [A], _} <- Requests] || Requests <- ?BATCH_NOTIFICATION],
     case lists:member(Args, BatchArgs) of

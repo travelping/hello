@@ -28,8 +28,8 @@ handle_request(Context, <<"handler2.fun4">>, [{_, Arg}], State) ->
     spawn(?MODULE, send_async_reply, [Context, Arg]),
 	{noreply, State + 1};
 handle_request(Context, <<"handler2.fun5">>, [{_, Arg}], State) ->
-	hello_handler:notify(Context, <<"notification">>, [<<"notification_arg1">>, <<"notification_arg2">>]),
-	{reply, {ok, Arg}, State + 1}.
+    hello_handler:notify(Context, [<<"notification_arg1">>, <<"notification_arg2">>]),
+    {reply, {ok, Arg}, State + 1}.
 
 handle_info(_Context, _Message, State) ->
 	{noreply, State}.
