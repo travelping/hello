@@ -9,6 +9,7 @@
     transport               :: module(),
     transport_pid           :: pid(),
     transport_params        :: term(),
+    protocol_mod            :: protocol(),
     peer                    :: term(),
     session_id              :: term(),
     req_ref                 :: reference(),

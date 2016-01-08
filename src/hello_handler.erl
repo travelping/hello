@@ -35,6 +35,7 @@
 -export([get_handler/4, process/2,
          set_idle_timeout/1,
          set_idle_timeout/2,
+         notify/2,
          reply/2
          ]).
 
@@ -120,9 +121,15 @@ reply(ReqContext = #context{handler_pid = HandlerPid}, Result) ->
 %% --------------------------------------------------------------------------------
 %% -- jsonrpc specific stuff
 %% @doc Send an RPC notification with positional or named (given as proplist) parameters to the client.
-%-spec notify(context(), hello_client:method(), [hello_json:value()]) -> ok.
-%notify(Context, Method, Params) when is_list(Params) ->
-    %hello_proto_jsonrpc:send_notification(Context, Method, Params).
+-spec notify(context(), term) -> ok.  
+notify(#context{protocol_mod = ProtocolMod, transport = TransportMod} = Context, Params) ->
+    case {ProtocolMod, TransportMod} of
+        {hello_proto_jsonrpc, hello_zmq_listener} ->
+            Params1 = [{<<"result">>, Params}, {<<"id">>, null}, {<<"jsonrpc">>, <<"2.0">>}],
+            Request = hello_json:encode(Params1),
+            Context#context.transport_pid ! {hello_msg, self(), Context#context.peer, hello_json:signature(), Request};
+        _ -> not_supported
+    end.
 
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
