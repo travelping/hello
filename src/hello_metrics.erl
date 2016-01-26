@@ -61,7 +61,6 @@
 
 -spec subscribe_client(Name :: list()) -> list().
 subscribe_client(Name) ->
-    io:format("Subscriber client ~p~n", [Name]),
     {ok, Metrics} = application:get_env(hello, metrics),
     case lists:member(client, Metrics) of
         true -> subscribe_client_(Name);
