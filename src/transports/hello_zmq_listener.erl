@@ -96,7 +96,12 @@ handle_info({zmq, _Socket, {Peer, Msg}}, State) ->
     {noreply, State};
 
 handle_info({hello_msg, _Handler, Peer, Signature, Message}, State = #state{socket = Socket}) ->
-    ok = ezmq:send(Socket, {Peer, [<<>>, Signature, Message]}),
+    case ezmq:send(Socket, {Peer, [<<>>, Signature, Message]}) of
+        ok -> ok;
+        Other -> 
+            ?LOG_WARNING("Hello zmq listener error on sending message: ~s.", [Other],
+                         [{hello_server_error, {error, cant_send_message}}], ?LOGID67)
+    end,
     {noreply, State};
 
 handle_info({hello_closed, _HandlerPid, _Peer}, State) ->

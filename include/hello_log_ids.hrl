@@ -64,6 +64,7 @@
 -define(LOGID47, {c0ea6cda30b64f10be3db0ee5fdc22d1, 5213}).
 -define(LOGID48, {dea8dfd8818e432bb61a64ca88e35a9e, 5211}).
 -define(LOGID49, {e849ee8a79b2435394e81b51894a617c, 2402}).
+-define(LOGID67, {bdf11a4c3f284d22b3607094cdd56055, 5211}).
 
 %MESSAGE IDs and SATUS CODEs for hello_metrics
 -define(LOGID50, {adcfa613af3d40538bddb1e5fd178139, 5500}).
