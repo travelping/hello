@@ -113,6 +113,13 @@
 * ___Explanation___: Hello handler attempted to handle an invalid request possibly triggering to stop the handler, e.g. validation procedures noticed an invalid method name or similar.
 * ___Level___: info
 
+#### 5211
+
+* ___Messages___:
+  * [bdf11a4c3f284d22b3607094cdd56055] Hello zmq listener error on sending message: @ERROR@.
+* ___Explanation___: Hello server can't send message over ZMQ.
+* ___Level___: warning
+
 #### 2210
 
 * ___Messages___:
