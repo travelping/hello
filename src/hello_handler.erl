@@ -32,7 +32,7 @@
 
 %% @doc RPC handler behaviour.
 -module(hello_handler).
--export([get_handler/4, process/2,
+-export([get_handler/5, process/2,
          set_idle_timeout/1,
          set_idle_timeout/2,
          notify/2,
@@ -44,6 +44,7 @@
 
 -include("hello.hrl").
 -include("hello_log.hrl").
+-include("hello_metrics.hrl").
 -include_lib("ex_uri/include/ex_uri.hrl").
 
 %% ----------------------------------------------------------------------------------------------------
@@ -56,6 +57,7 @@
     protocol                :: module(),
     async_reply_map         :: gb_trees:tree(),
     timer = #timer{}        :: #timer{},
+    metrics_info            :: handler_metrics_info(),
     url                     :: #ex_uri{}
 }).
 
@@ -80,20 +82,21 @@
 -callback terminate(Context :: context(), Reason :: term(), State :: term()) -> ok.
 
 
-get_handler(Name, Identifier, HandlerMod, HandlerArgs) ->
+get_handler(Name, Identifier, HandlerMod, HandlerArgs, MetricsInfo) ->
     case hello_registry:lookup({handler, Name, Identifier}) of
         {error, not_found} ->
             ?LOG_DEBUG("Handler for service ~p and identifier ~p not found. Starting handler.",
                        [Name, Identifier], [], ?LOGID22),
-            start_handler(Identifier, HandlerMod, HandlerArgs);
+            start_handler(Identifier, HandlerMod, HandlerArgs, MetricsInfo);
         {ok, _, Handler} ->
             ?LOG_DEBUG("Found handler ~p for service ~p and identifier ~p.",
                        [Handler, Name, Identifier], [], ?LOGID23),
             Handler
     end.
 
-start_handler(Identifier, HandlerMod, HandlerArgs) ->
-    {ok, Handler} = gen_server:start(?MODULE, {Identifier, HandlerMod, HandlerArgs}, []),
+start_handler(Identifier, HandlerMod, HandlerArgs, MetricsInfo) ->
+    hello_metrics:create_handler(MetricsInfo),
+    {ok, Handler} = gen_server:start(?MODULE, {Identifier, HandlerMod, HandlerArgs, MetricsInfo}, []),
     Handler.
 
 process(Handler, Request) ->
@@ -134,10 +137,10 @@ notify(#context{protocol_mod = ProtocolMod, transport = TransportMod} = Context,
 %% --------------------------------------------------------------------------------
 %% -- gen_server callbacks
 %% @hidden
-init({Identifier, HandlerMod, HandlerArgs}) ->
+init({Identifier, HandlerMod, HandlerArgs, MetricsInfo}) ->
     case HandlerMod:init(Identifier, HandlerArgs) of
         {ok, Handlerstate} ->
-            {ok, #state{mod = HandlerMod, state = Handlerstate,
+            {ok, #state{mod = HandlerMod, state = Handlerstate, metrics_info = MetricsInfo,
                         async_reply_map = gb_trees:empty(), id = Identifier}};
         Other ->
             Other
@@ -145,13 +148,13 @@ init({Identifier, HandlerMod, HandlerArgs}) ->
 
 %% @hidden
 handle_cast({request, Request = #request{context = Context}},
-                State = #state{mod = Mod, state = _HandlerState, id = Id}) ->
+                State = #state{mod = Mod, state = _HandlerState, id = Id, metrics_info = MetricsInfo}) ->
     % TODO: fix logging, request should be loged with answer. If no answer, should be logged, no answer
     try do_request(Request, State)
     catch
         Error:Reason ->
             send(Context, {error, {server_error, "handler error", undefined}}),
-            hello_metrics:error_request(Context#context.listener_id),
+            hello_metrics:update_handler_request(error, MetricsInfo, 0), %% TODO: add timestamp
             ?LOG_REQUEST_bad_request(Mod, Id, Request, {Error, Reason, erlang:get_stacktrace()}, ?LOGID24),
             {stop, normal, State}
     end;
@@ -199,7 +202,8 @@ handle_info(InfoMsg, State = #state{mod = Mod, state = ModState, context = Conte
     end.
 
 %% @hidden
-terminate(Reason, _State = #state{mod = Mod, state = ModState, context = Context, timer = Timer}) ->
+terminate(Reason, _State = #state{mod = Mod, state = ModState, context = Context, timer = Timer, metrics_info = MetricsInfo}) ->
+    hello_metrics:delete_handler(MetricsInfo),
     case {Reason, Timer#timer.stopped_because_idle} of
         {normal, true} ->
             Mod:terminate(Context, idle_timeout, ModState);
@@ -216,53 +220,51 @@ code_change(_FromVsn, _ToVsn, State) ->
 %% -- internal functions
 %% @hidden
 do_request(Request = #request{context = Context},
-           State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState, id = Id}) ->
+           State = #state{async_reply_map = AsyncMap, mod = Mod, state = HandlerState, id = Id, metrics_info = MetricsInfo}) ->
     ReqRef = make_ref(),
     HandlerPid = self(),
     Context1 = Context#context{req_ref = ReqRef, handler_pid = HandlerPid},
-    ListenerId = Context1#context.listener_id,
     case hello_validate:validate_request(Request, Mod) of
         {ok, ValMethod, ValParams} ->
             {Time, Value} = timer:tc(Mod, handle_request, [Context1, ValMethod, ValParams, HandlerState]),
             TimeMS = Time / 1000, % in ms
-            hello_metrics:handle_request_time(ListenerId, TimeMS),
             case Value of
                 {reply, Response, NewHandlerState} ->
                     ?LOG_REQUEST_request(Mod, Id, Request, Response, TimeMS, ?LOGID29),
                     send(Context1, Response),
-                    hello_metrics:ok_request(ListenerId),
+                    hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {noreply, State#state{state = NewHandlerState}};
                 {noreply, NewModState} ->
                     ?LOG_REQUEST_request_no_reply(Mod, Id, Request, TimeMS, ?LOGID30),
-                    hello_metrics:ok_request(ListenerId),
+                    hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {noreply, State#state{state = NewModState, async_reply_map = gb_trees:enter(ReqRef, Request, AsyncMap)}};
                 {stop, Reason, Response, NewModState} ->
                     ?LOG_REQUEST_request_stop(Mod, Id, Request, Response, Reason, TimeMS, ?LOGID31),
                     send(Context1, Response),
-                    hello_metrics:ok_request(ListenerId),
+                    hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {stop, Reason, State#state{state = NewModState}};
                 {stop, Reason, NewModState} ->
                     ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Request, Reason, TimeMS, ?LOGID32),
-                    hello_metrics:ok_request(ListenerId),
+                    hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {stop, Reason, State#state{mod = NewModState}};
                 {stop, NewModState} ->
                     ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Request, TimeMS, ?LOGID33),
-                    hello_metrics:ok_request(ListenerId),
+                    hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {stop, State#state{mod=NewModState}};
                 {ignore, NewModState} ->
                     ?LOG_REQUEST_request(Mod, Id, Request, ignore, TimeMS, ?LOGID29),
-                    hello_metrics:ok_request(ListenerId),
+                    hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {noreply, State#state{state = NewModState}}
             end;
         {error, {_Code, _Message, _Data} = Reason} ->
             ?LOG_REQUEST_bad_request(Mod, Id, Request, Reason, ?LOGID24),
             send(Context1,  {error, Reason}),
-            hello_metrics:error_request(ListenerId),
+            hello_metrics:update_handler_request(error, MetricsInfo, 0),
             {stop, normal, State};
         _FalseAnswer ->
             ?LOG_REQUEST_bad_request(Mod, Id, Request, _FalseAnswer, ?LOGID24),
             send(Context1, {error, {server_error, "validation returned wrong error format", null}}),
-            hello_metrics:error_request(ListenerId),
+            hello_metrics:update_handler_request(error, MetricsInfo, 0),
             {stop, normal, State}
     end.
 

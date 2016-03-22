@@ -75,23 +75,21 @@ handle_incoming_message(Context1, ProtocolMod, ProtocolOpts, Router, ExUriURL, S
         {error, Response} ->
             may_be_encode(ProtocolMod, ProtocolOpts, Response);
         {internal, Message} ->
-            hello_metrics:internal_request(Context#context.listener_id),
+            {AtomIP, AtomPort} = hello_metrics:atomize_ex_uri(ExUriURL),
+            MetricsInfo = {hello_metrics:to_atom(Context#context.listener_id), AtomIP, AtomPort},
+            hello_metrics:update_listener_request(internal, MetricsInfo, 0),
             ?MODULE:handle_internal(Context, Message) % for test
     end.
 
 proceed_incoming_message(Requests, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) when is_list(Requests) ->
     [proceed_incoming_message(Request, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) || {_, Request} <- Requests];
-proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Context, ProtocolMod, ProtocolOpts, Router, ExUriURL) ->
+proceed_incoming_message(Request = #request{type = Type, proto_data = Info}, Context, ProtocolMod, _ProtocolOpts, Router, ExUriURL) ->
     case Router:route(Context, Request, ExUriURL) of
         {ok, ServiceName, Identifier} ->
-            hello_service:call(ServiceName, Identifier, 
-                               Request#request{context = Context#context{ 
-                                                           protocol_mod = ProtocolMod}}),
+            hello_service:call(ServiceName, Identifier, Request#request{context = Context#context{protocol_mod = ProtocolMod}}, ExUriURL),
             may_be_wait(Type, Request, Context);
         {ok, ServiceName, Identifier, NewRequest} ->
-            hello_service:call(ServiceName, Identifier, 
-                               NewRequest#request{context = Context#context{
-                                                              protocol_mod = ProtocolMod}}),
+            hello_service:call(ServiceName, Identifier, NewRequest#request{context = Context#context{protocol_mod = ProtocolMod}}, ExUriURL),
             may_be_wait(Type, NewRequest, Context);
         {error, Error} = _ ->
             #response{proto_data = Info,

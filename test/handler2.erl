@@ -11,7 +11,6 @@ name() -> 'app2/test'.
  
 router_key() -> 'handler2'.
  
-validation() -> t.
 request(_Module, Method, Params) -> {ok, Method, Params}.
 
 init(_, Counter) ->

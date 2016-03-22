@@ -22,207 +22,229 @@
 
 -module (hello_metrics).
 
--export([subscribe_client/1, subscribe_server/1,
-         unsubscribe_client/1, unsubscribe_server/1,
-         start_subscriptions/0, start_subscriptions/1, start_subscriptions/2,
-         subscriptions/0, subscriptions/1]).
+-include("hello_metrics.hrl").
+-include_lib("ex_uri/include/ex_uri.hrl").
 
--export([packet_in/2,
-         packet_out/2, 
-         ok_request/1, ok_request/2,
-         internal_request/1,
-         error_request/1,
-         handle_request_time/2,
-         service/1,
-         binding/1,
-         listener/1,
-         client/1,
-         client_ok_request/1,
-         client_error_request/1,
-         client_internal_request/1,
-         client_request_handle_time/2,
-         client_ping_pong_latency/2]).
+-export([create_listener/1,
+         create_handler/1,
+         create_client/1,
+         delete_listener/1,
+         delete_handler/1,
+         delete_client/1]).
+-export([update_listener_request/3, update_listener_time/2, update_listener_packet/3,
+         update_handler_request/3, update_handler_time/2,
+         update_client_request/3, update_client_time/2]).
+-export([to_atom/1, atomize_ex_uri/1, timestamp/1, update_listener_uptime/1]).
 
--include("hello_log.hrl").
 
--type metric() :: exometer_report:metric().
--type datapoint() :: exometer_report:datapoint(). 
--type interval() :: exometer_report:interval(). 
--type extra() :: exometer_report:extra(). 
--type subscription() :: {metric(), datapoint(), interval(), extra()}.
--type subscriptions() :: [subscription()].
--type metrics_type() :: client | server | common.
+%% -------------------------------------------------------
+%% API for metric creation
+%% -------------------------------------------------------
+-spec create_listener(listener_metrics_info()) -> ok.
+create_listener(MetricsInfo) ->
+    create(listener, MetricsInfo).
 
--export_type([metrics_type/0]).
+-spec delete_listener(listener_metrics_info()) -> ok.
+delete_listener(MetricsInfo) ->
+    delete(listener, MetricsInfo).
 
--define(ALL_TYPES, [client, server, common]).
--define(DEFAULT_INTERVAL, 1000).
--define(DEFAULT_INTERVAL_2, ?DEFAULT_INTERVAL * 2).
+-spec create_handler(handler_metrics_info()) -> ok.
+create_handler(MetricsInfo) ->
+    create(handler, MetricsInfo).
 
--spec subscribe_client(Name :: list()) -> list().
-subscribe_client(Name) ->
-    {ok, Metrics} = application:get_env(hello, metrics),
-    case lists:member(client, Metrics) of
-        true -> subscribe_client_(Name);
-        false -> []
+-spec delete_handler(handler_metrics_info()) -> ok.
+delete_handler(MetricsInfo) ->
+    delete(handler, MetricsInfo).
+
+-spec create_client(client_metrics_info()) -> ok.
+create_client(MetricsInfo) ->
+    create(client, MetricsInfo).
+
+-spec delete_client(client_metrics_info()) -> ok.
+delete_client(MetricsInfo) ->
+    delete(client, MetricsInfo).
+
+%% -------------------------------------------------------
+%% API for metric updates.
+%% -------------------------------------------------------
+-spec update_listener_request(request_type(), listener_metrics_info(), integer()) -> any().
+update_listener_request(Type, MetricsInfo, Ms) ->
+    [update_request(listener, ReqType, MetricsInfo, Ms) || ReqType <- [Type, total]],
+    update_listener_time(last_request, MetricsInfo).
+
+-spec update_listener_time(last_reset | last_request, listener_metrics_info()) -> any().
+update_listener_time(Type, MetricsInfo) ->
+    update_time(listener, Type, MetricsInfo).
+
+-spec update_listener_packet(in | out, listener_metrics_info(), packet_size()) -> any().
+update_listener_packet(Type, MetricsInfo, Size) ->
+    update_packet(listener, Type, MetricsInfo, Size).
+
+-spec update_handler_request(request_type(), handler_metrics_info(), integer()) -> any().
+update_handler_request(Type, MetricsInfo = {_, LName, LIP, LPort}, Ms) ->
+    update_listener_request(Type, {LName, LIP, LPort}, Ms),
+    [update_request(handler, ReqType, MetricsInfo, Ms) || ReqType <- [Type, total]],
+    update_handler_time(last_request, MetricsInfo).
+
+-spec update_handler_time(last_reset | last_request, handler_metrics_info()) -> any().
+update_handler_time(Type, MetricsInfo) ->
+    update_time(handler, Type, MetricsInfo).
+
+-spec update_client_request(request_type(), client_metrics_info(), integer()) -> any().
+update_client_request(Type, MetricsInfo, Ms) ->
+    [update_request(client, ReqType, MetricsInfo, Ms) || ReqType <- [Type, total]],
+    update_client_time(last_request, MetricsInfo).
+
+-spec update_client_time(last_request, client_metrics_info()) -> any().
+update_client_time(last_request, MetricsInfo) ->
+    update_time(client, last_request, MetricsInfo).
+
+-spec timestamp(erlang:time_unit()) -> integer().
+timestamp(Unit) ->
+    try
+        erlang:system_time(Unit)
+    catch %% fallback for erlang 17 and older
+        error:undef ->
+            {MegaSecs, Secs, MicroSecs} = os:timestamp(),
+                case Unit of
+                    seconds         ->         Secs + (MegaSecs * 1000000) + (MicroSecs / 10000000);
+                    milli_seconds   -> 1000 * (Secs + (MegaSecs * 1000000) + (MicroSecs / 10000000))
+                end
     end.
 
-% @private
-subscribe_client_(Name) ->
-    [exometer_report:subscribe(Reporter, Metric, DataPoint, ?DEFAULT_INTERVAL, Tags, true) 
-     || {Metric, DataPoint, Tags} <- client_metrics(Name),
-        {Reporter, _} <- exometer_report:list_reporters()].
+%% -----------------------------------------------------------------
+%% Internal
+%% -----------------------------------------------------------------
+create(Service, Args) ->
+    metrics_action(create, Service, Args).
 
-% @private
-client_metrics(Name) when is_atom(Name) -> 
-    Tags = [{client, {from_name, 3}}],
-    TagsWithType = Tags ++ [{type, {from_name, 5}}],
-    [{[hello, client, Name, requests, ok, per_sec], one, TagsWithType},
-     {[hello, client, Name, requests, error, per_sec], one, TagsWithType},
-     {[hello, client, Name, requests, internal, per_sec], one, TagsWithType},
-     {[hello, client, Name, request, handle_time], max, Tags},
-     {[hello, client, Name, request, handle_time], mean, Tags},
-     {[hello, client, Name, ping_pong_latency], max, Tags},
-     {[hello, client, Name, ping_pong_latency], mean, Tags}];
-client_metrics(Name) -> client_metrics(convert_name(Name)).
+delete(Service, Args) ->
+    metrics_action(delete, Service, Args).
 
--spec unsubscribe_client(Name :: list()) -> list().
-unsubscribe_client(Name) ->
-    [begin
-         exometer_report:unsubscribe_all(Reporter, Metric),
-         exometer:delete(Metric)
-     end || {Metric, _, _} <- client_metrics(Name),
-            {Reporter, _} <- exometer_report:list_reporters()].
-
--spec subscribe_server(Name :: list()) -> list().
-subscribe_server(Name) ->
-    {ok, Metrics} = application:get_env(hello, metrics),
-    case lists:member(server, Metrics) of
-        true -> subscribe_server_(Name);
-        false -> []
+metrics_action(Action, Service, Args) ->
+    Metrics = proplists:get_value(Service, ?METRICS, undefined),
+    {ok, MetricsOpts} = application:get_env(hello, metrics),
+    EnabledServices = proplists:get_value(enabled, MetricsOpts, []),
+    case lists:member(Service, EnabledServices) of
+        true ->
+            proceed_metrics_action(Action, Service, Args, Metrics);
+        false ->
+            ok
     end.
 
-% @private
-subscribe_server_(Name) ->
-    [exometer_report:subscribe(Reporter, Metric, DataPoint, ?DEFAULT_INTERVAL, Tags, true)
-     || {Metric, DataPoint, Tags} <- server_metrics(Name),
-        {Reporter, _} <- exometer_report:list_reporters()].
+%% this function traverses the datastructures in metrics.hrl
+proceed_metrics_action(Action, Service, Args, Metrics) ->
+    lists:foreach(
+        fun({MetricName, MetricType, Units}) ->
+            lists:foreach(
+                fun({UnitType, {ExoType, ExoTypeOpts}}) ->
+                    PartId = case Service of
+                                      listener  -> listener_layout(Args);
+                                      handler   -> handler_layout(Args);
+                                      client    -> client_layout(Args)
+                                  end,
+                    %% this is the final exometer id:
+                    FinalId = lists:append([?DEFAULT_ENTRIES, [MetricName, MetricType],
+                                            PartId, [UnitType]]),
+                    case Action of
+                        create ->
+                            case ExoType of
+                                {function,_,_,_,_,_} ->
+                                    % functions are tricky, they need further arguments and
+                                    % will not be initialized at start
+                                    exometer:new(FinalId, setelement(4, ExoType, [Args]), ExoTypeOpts);
+                                _ ->
+                                    exometer:update_or_create(FinalId, 0, ExoType, ExoTypeOpts)
+                            end;
+                        delete ->
+                            exometer:delete(FinalId)
+                    end
+                end, Units)
+        end, Metrics).
 
--spec unsubscribe_server(Name :: list()) -> list().
-unsubscribe_server(Name) ->
-    [begin 
-         exometer_report:unsubscribe_all(Reporter, Metric),
-         exometer:delete(Metric)
-     end || {Metric, _, _} <- server_metrics(Name),
-            {Reporter, _} <- exometer_report:list_reporters()].
+update_request(listener, Type, Args, Ms) ->
+    Args1 = listener_layout(Args),
+    update_exo_request(Type, Args1, Ms);
+update_request(handler, Type, Args, Ms) ->
+    Args1 = handler_layout(Args),
+    update_exo_request(Type, Args1, Ms);
+update_request(client, Type, Args, Ms) ->
+    Args1 = client_layout(Args),
+    update_exo_request(Type, Args1, Ms).
 
-% @private
-server_metrics(Name) when is_atom(Name) -> 
-    Tags = [{server, {from_name, 3}}],
-    TagsWithType = Tags ++ [{type, {from_name, 5}}],
-    [{[hello, server, Name, requests, ok, per_sec], one, TagsWithType},
-     {[hello, server, Name, requests, error, per_sec], one, TagsWithType},
-     {[hello, server, Name, requests, internal, per_sec], one, TagsWithType},
-     {[hello, server, Name, request, handle_time], max, Tags},
-     {[hello, server, Name, request, handle_time], mean, Tags},
-     {[hello, server, Name, packets_in, size], max, Tags},
-     {[hello, server, Name, packets_in, size], mean, Tags},
-     {[hello, server, Name, packets_in, per_sec], one, Tags},
-     {[hello, server, Name, packets_out, size], max, Tags},
-     {[hello, server, Name, packets_out, size], mean, Tags},
-     {[hello, server, Name, packets_out, per_sec], one, Tags}];
-server_metrics(Name) -> server_metrics(convert_name(Name)).
+update_time(listener, Type, Args) ->
+    Sec = timestamp(milli_seconds),
+    Args1 = listener_layout(Args),
+    update_exo_time(Type, Args1, Sec);
+update_time(handler, Type, Args) ->
+    Sec = timestamp(milli_seconds),
+    Args1 = handler_layout(Args),
+    update_exo_time(Type, Args1, Sec);
+update_time(client, Type, Args) ->
+    Sec = timestamp(milli_seconds),
+    Args1 = client_layout(Args),
+    update_exo_time(Type, Args1, Sec).
 
--spec start_subscriptions() -> list().
-start_subscriptions() ->
-    [start_subscriptions(Reporter, ?ALL_TYPES) || {Reporter, _} <- exometer_report:list_reporters()].
+update_packet(listener, Type, Args, Size) ->
+    Args1 = listener_layout(Args),
+    update_exo_packet(Type, Args1, Size).
 
--spec start_subscriptions(subscriptions()) -> list().
-start_subscriptions(Types) ->
-    [start_subscriptions(Reporter, Types) || {Reporter, _} <- exometer_report:list_reporters()].
+update_exo_request(Type, Args, Ms) ->
+    PartId = lists:append([?DEFAULT_ENTRIES, [request, Type], Args]),
+    exometer:update(PartId ++ [counter], 1),
+    exometer:update(PartId ++ [gauge], Ms).
 
--spec start_subscriptions(atom(), subscriptions()) -> list(atom()).
-start_subscriptions(Reporter, Types) ->
-    [exometer_report:subscribe(Reporter, Name, DataPoint, Time, [], true) 
-     || {Name, DataPoint, Time} <- subscriptions(Types)].
+update_exo_time(Type, Args, Sec) ->
+    PartId = lists:append([?DEFAULT_ENTRIES, [time, Type], Args]),
+    exometer:update(PartId ++ [ticks], Sec).
 
--spec subscriptions() -> subscriptions().
-subscriptions() -> 
-    subscriptions(?ALL_TYPES).
+update_exo_packet(Type, Args, Size) ->
+    PartId = lists:append([?DEFAULT_ENTRIES, [packet, Type], Args]),
+    exometer:update(PartId ++ [counter], 1),
+    exometer:update(PartId ++ [size], Size).
 
--spec subscriptions(Type :: [metrics_type()] | metrics_type()) -> subscriptions().
-subscriptions(Types) when is_list(Types) -> 
-    lists:flatten([subscriptions(Type) || Type <- Types]);
+listener_layout({ListenerName, ListenerIP, ListenerPort}) ->
+    [listener, total, ListenerName, ListenerIP, ListenerPort, total, undefined, undefined].
+handler_layout({HandlerName, ListenerName, ListenerIP, ListenerPort}) ->
+    [handler, HandlerName, ListenerName, ListenerIP, ListenerPort, total, undefined, undefined].
+client_layout({ClientName, ListenerIP, ListenerPort}) ->
+    [client, undefined, ClientName, undefined, undefined, undefined, ListenerIP, ListenerPort].
 
-subscriptions(client) -> [];
-subscriptions(server) -> [];
-subscriptions(common) -> 
-    [{[hello, services], value, ?DEFAULT_INTERVAL_2},
-     {[hello, bindings], value, ?DEFAULT_INTERVAL_2},
-     {[hello, listeners], value, ?DEFAULT_INTERVAL_2},
-     {[hello, clients], value, ?DEFAULT_INTERVAL_2}];
+to_atom(Value) when is_atom(Value) -> Value;
+to_atom(Value) when is_binary(Value) -> binary_to_atom(Value, latin1);
+to_atom(Value) when is_list(Value) -> list_to_atom(Value);
+to_atom(_Value) -> undefined.
 
-subscriptions(Type) -> 
-    ?LOG_DEBUG("Received unknown subscription type ~p for the metrics.", [Type], [], ?LOGID50), [].
+protocol("zmq-tcp6") -> inet6;
+protocol(_) -> inet.
 
-%% --------------------------------------------------------------------------------
-%% -- Collect Metrics
-packet_in(Name, Size) -> packet(convert_name(Name), packets_in, Size).
+parse_ex_uri_ip(inet, "*") -> {ok, {0,0,0,0}};
+parse_ex_uri_ip(inet, Host) -> inet:parse_ipv4_address(Host);
 
-packet_out(Name, Size) -> packet(convert_name(Name), packets_out, Size).
+parse_ex_uri_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
+parse_ex_uri_ip(inet6, Host) ->
+    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
+        {match, ["[::1]", IP]} ->
+            inet:parse_ipv6_address(IP);
+        _ ->
+            inet:parse_ipv6_address(Host)
+    end.
 
-ok_request(Name) -> ok_request(convert_name(Name), 1).
+atomize_ex_uri(#ex_uri{scheme = Scheme, authority = #ex_uri_authority{host = Host, port = Port}}) ->
+    {ok, IP} = parse_ex_uri_ip(protocol(Scheme), Host),
+    {ip_to_atom(IP), port_to_atom(Port)};
+atomize_ex_uri(_) -> {undefined, undefined}.
 
-ok_request(Name, Value) -> request(convert_name(Name), ok, Value).
+ip_to_atom(IP) when is_atom(IP) -> IP;
+ip_to_atom(IP) -> list_to_atom(inet:ntoa(IP)).
 
-internal_request(Name) -> request(convert_name(Name), internal, 1).
+port_to_atom(undefined) -> undefined;
+port_to_atom(Port) when is_atom(Port) -> Port;
+port_to_atom(Port) -> list_to_atom(integer_to_list(Port)).
 
-error_request(Name) -> request(convert_name(Name), error, 1).
-
-handle_request_time(Name, Time) ->
-    exometer:update_or_create([hello, server, convert_name(Name), request, handle_time], 
-                              Time, histogram, [{truncate, false}]).
-
-service(Value) -> 
-    exometer:update_or_create([hello, services], Value, counter, []).
-
-binding(Value) -> 
-    exometer:update_or_create([hello, bindings], Value, counter, []).
-
-listener(Value) -> 
-    exometer:update_or_create([hello, listeners], Value, counter, []).
-
-client(Value) -> 
-    exometer:update_or_create([hello, clients], Value, counter, []).
-
-client_ok_request(Name) -> client_request(convert_name(Name), ok).
-
-client_error_request(Name) -> client_request(convert_name(Name), error).
-
-client_internal_request(Name) -> client_request(convert_name(Name), internal).
-
-client_request_handle_time(Name, Time) ->
-    exometer:update_or_create([hello, client, convert_name(Name), request, handle_time], 
-                              Time, histogram, [{truncate, false}]).
-
-client_ping_pong_latency(Name, Time) ->
-    exometer:update_or_create([hello, client, convert_name(Name), ping_pong_latency], 
-                              Time, histogram, [{truncate, false}]).
-
-%% --------------------------------------------------------------------------------
-%% -- Helpers
-packet(Name, Type, Size) ->
-    exometer:update_or_create([hello, server, Name, Type, size], Size, histogram, []),
-    exometer:update_or_create([hello, server, Name, Type, per_sec], 1, spiral, [{time_span, 1000}]).
-
-request(Name, Type, Value) ->
-    exometer:update_or_create([hello, server, Name, requests, Type, per_sec], Value, spiral, [{time_span, 1000}]).
-
-client_request(Name, Type) ->
-    exometer:update_or_create([hello, client, Name, requests, Type, per_sec], 1, 
-                              spiral, [{time_span, 1000}]).
-
-convert_name(Name) when is_atom(Name) -> Name;
-convert_name(Name) when is_list(Name) -> list_to_atom(Name);
-convert_name(Name) when is_binary(Name) -> convert_name(binary_to_list(Name));
-convert_name(Name) when is_pid(Name) -> convert_name(pid_to_list(Name)).
+update_listener_uptime(MetricsInfo) ->
+    Args = listener_layout(MetricsInfo),
+    LastResetId = lists:append([?DEFAULT_ENTRIES, [time, last_reset], Args, [ticks]]),
+    {ok, [{value, ListenerStartTime}, _]} = exometer:get_value(LastResetId),
+    CurrentTime = timestamp(milli_seconds),
+    [{value, round(CurrentTime - ListenerStartTime)}].

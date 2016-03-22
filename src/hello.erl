@@ -53,7 +53,6 @@ start() ->
 start(_Type, _StartArgs) ->
     ok = start_dnssd(),
     {ok, Supervisor} = hello_supervisor:start_link(),
-    hello_metrics:start_subscriptions(),
     {ok, Supervisor, undefined}.
 
 % @doc Callback for application behaviour.
