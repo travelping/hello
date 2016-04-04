@@ -19,8 +19,10 @@ lookup(HandlerMod) ->
 
 call(Name, Identifier, {Method, Args}) ->
     Context = #context{connection_pid = self(), peer = make_ref()},
-    call(Name, Identifier, #request{context = Context, method = Method, args = Args}),
-    await();
+    case call(Name, Identifier, #request{context = Context, method = Method, args = Args}) of
+        {error, method_not_found} = NotFound -> NotFound;
+        _ -> await()
+    end;
 call(Name, Identifier, Request) ->
     case hello_registry:lookup({service, Name}) of
         {ok, _, {HandlerMod, HandlerArgs}} ->
