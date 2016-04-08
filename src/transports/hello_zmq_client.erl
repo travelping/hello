@@ -55,15 +55,15 @@ terminate_transport(_Reason, #zmq_state{socket = Socket}) ->
 handle_info({'EXIT', _, normal}, State) ->
     {noreply, State};
 handle_info({dnssd, _Ref, {resolve,{Host, Port, _Txt}}}, State = #zmq_state{uri = URI, socket = Socket}) ->
-    ?LOG_DEBUG("Hello ZeroMQ client: DNS discovery service resolved path ~p to host ~p:~w.", [URI, Host, Port],
+    ?LOG_DEBUG("ZeroMQ client: DNS discovery service resolved path ~p to host ~p:~w.", [URI, Host, Port],
                gen_meta_fields(State), ?LOGID43),
     Protocol = zmq_protocol(URI),
     R = ezmq:connect(Socket, tcp, clean_host(Host), Port, [Protocol]),
-    ?LOG_DEBUG("Hello ZeroMQ client attempted to establish connection to ~p returning ~p", [URI, R],
+    ?LOG_DEBUG("ZeroMQ client attempted to establish connection to ~p returning ~p", [URI, R],
                gen_meta_fields(State), ?LOGID44),
     {noreply, State};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    ?LOG_DEBUG("Hello ZeroMQ client ignored message ~p from DNS discovery service.", [Msg],
+    ?LOG_DEBUG("ZeroMQ client ignored message ~p from DNS discovery service.", [Msg],
                gen_meta_fields(State), ?LOGID45),
     {noreply, State};
 handle_info({zmq, _Socket, [Signature, Msg]}, State) -> %% recieve on req socket

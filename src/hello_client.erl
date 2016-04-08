@@ -417,7 +417,7 @@ request_reply(Response, AsyncMap, State) ->
         {ok, NewAsyncMap} ->
             {noreply, State#client_state{async_request_map = NewAsyncMap}};
         {not_found, RequestId, NewAsyncMap} ->
-            ?LOG_WARNING("received response for non-existing request id ~p",
+            ?LOG_WARNING("Received response for non-existing request id ~p",
                          [RequestId], gen_meta_fields(Response, State), ?LOGID19),
             {noreply, State#client_state{async_request_map = NewAsyncMap}}
     end.
