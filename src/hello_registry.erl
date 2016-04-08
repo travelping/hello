@@ -116,27 +116,27 @@ handle_call(_Call, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
 handle_info({'EXIT', From, normal}, Table) ->
-    ?LOG_DEBUG("Hello registry : Received 'EXIT' from process ~p with reason 'normal'.", [From],
+    ?LOG_DEBUG("Received 'EXIT' message from process ~p with reason 'normal'.", [From],
                [{hello_error_reason, {process_exit, normal}}], ?LOGID51),
     {noreply, Table};
 handle_info({'EXIT', From, Reason}, Table) ->
-    ?LOG_ERROR("Hello registry : Received 'EXIT' from process ~p with reason ~p.", [From, Reason],
+    ?LOG_ERROR("Received 'EXIT' message from process ~p with reason ~p.", [From, Reason],
                [{hello_error_reason, {process_exit, Reason}}], ?LOGID66),
     {noreply, Table};
 handle_info({'DOWN', _MRef, process, Pid, Reason}, Table) ->
     Objects = ets:match(Table, {'$1', Pid, '_', '_'}),
     case Reason of
         normal ->
-            ?LOG_DEBUG("Hello registry : Received 'DOWN' from process ~p with reason 'normal'.",
+            ?LOG_DEBUG("Received 'DOWN' message from process ~p with reason 'normal'.",
                        [Pid], [{hello_error_reason, {process_down, Objects, Reason}}], ?LOGID65);
         _      ->
-            ?LOG_ERROR("Hello registry : Received 'DOWN' from process ~p with reason ~p. Cleaning up associated processes ~p.",
+            ?LOG_ERROR("Received 'DOWN' message from process ~p with reason ~p. Cleaning up associated processes ~p.",
                        [Pid, Reason, Objects], [{hello_error_reason, {process_down, Objects, Reason}}], ?LOGID52)
     end,
     spawn(fun() -> [down(Object)|| Object <- Objects] end),
     {noreply, Table};
 handle_info({dnssd, _Ref, Msg}, State) ->
-    ?LOG_DEBUG("Hello registry : Received message ~p from DNS service discovery.", [Msg], [], ?LOGID53),
+    ?LOG_DEBUG("Received message ~p from DNS service discovery.", [Msg], [], ?LOGID53),
     {noreply, State};
 handle_info(_InfoMsg, State) ->
     {noreply, State}.
@@ -159,10 +159,10 @@ register(Key, Pid, Data, Table) ->
         true ->
             update_metric(Key, 1),
             is_pid(Pid) andalso monitor_(Table, Pid),
-            ?LOG_DEBUG("Hello registry : registering process ~p with key ~p and data ~p.", [Pid, Key, Data], [], ?LOGID54),
+            ?LOG_DEBUG("Registering process ~p with key ~p and data ~p.", [Pid, Key, Data], [], ?LOGID54),
             bind(Key, Pid, Data, Table);
         false -> 
-            ?LOG_ERROR("Hello registry : attempted to register process ~p with key ~p, but process is not alive.", [Pid, Key],
+            ?LOG_ERROR("Attempted to register process ~p with key ~p, but process is not alive.", [Pid, Key],
                        [{hello_error_reason, {error, pid_not_alive}}], ?LOGID55),
             {error, pid_not_alive}
     end.
@@ -186,7 +186,7 @@ down([Key]) -> hello_registry:unregister(Key).
 update_metric({binding, _}, Value) -> hello_metrics:binding(Value);
 update_metric({service, _}, Value) -> hello_metrics:service(Value);
 update_metric({listener, _}, Value) -> hello_metrics:listener(Value);
-update_metric(Key, _) -> ?LOG_DEBUG("Hello registry : Received unknown key ~p for register metric.", [Key], [], ?LOGID56).
+update_metric(Key, _) -> ?LOG_DEBUG("Received unknown key ~p for register metric.", [Key], [], ?LOGID56).
 
 do_dnss_register(App, Name, Port) ->
     ?LOG_DEBUG("DNS discovery service registered app ~p with name ~p on port ~p.", [App, Name, Port], [], ?LOGID57),

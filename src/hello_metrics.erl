@@ -163,7 +163,7 @@ subscriptions(common) ->
      {[hello, clients], value, ?DEFAULT_INTERVAL_2}];
 
 subscriptions(Type) -> 
-    ?LOG_DEBUG("Hello metrics received unknown subscription type ~p.", [Type], [], ?LOGID50), [].
+    ?LOG_DEBUG("Received unknown subscription type ~p for the metrics.", [Type], [], ?LOGID50), [].
 
 %% --------------------------------------------------------------------------------
 %% -- Collect Metrics
