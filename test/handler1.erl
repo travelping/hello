@@ -11,13 +11,12 @@ name() -> 'app/test'.
  
 router_key() -> 'handler1'.
  
-validation() -> t.
 request(_Module, Method, Params) -> {ok, Method, Params}.
 
-init(A, Counter) ->
+init(_A, Counter) ->
 	{ok, Counter}.
 
-handle_request(_Context, <<"handler1.fun1">>, [{_, Arg}] = Args, State) ->
+handle_request(_Context, <<"handler1.fun1">>, [{_, Arg}] = _Args, State) ->
 	{reply, {ok, Arg}, State + 1};
 handle_request(_Context, <<"handler1.fun2">>, [{_, Arg}], State) ->
 	{reply, {ok, Arg}, State + 1};

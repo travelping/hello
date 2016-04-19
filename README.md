@@ -128,26 +128,30 @@ To write all requests for a module hello_handler_example to a file use:
 
 # Metrics
 
-Hello collects the following metrics via exometer_core and reports it to the each registered reporters: 
+Hello collects metrics via exometer. The following metrics are considered:
 
-| Exometer ID                                       | Type      | Data Types | Report Time |
-|---------------------------------------------------|-----------|------------|-------------|
-| [hello, server, Name, packets_in, size]           | histogram | max, mean  |   1000      |
-| [hello, server, Name, packets_in, per_sec]        | spiral    | one        |   1000      |
-| [hello, server, Name, packets_out, size]          | histogram | max, mean  |   1000      |
-| [hello, server, Name, packets_out, per_sec]       | spiral    | one        |   1000      |
-| [hello, server, Name, requests, ReqType, per_sec] | spiral    | one        |   1000      |
-| [hello, server, Name, request, handle_time]       | histogram | max, mean  |   1000      |
-| [hello, client, Name, requests, ReqType, per_sec] | spiral    | one        |   1000      |
-| [hello, client, Name, request, handle_time]       | histogram | max, mean  |   1000      |
-| [hello, client, Name, ping_pong_latency]          | histogram | max, mean  |   1000      |
-| [hello, services]                                 | counter   | value      |   2000      |
-| [hello, bindings]                                 | counter   | value      |   2000      |
-| [hello, listeners]                                | counter   | value      |   2000      |
-| [hello, clients]                                  | counter   | value      |   2000      |
+    * Request counter and request handle time in ms (listener, handler, client) grouped by
+      the types total, success, error and internal (for e.g. pings). For the
+      client also timeouts are available. The handle times for listeners and handlers
+      reflect the execution time of the callback modules.
+    * Last request time in ms (listener, handler, client)
+    * Last reset time in ms to see (re-) starts (listener, handler)
+    * uptime since last reset in ms (listener)
+    * packet in/out counter (listener)
+    * packet in/out size in bytes (listener)
 
-Name - server or client name
-ReqType = [ok, error, internal]
+Exometer entry types (see include/hello_metrics.hrl for definitions):
+
+    * Request counter/timeout and packet in/out counter: counter
+    * Request handle time and packet size: histogram
+    * Last request and last reset: gauge
+    * Uptime: function
+
+All histograms have a time span of 60s.
+
+Use `exometer_report:list_metrics([hello])` to see a full list of the exometer IDs.
+For listeners and clients the IDs are instantly visible after start. However, due to the dynamic handling
+of callback modules the IDs for handlers are only visible after the first call.
 
 # Elixir
 

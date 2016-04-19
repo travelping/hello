@@ -152,7 +152,7 @@ start_named_client(Transport) ->
 	Name = proplists:get_value(Transport, ?CLIENT_NAMES),
 	{Url, TransportOpts} = Transport, 
 	ProtocolOpts = [{protocol, hello_proto_jsonrpc}, {notification_sink, fun notification_fun/1}],
-	{ok, _Pid} = hello_client:start_supervised(Name, Url ++ "/test", TransportOpts, ProtocolOpts, []).
+	{ok, _Pid} = hello_client:start_supervised(Name, Url, TransportOpts, ProtocolOpts, []).
 
 shuffle_requests(Reqs) ->
 	[ RandomReq || { _ , RandomReq} <- lists:sort([ {random:uniform(), Req} || Req <- Reqs])].
