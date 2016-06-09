@@ -3,6 +3,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include("hello_test.hrl").
+-include("../include/hello.hrl").
 -include("../include/jsonrpc_internal.hrl").
 
 % ---------------------------------------------------------------------
@@ -117,6 +118,12 @@ time_metrics(_Config) ->
     true = Uptime > 0,
     ok.
 
+log_format(_Config) ->
+    "internal" = hello_log:format_context(peer, #context{peer = make_ref()}),
+    "127.0.0.1" = hello_log:format_context(peer, #context{peer = {{127, 0, 0, 1}, 8080}}),
+    "12345" = hello_log:format_context(peer, #context{peer = <<"12345">>}),
+    ok.
+
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
@@ -127,8 +134,9 @@ all() ->
      start_named_supervised,
      keep_alive,
      request_metrics,
-     time_metrics
-     ].
+     time_metrics,
+     log_format
+    ].
 
 init_per_suite(Config) ->
     hello:start(),

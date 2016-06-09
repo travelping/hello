@@ -21,7 +21,7 @@
 % @private
 -module(hello_log).
 
--export([format/1, get_id/1, get_method/1]).
+-export([format/1, format_context/2, get_id/1, get_method/1]).
 
 -include("hello.hrl").
 
@@ -47,6 +47,16 @@ format(#response{id = ID, response = CallbackResponse}) ->
 format(ignore) -> ["ignored"];
 format({ok, CallbackResponse}) -> stringify(CallbackResponse);
 format(Msg) -> stringify(Msg).
+
+%% -- format parts of the request context
+%% There are three possible types of 'peer':
+%%   1. a reference when an internal 'service' is used
+%%   2. a ZeroMQ peer identity (a binary)
+%%   3. an IP with Port when HTTP is used
+format_context(peer, #context{peer = Peer}) when is_reference(Peer) -> "internal";
+format_context(peer, #context{peer = Peer}) when is_binary(Peer)    -> stringify(Peer);
+format_context(peer, #context{peer = {IP, _Port}})                  -> inet_parse:ntoa(IP);
+format_context(_, _)                                                -> "unavailable".
 
 %% -- get internal hello request id
 get_id([ #request{id = Id} ]) ->             stringify(Id);
