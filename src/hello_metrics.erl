@@ -225,9 +225,9 @@ parse_ex_uri_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
 parse_ex_uri_ip(inet6, Host) ->
     case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
         {match, ["[::1]", IP]} ->
-            inet:parse_ipv6_address(IP);
+            inet:getaddr(Host, local);
         _ ->
-            inet:parse_ipv6_address(Host)
+            inet:getaddr(Host, inet6);
     end.
 
 atomize_ex_uri(#ex_uri{scheme = Scheme, authority = #ex_uri_authority{host = Host, port = Port}}) ->

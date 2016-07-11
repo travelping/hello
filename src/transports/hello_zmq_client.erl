@@ -102,9 +102,9 @@ ezmq_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
 ezmq_ip(inet6, Host) ->
     case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
         {match, ["[::1]", IP]} ->
-            inet:parse_ipv6_address(IP);
+            inet:getaddr(Host, local);
         _ ->
-            inet:parse_ipv6_address(Host)
+            inet:getaddr(Host, inet6);
     end.
 
 clean_host(Host) ->
