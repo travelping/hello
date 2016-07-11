@@ -96,7 +96,7 @@ ezmq_connect_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host
     end.
 
 ezmq_ip(inet, "*") -> {ok, {0,0,0,0}};
-ezmq_ip(inet, Host) -> inet:parse_ipv4_address(Host);
+ezmq_ip(inet, Host) -> inet:getaddr(Host, inet);
 
 ezmq_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
 ezmq_ip(inet6, Host) ->

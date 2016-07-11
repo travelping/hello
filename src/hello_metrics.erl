@@ -219,7 +219,7 @@ protocol("zmq-tcp6") -> inet6;
 protocol(_) -> inet.
 
 parse_ex_uri_ip(inet, "*") -> {ok, {0,0,0,0}};
-parse_ex_uri_ip(inet, Host) -> inet:parse_ipv4_address(Host);
+parse_ex_uri_ip(inet, Host) -> inet:getaddr(Host, inet);
 
 parse_ex_uri_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
 parse_ex_uri_ip(inet6, Host) ->
