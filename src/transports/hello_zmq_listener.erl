@@ -98,7 +98,7 @@ handle_info({zmq, _Socket, {Peer, Msg}}, State) ->
 handle_info({hello_msg, _Handler, Peer, Signature, Message}, State = #state{socket = Socket}) ->
     case ezmq:send(Socket, {Peer, [<<>>, Signature, Message]}) of
         ok -> ok;
-        Other -> 
+        Other ->
             ?LOG_WARNING("ZeroMQ listener error on sending message: ~s.", [Other],
                          [{hello_server_error, {error, cant_send_message}}], ?LOGID67)
     end,
@@ -145,16 +145,11 @@ ezmq_bind_url(Socket, URI = #ex_uri{authority = #ex_uri_authority{host = Host, p
     end.
 
 ezmq_ip(inet, "*") -> {ok, {0,0,0,0}};
-ezmq_ip(inet, Host) -> inet:parse_ipv4_address(Host);
+ezmq_ip(inet, Host) -> inet:getaddr(Host, inet);
 
 ezmq_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
-ezmq_ip(inet6, Host) ->
-    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
-        {match, ["[::1]", IP]} ->
-            inet:parse_ipv6_address(IP);
-        _ ->
-            inet:parse_ipv6_address(Host)
-    end.
+ezmq_ip(inet6, "[::1]") -> inet:getaddr("::1", inet6);
+ezmq_ip(inet6, Host) -> inet:getaddr(Host, inet6).
 
 gen_meta_fields(#state{encoded_url = EncUrl}) ->
     [{hello_transport, zmtp}, {hello_transport_url, EncUrl}].
