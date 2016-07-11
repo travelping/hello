@@ -222,13 +222,8 @@ parse_ex_uri_ip(inet, "*") -> {ok, {0,0,0,0}};
 parse_ex_uri_ip(inet, Host) -> inet:getaddr(Host, inet);
 
 parse_ex_uri_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
-parse_ex_uri_ip(inet6, Host) ->
-    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
-        {match, ["[::1]", IP]} ->
-            inet:getaddr(Host, local);
-        _ ->
-            inet:getaddr(Host, inet6);
-    end.
+parse_ex_uri_ip(inet6, "[::1]") -> inet:getaddr("::1", inet6);
+parse_ex_uri_ip(inet6, Host) -> inet:getaddr(Host, inet6).
 
 atomize_ex_uri(#ex_uri{scheme = Scheme, authority = #ex_uri_authority{host = Host, port = Port}}) ->
     {ok, IP} = parse_ex_uri_ip(protocol(Scheme), Host),

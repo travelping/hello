@@ -99,13 +99,9 @@ ezmq_ip(inet, "*") -> {ok, {0,0,0,0}};
 ezmq_ip(inet, Host) -> inet:getaddr(Host, inet);
 
 ezmq_ip(inet6, "*") -> {ok, {0,0,0,0,0,0,0,0}};
-ezmq_ip(inet6, Host) ->
-    case re:run(Host, "^\\[(.*)\\]$", [{capture, all, list}]) of
-        {match, ["[::1]", IP]} ->
-            inet:getaddr(Host, local);
-        _ ->
-            inet:getaddr(Host, inet6);
-    end.
+ezmq_ip(inet6, "[::1]") -> inet:getaddr("::1", inet6);
+ezmq_ip(inet6, Host) -> inet:getaddr(Host, inet6).
+
 
 clean_host(Host) ->
     HostSize = erlang:byte_size(Host),
