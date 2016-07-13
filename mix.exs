@@ -33,7 +33,7 @@ defmodule Hello.Mixfile do
      {:msgpack,       github: "msgpack/msgpack-erlang", tag: "0.3.4"},
      {:dnssd,         github: "benoitc/dnssd_erlang", branch: "master", optional: true},
      {:meck,          "~> 0.8.2", override: true},
-     {:exometer_core, github: "Feuerlabs/exometer_core", branch: "master"},
+     {:exometer_core, github: "Feuerlabs/exometer_core", ref: "5fdd9426713a3c26cae32f644a3120711b1cdb64", override: true},
      {:edown,         github: "uwiger/edown", branch: "master", override: true}]
   end
 end
