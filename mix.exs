@@ -22,7 +22,7 @@ defmodule Hello.Mixfile do
   end
 
   defp deps(_) do
-    [{:lager,         "~> 2.1.1", override: true},
+    [{:lager,         "~> 3.2.1", override: true},
      {:goldrush,      github: "DeadZen/goldrush", tag: "0.1.6", override: true},
      {:cowboy,        "~> 1.0.2"},
      {:yang,          github: "travelping/yang", branch: "master"},
@@ -30,7 +30,7 @@ defmodule Hello.Mixfile do
      {:ex_uri,        github: "heroku/ex_uri", branch: "master"},
      {:ezmq,          github: "RoadRunnr/ezmq", branch: "fix-socket-crash"},
      {:jsx,           "~> 2.6.2"},
-     {:msgpack,       github: "msgpack/msgpack-erlang", tag: "0.3.4"},
+     {:msgpack,       "~> 0.6.0", override: true},
      {:dnssd,         github: "benoitc/dnssd_erlang", branch: "master", optional: true},
      {:meck,          "~> 0.8.2", override: true},
      {:exometer_core, github: "Feuerlabs/exometer_core", ref: "5fdd9426713a3c26cae32f644a3120711b1cdb64", override: true},
