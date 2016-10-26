@@ -90,6 +90,11 @@ invalid_request(_Config) ->
 invalid_notification(_Config) ->
     BinRequest = <<"{\"id\":null,\"params\":\"undefined\",\"method\":\"undefined\",\"jsonrpc\":\"2.0\"}">>,
     ignore = hello_proto_jsonrpc:decode(BinRequest, [], request).
+
+request_timeout(_Config) ->
+    {Req1, [Args1], _} = ?REQ11,
+    {error, timeout} = hello_client:call(http_client, ?NAMED_PARAMETER_REQ_7, 500).
+
 % ---------------------------------------------------------------------
 % -- common_test callbacks
 all() ->
@@ -109,7 +114,8 @@ all() ->
      method_not_found,
      invalid_params,
      invalid_request,
-     invalid_notification
+     invalid_notification,
+     request_timeout
     ].
 
 init_per_suite(Config) ->

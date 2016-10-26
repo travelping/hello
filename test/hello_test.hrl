@@ -55,6 +55,7 @@
 -define(FUN14, <<"handler1.fun4">>).
 -define(FUN15, <<"handler1.fun5">>).
 -define(FUN16, <<"handler1.fun6">>).
+-define(FUN17, <<"handler1.fun7">>).
 
 -define(FUN21, <<"handler2.fun1">>).
 -define(FUN22, <<"handler2.fun2">>).
@@ -115,5 +116,5 @@
 -define(NOTIFY_REQS, [?REQ17, ?REQ27]).
 
 -define(NAMED_PARAMETER_REQ, {?FUN16, [{<<"arg2">>, ?ARG17}, {<<"arg1">>, ?ARG16}], []}). %% reversed to see if its working
-
+-define(NAMED_PARAMETER_REQ_7, {?FUN17, [{<<"arg2">>, ?ARG17}, {<<"arg1">>, ?ARG16}], []}).
 

@@ -30,8 +30,10 @@ handle_request(Context, <<"handler1.fun5">>, [{_, Arg}], State) ->
     hello_handler:notify(Context, [<<"notification_arg1">>, <<"notification_arg2">>]),
     {reply, {ok, Arg}, State + 1};
 handle_request(_Context, <<"handler1.fun6">>, [{<<"arg1">>, Arg1}, {<<"arg2">>, Arg2}], State) ->
-	{reply, {ok, [Arg1, Arg2]}, State + 1}.
-	
+	{reply, {ok, [Arg1, Arg2]}, State + 1};
+handle_request(_Context, <<"handler1.fun7">>, [{<<"arg1">>, Arg1}, {<<"arg2">>, Arg2}], State) ->
+    timer:sleep(3000),
+    {reply, {ok, [Arg1, Arg2]}, State + 1}.
 
 handle_info(_Context, _Message, State) ->
 	{noreply, State}.

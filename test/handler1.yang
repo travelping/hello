@@ -53,4 +53,14 @@ module handler1 {
         }
     }
 
+    rpc fun7 {
+        input {
+            leaf arg1 {
+                type string;
+            }
+            leaf arg2 {
+                type string;
+            }
+        }
+    }
 }
