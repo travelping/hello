@@ -3,6 +3,22 @@ hello
 
 JSON-RPC API toolkit
 
+Version 3.3.0 - 27 Oct 2016
+---------------------------
+* stop to handle of a request if client side timeout expired
+* use elixir 1.3
+* resolve hostnames for IPv4 and IPv6
+* metrics are reworked
+* fix log messages to hide the greeting word hello
+* don't need to wait for a service call response if method is not found
+* write message to logs if zmq server can't send message
+* added support for server side notifications for zmq transport
+* msgpack version fixed for working with rebar2 and mix
+* added error reason specific logging to hello_registry
+* fixed issue with uninitialized timestamp
+* added start_listener/6 to Hello elixir module
+* hackney updated to 1.4.4
+
 Version 3.2.0 - 17 Nov 2015
 ---------------------------
 * dnssd is optional now and disabled by default
