@@ -22,8 +22,8 @@
 -module(hello_http_client).
 
 -behaviour(hello_client).
--export([init_transport/2, send_request/3, terminate_transport/2, handle_info/2]).
--export([http_send/4]).
+-export([init_transport/2, send_request/4, terminate_transport/2, handle_info/2]).
+-export([http_send/5]).
 -export([gen_meta_fields/1]).
 
 -include_lib("ex_uri/include/ex_uri.hrl").
@@ -52,10 +52,10 @@ init_transport(URL, Options) ->
             {error, Reason}
     end.
 
-send_request(Request, Signarute, State) when is_binary(Request), is_binary(Signarute) ->
-    spawn(?MODULE, http_send, [self(), Request, Signarute, State]),
+send_request(Request, Timeout, Signarute, State) when is_binary(Request), is_binary(Signarute) ->
+    spawn(?MODULE, http_send, [self(), Request, Timeout, Signarute, State]),
     {ok, State};
-send_request(_, _, State) ->
+send_request(_, _, _, State) ->
     {error, no_valid_request, State}.
 
 terminate_transport(_Reason, _State) ->
@@ -96,17 +96,25 @@ content_type(Signarute) ->
     end.
 
 %% http client helpers
-http_send(Client, Request, Signarute, State = #http_state{url = URL, options = Options}) ->
+http_send(Client, Request, Timeout, Signarute, State = #http_state{url = URL, options = Options}) ->
     #http_options{method = Method, ib_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
     Headers = [{<<"Content-Type">>, content_type(Signarute)},
                {<<"Accept">>, content_type(Signarute)},
                {<<"User-Agent">>, <<"hello/", (list_to_binary(Vsn))/binary>>}],
-    case hackney:Method(URL, Headers, Request, Opts) of
+    HttpClientOpts = [{timeout, Timeout} | Opts],
+    case hackney:Method(URL, Headers, Request, HttpClientOpts) of
         {ok, Success, RespHeaders, ClientRef} when Success =:= 200; Success =:= 201; Success =:= 202 ->
-            {ok, Body} = hackney:body(ClientRef),
-            Signature1 = hackney_headers:get_value(<<"content-type">>, hackney_headers:new(RespHeaders), <<"undefined">>),
-            outgoing_message(Client, Signature1, Body, State);
+            case hackney:body(ClientRef) of
+                {ok, Body} ->
+                    Signature1 = hackney_headers:get_value(<<"content-type">>, hackney_headers:new(RespHeaders), <<"undefined">>),
+                    outgoing_message(Client, Signature1, Body, State);
+                {error, Error} ->
+                    ?LOG_ERROR("Http client received an error after executing a request to ~p with reason ~p.", [URL, Error],
+                               lists:append(gen_meta_fields(State), [{hello_error_reason, {{request, Request}, {error, Error}}}]), ?LOGID42),
+                    Client ! {?INCOMING_MSG, {error, Error, State}},
+                    exit(normal)
+            end;
         {ok, HttpCode, _, _} ->
             Client ! {?INCOMING_MSG, {error, HttpCode, State}},
             exit(normal);

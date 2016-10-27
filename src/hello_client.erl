@@ -30,7 +30,7 @@
          call/2, call/3]).
 
 %% for tests
--export([outgoing_message/3, handle_internal/2]).
+-export([outgoing_message/4, handle_internal/2]).
 -export([gen_meta_fields/1]).
 
 -include("hello.hrl").
@@ -50,7 +50,7 @@
 -callback init_transport(#ex_uri{}, trans_opts()) -> 
     {ok, ClientState :: term()} | {error, Reason :: term()}.
 
--callback send_request(Reqquest :: binary(), signature(), ClientState :: term()) -> 
+-callback send_request(Request :: binary(), Timeout :: integer(), signature(), ClientState :: term()) ->
     {ok, NewClietnState :: term()} | {error, Reason :: term(), ClietnState :: term()}.
 
 -callback terminate_transport(Reason :: term(), ClientState :: term()) -> ok.
@@ -103,11 +103,11 @@ stop_supervised(Client) ->
 
 -spec call(client_name(), Call :: call() | batch_call()) ->  term().
 call(Client, Call) ->
-    timeout_call(Client, {call, Call}, ?DEFAULT_TIMEOUT).
+    timeout_call(Client, {call, Call, ?DEFAULT_TIMEOUT}, ?DEFAULT_TIMEOUT).
 
 -spec call(client_name(), Call :: call() | batch_call(), Timeout :: integer()) -> term().
 call(Client, Call, Timeout) ->
-    timeout_call(Client, {call, Call}, Timeout).
+    timeout_call(Client, {call, Call, Timeout}, Timeout).
 
 
 timeout_call(Client, Call, infinity) ->
@@ -117,7 +117,7 @@ timeout_call(Client, Call, Timeout) ->
         gen_server:call(Client, Call, Timeout)
     catch
         exit:{timeout, {gen_server, call, _}} ->
-            {error, timeout}
+	     {error, timeout}
     end.
 
 %% ----------------------------------------------------------------------------------------------------
@@ -156,15 +156,15 @@ init({URI, TransportOpts, ProtocolOpts, ClientOpts}) ->
     end.
 
 %% @hidden
-handle_call({call, Call}, From, State = #client_state{protocol_mod = ProtocolMod, 
-                                                      protocol_state = ProtocolState, 
-                                                      metrics_info = MetricsInfo,
-                                                      id = ClientId}) ->
+handle_call({call, Call, Timeout}, From, State = #client_state{protocol_mod = ProtocolMod,
+                                                               protocol_state = ProtocolState,
+                                                               metrics_info = MetricsInfo,
+                                                               id = ClientId}) ->
     {Time1, Value1} = timer:tc(hello_proto, build_request, [Call, ProtocolMod, ProtocolState]),
     case Value1 of
         {ok, Request, NewProtocolState} ->
             State1 = State#client_state{protocol_state = NewProtocolState},
-            {Time2, Value2} = timer:tc(?MODULE, outgoing_message, [Request, From, State1]),
+            {Time2, Value2} = timer:tc(?MODULE, outgoing_message, [Request, Timeout, From, State1]),
             case Value2 of
                 {ok, State2} ->
                     hello_metrics:update_client_request(success, MetricsInfo, (Time1 + Time2) / 1000),
@@ -208,7 +208,7 @@ handle_info(?PING, State = #client_state{transport_mod=TransportModule, transpor
                                          keep_alive_interval = KeepAliveInterval, metrics_info = MetricsInfo,
                                          keep_alive_ref = TimerRef, id = ClientId}) ->
     hello_metrics:update_client_request(internal, MetricsInfo, 0),
-    {ok, NewTransportState} = TransportModule:send_request(?PING, ?INTERNAL_SIGNATURE, TransportState),
+    {ok, NewTransportState} = TransportModule:send_request(?PING, ?DEFAULT_TIMEOUT, ?INTERNAL_SIGNATURE, TransportState),
     ?LOG_DEBUG("~p : Sent keep alive request. Pinging server again in ~p ms.",
                [ClientId, KeepAliveInterval], gen_meta_fields(State), ?LOGID21),
     timer:cancel(TimerRef),
@@ -342,15 +342,15 @@ incoming_message({ok, Signature, BinResponse, NewTransportState},
             {noreply, State1}
     end.
 
-outgoing_message(Request, From, State = #client_state{protocol_mod = ProtocolMod,
-                                                      protocol_opts = ProtocolOpts,
-                                                      transport_mod = TransportModule,
-                                                      transport_state = TransportState,
-                                                      async_request_map = AsyncMap, id = ClientId}) ->
+outgoing_message(Request, Timeout, From, State = #client_state{protocol_mod = ProtocolMod,
+                                                               protocol_opts = ProtocolOpts,
+                                                               transport_mod = TransportModule,
+                                                               transport_state = TransportState,
+                                                               async_request_map = AsyncMap, id = ClientId}) ->
     case hello_proto:encode(ProtocolMod, ProtocolOpts, Request) of
         {ok, BinRequest} ->
             Signature = hello_proto:signature(ProtocolMod, ProtocolOpts),
-            case TransportModule:send_request(BinRequest, Signature, TransportState) of
+            case TransportModule:send_request(BinRequest, Timeout, Signature, TransportState) of
                 {ok, NewTransportState} ->
                     ?LOG_DEBUG("~p / ~p : sent request", [ClientId, hello_log:get_method(Request)],
                                gen_meta_fields(Request, State), ?LOGID14),
