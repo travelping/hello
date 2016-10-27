@@ -3,7 +3,7 @@ defmodule Hello.Mixfile do
 
   def project do
     [app: :hello,
-     version: "3.2.0",
+     version: "3.3.0",
      elixir: "~> 1.0",
      compilers: [:erlang, :elixir, :app],
      erlc_options: [{:parse_transform, :lager_transform}],
