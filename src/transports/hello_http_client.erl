@@ -99,9 +99,15 @@ content_type(Signarute) ->
 http_send(Client, Request, Timeout, Signarute, State = #http_state{url = URL, options = Options}) ->
     #http_options{method = Method, ib_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
+    HttpHeaders = case lists:keyfind(http_headers, 1, Opts) of
+		      false ->
+			  [];
+		      {http_headers, CustomHeaders} ->
+			  CustomHeaders
+		  end,
     Headers = [{<<"Content-Type">>, content_type(Signarute)},
                {<<"Accept">>, content_type(Signarute)},
-               {<<"User-Agent">>, <<"hello/", (list_to_binary(Vsn))/binary>>}],
+               {<<"User-Agent">>, <<"hello/", (list_to_binary(Vsn))/binary>>}] ++ HttpHeaders,
     HttpClientOpts = [{timeout, Timeout} | Opts],
     case hackney:Method(URL, Headers, Request, HttpClientOpts) of
         {ok, Success, RespHeaders, ClientRef} when Success =:= 200; Success =:= 201; Success =:= 202 ->
@@ -148,6 +154,8 @@ validate_options([{method, post} | R], Opts) ->
     validate_options(R, Opts#http_options{method = post});
 validate_options([{method, _}|_], _) ->
     {error, "invalid HTTP method"};
+validate_options([{http_headers, Headers} | R], Opts) ->
+    validate_options(R, Opts#http_options{ib_opts = [{http_headers, Headers} | Opts#http_options.ib_opts]});
 validate_options([{Option, Value} | R], Opts) when is_atom(Option) ->
     validate_options(R, Opts#http_options{ib_opts = [{Option, Value} | Opts#http_options.ib_opts]});
 validate_options([_ | R], Opts) ->
