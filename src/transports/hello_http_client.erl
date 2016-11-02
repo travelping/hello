@@ -30,7 +30,7 @@
 -include("hello.hrl").
 -include("hello_log.hrl").
 -record(http_options, {
-    ib_opts :: list({atom(), term()}),
+    hackney_opts :: list({atom(), term()}),
     method = post :: 'put' | 'post'
 }).
 -record(http_state, {
@@ -97,7 +97,7 @@ content_type(Signarute) ->
 
 %% http client helpers
 http_send(Client, Request, Timeout, Signarute, State = #http_state{url = URL, options = Options}) ->
-    #http_options{method = Method, ib_opts = Opts} = Options,
+    #http_options{method = Method, hackney_opts = Opts} = Options,
     {ok, Vsn} = application:get_key(hello, vsn),
     HttpHeaders = case lists:keyfind(http_headers, 1, Opts) of
 		      false ->
@@ -146,7 +146,7 @@ outgoing_message(Client, Signarute, Body, State) ->
     end.
 
 validate_options(Options) ->
-    validate_options(Options, #http_options{ib_opts = [{socket_options, [{reuseaddr, true }]}]}).
+    validate_options(Options, #http_options{hackney_opts = [{socket_options, [{reuseaddr, true }]}]}).
 
 validate_options([{method, put} | R], Opts) ->
     validate_options(R, Opts#http_options{method = put});
@@ -155,9 +155,9 @@ validate_options([{method, post} | R], Opts) ->
 validate_options([{method, _}|_], _) ->
     {error, "invalid HTTP method"};
 validate_options([{http_headers, Headers} | R], Opts) ->
-    validate_options(R, Opts#http_options{ib_opts = [{http_headers, Headers} | Opts#http_options.ib_opts]});
+    validate_options(R, Opts#http_options{hackney_opts = [{http_headers, Headers} | Opts#http_options.hackney_opts]});
 validate_options([{Option, Value} | R], Opts) when is_atom(Option) ->
-    validate_options(R, Opts#http_options{ib_opts = [{Option, Value} | Opts#http_options.ib_opts]});
+    validate_options(R, Opts#http_options{hackney_opts = [{Option, Value} | Opts#http_options.hackney_opts]});
 validate_options([_ | R], Opts) ->
     validate_options(R, Opts);
 validate_options([], Opts) ->
