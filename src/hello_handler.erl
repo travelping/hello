@@ -155,7 +155,7 @@ handle_cast({request, Request = #request{context = Context}},
         Error:Reason ->
             send(Context, {error, {server_error, "handler error", undefined}}),
             hello_metrics:update_handler_request(error, MetricsInfo, 0), %% TODO: add timestamp
-            ?LOG_REQUEST_bad_request(Mod, Id, Request, {Error, Reason, erlang:get_stacktrace()}, ?LOGID24),
+            ?LOG_REQUEST_bad_request(Mod, Id, Context, Request, {Error, Reason, erlang:get_stacktrace()}, ?LOGID24),
             {stop, normal, State}
     end;
 handle_cast({set_idle_timeout, Timeout}, State = #state{timer = Timer}) ->
@@ -165,11 +165,11 @@ handle_cast({async_reply, ReqContext, Result}, State = #state{id = Id, async_rep
     #context{req_ref = ReqRef} = ReqContext,
     case gb_trees:lookup(ReqRef, AsyncMap) of
         {value, Request} ->
-            ?LOG_REQUEST_async_reply(Mod, Id, Request, Result, ?LOGID25),
+            ?LOG_REQUEST_async_reply(Mod, Id, ReqContext, Request, Result, ?LOGID25),
             send(ReqContext, {ok, Result}),
             {noreply, State#state{async_reply_map = gb_trees:delete(ReqRef, AsyncMap)}};
         none ->
-            ?LOG_WARNING_reason(Mod, Id, "~p : received unknown async reply",
+            ?LOG_WARNING_reason(Mod, Id, ReqContext, "~p : received unknown async reply",
                                 [Mod], {unknown_async_reply, {ReqRef, Result}}, ?LOGID26),
             {noreply, State}
     end.
@@ -181,11 +181,11 @@ handle_call(_Call, _From, State) ->
 %% @hidden
 handle_info({?IDLE_TIMEOUT_MSG, TimerRef}, State = #state{timer = Timer, id = Id, mod = Mod})
     when Timer#timer.idle_timeout_ref == TimerRef ->
-    ?LOG_WARNING_reason(Mod, Id, "~p : stopping due to idle timeout", [Mod], {error, idle_timeout}, ?LOGID27),
+    ?LOG_WARNING_reason(Mod, Id, undefined, "~p : stopping due to idle timeout", [Mod], {error, idle_timeout}, ?LOGID27),
     NewTimer = Timer#timer{stopped_because_idle = true},
     {stop, normal, State#state{timer = NewTimer}};
 handle_info({?IDLE_TIMEOUT_MSG, OtherRef}, State = #state{mod = Mod, id = Id}) ->
-    ?LOG_WARNING_reason(Mod, Id, "~p : received unknown idle timeout message", [Mod], 
+    ?LOG_WARNING_reason(Mod, Id, undefined, "~p : received unknown idle timeout message", [Mod],
                         {error, {unknown_timeout_message, OtherRef}}, ?LOGID28),
     {noreply, State};
 handle_info({?INCOMING_MSG, Request = #request{context = Context}}, State0) ->
@@ -230,39 +230,39 @@ do_request(Request = #request{context = Context},
             TimeMS = Time / 1000, % in ms
             case Value of
                 {reply, Response, NewHandlerState} ->
-                    ?LOG_REQUEST_request(Mod, Id, Request, Response, TimeMS, ?LOGID29),
+                    ?LOG_REQUEST_request(Mod, Id, Context1, Request, Response, TimeMS, ?LOGID29),
                     send(Context1, Response),
                     hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {noreply, State#state{state = NewHandlerState}};
                 {noreply, NewModState} ->
-                    ?LOG_REQUEST_request_no_reply(Mod, Id, Request, TimeMS, ?LOGID30),
+                    ?LOG_REQUEST_request_no_reply(Mod, Id, Context1, Request, TimeMS, ?LOGID30),
                     hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {noreply, State#state{state = NewModState, async_reply_map = gb_trees:enter(ReqRef, Request, AsyncMap)}};
                 {stop, Reason, Response, NewModState} ->
-                    ?LOG_REQUEST_request_stop(Mod, Id, Request, Response, Reason, TimeMS, ?LOGID31),
+                    ?LOG_REQUEST_request_stop(Mod, Id, Context1, Request, Response, Reason, TimeMS, ?LOGID31),
                     send(Context1, Response),
                     hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {stop, Reason, State#state{state = NewModState}};
                 {stop, Reason, NewModState} ->
-                    ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Request, Reason, TimeMS, ?LOGID32),
+                    ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Context1, Request, Reason, TimeMS, ?LOGID32),
                     hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {stop, Reason, State#state{mod = NewModState}};
                 {stop, NewModState} ->
-                    ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Request, TimeMS, ?LOGID33),
+                    ?LOG_REQUEST_request_stop_no_reply(Mod, Id, Context1, Request, TimeMS, ?LOGID33),
                     hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {stop, State#state{mod=NewModState}};
                 {ignore, NewModState} ->
-                    ?LOG_REQUEST_request(Mod, Id, Request, ignore, TimeMS, ?LOGID29),
+                    ?LOG_REQUEST_request(Mod, Id, Context1, Request, ignore, TimeMS, ?LOGID29),
                     hello_metrics:update_handler_request(success, MetricsInfo, TimeMS),
                     {noreply, State#state{state = NewModState}}
             end;
         {error, {_Code, _Message, _Data} = Reason} ->
-            ?LOG_REQUEST_bad_request(Mod, Id, Request, Reason, ?LOGID24),
+            ?LOG_REQUEST_bad_request(Mod, Id, Context1, Request, Reason, ?LOGID24),
             send(Context1,  {error, Reason}),
             hello_metrics:update_handler_request(error, MetricsInfo, 0),
             {stop, normal, State};
         _FalseAnswer ->
-            ?LOG_REQUEST_bad_request(Mod, Id, Request, _FalseAnswer, ?LOGID24),
+            ?LOG_REQUEST_bad_request(Mod, Id, Context1, Request, _FalseAnswer, ?LOGID24),
             send(Context1, {error, {server_error, "validation returned wrong error format", null}}),
             hello_metrics:update_handler_request(error, MetricsInfo, 0),
             {stop, normal, State}
