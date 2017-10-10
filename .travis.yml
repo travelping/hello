@@ -3,20 +3,12 @@ before_install:
    - sudo apt-get install avahi-daemon libavahi-compat-libdnssd-dev
    - wget https://s3.amazonaws.com/rebar3/rebar3
    - chmod u+x ./rebar3
-language: elixir
-elixir:
-    - 1.2.6
-    - 1.3.2
+language: erlang
 otp_release:
-   - 18.3
-   - 19.0
+    - 18.0
+    - 18.3
+    - 19.0
+    - 20.0
+install: "true"
 script: 
-    - mix compile
-    - rm -Rf deps _build
-    - ./rebar3 update
-    - ./rebar3 compile
-    - rm -Rf _build
-    - rebar get-deps
-    - rebar compile 
-    - rebar ct skip_deps=true
-after_failure: "cat logs/raw.log"
+    - ./rebar3 do compile && ./rebar3 do ct && ./rebar3  coveralls send
